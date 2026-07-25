@@ -1,0 +1,12 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+name = "collaburo"
+main = ".open-next/worker.js"
+compatibility_date = "2026-06-07"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+EMAIL_VERIFICATION_FROM = "Collaburo <onboarding@resend.dev>"
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"

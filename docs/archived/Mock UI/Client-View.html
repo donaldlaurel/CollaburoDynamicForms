@@ -1,0 +1,2234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Collaburo · Customize Your Event</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<style>
+/* ====== TOKENS ====== */
+:root {
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --accent: #ed7a3c;
+  --accent-dark: #d96a2c;
+  --accent-soft: #fff4eb;
+  --accent-line: #ffd9b8;
+  --ink: #1a1a1a;
+  --ink-2: #3a3a3a;
+  --ink-3: #6b6b6b;
+  --ink-4: #999;
+  --line: #e5e5e5;
+  --line-strong: #d0d0d0;
+  --bg: #fff;
+  --bg-2: #f7f7f7;
+  --bg-3: #efefef;
+  --danger: #d44;
+  --r: 6px;
+  --r-lg: 10px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08);
+  --shadow-lg: 0 4px 20px rgba(0,0,0,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{font-family:var(--font);font-size:14px;color:var(--ink);background:#fff;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font:inherit;color:inherit}
+
+/* ====== PAGE LAYOUT ====== */
+.page{min-height:100vh;display:flex;flex-direction:column}
+.page-header{text-align:center;padding:36px 24px 0}
+.page-header h1{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-bottom:28px}
+
+/* ====== STEP PROGRESS BAR ====== */
+.progress-bar{display:flex;align-items:center;justify-content:center;gap:0;padding:0 40px;margin-bottom:8px;flex-wrap:wrap}
+.progress-step{display:flex;align-items:center;gap:0;cursor:pointer;white-space:nowrap}
+.progress-dot{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;background:var(--ink-4);flex-shrink:0;transition:background .2s}
+.progress-dot.active,.progress-dot.done{background:var(--accent)}
+.progress-label{font-size:12.5px;font-weight:500;color:var(--ink-3);margin-left:8px;transition:color .2s}
+.progress-label.active{color:var(--ink);font-weight:600}
+.progress-label.done{color:var(--ink-2)}
+.progress-line{width:40px;height:2px;background:var(--line);margin:0 6px;flex-shrink:0}
+.progress-line.done{background:var(--accent)}
+
+/* ====== DIVIDER ====== */
+.page-divider{height:3px;background:linear-gradient(90deg,var(--accent),var(--accent-dark));margin:20px 0 0}
+
+/* ====== BODY LAYOUT ====== */
+.body-wrap{display:grid;grid-template-columns:1fr 340px;gap:0;flex:1;max-width:1400px;width:100%;margin:0 auto;padding:40px 48px 80px}
+.body-main{padding-right:40px}
+.body-sidebar{position:sticky;top:40px;align-self:start}
+
+/* ====== COST SIDEBAR ====== */
+.cost-card{border:1px solid var(--line);border-radius:var(--r-lg);padding:24px;background:var(--bg)}
+.cost-card h3{font-size:16px;font-weight:700;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--line)}
+.cost-label{font-size:13px;font-weight:600;margin-bottom:10px}
+.cost-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:var(--ink-2)}
+.cost-row.indent{padding-left:12px}
+.cost-row.indent::before{content:"•";margin-right:8px;color:var(--ink-4)}
+.cost-sep{height:1px;background:var(--line);margin:10px 0}
+.cost-total{display:flex;justify-content:space-between;background:var(--accent);color:#fff;font-weight:700;font-size:15px;padding:10px 14px;border-radius:var(--r);margin:12px -4px}
+.cost-row b{font-weight:600}
+
+/* ====== STEP CONTENT ====== */
+.step-title{font-size:20px;font-weight:700;margin-bottom:24px}
+
+/* ====== FORM FIELDS ====== */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.form-row.full{grid-template-columns:1fr}
+.form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:0}
+.form-group.mb{margin-bottom:16px}
+.form-group label{font-size:13px;font-weight:600}
+.form-group label .req{color:var(--accent)}
+.form-input{width:100%;border:1px solid var(--line-strong);border-radius:var(--r);padding:10px 12px;font-size:14px;background:var(--bg);transition:border-color .15s}
+.form-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(237,122,60,.12)}
+.form-input::placeholder{color:var(--ink-4)}
+select.form-input{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer}
+textarea.form-input{min-height:80px;resize:vertical}
+
+/* ====== CHECKBOX / RADIO ====== */
+.chk-row{display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-bottom:8px;cursor:pointer}
+.chk-row input[type=checkbox],.chk-row input[type=radio]{margin-top:2px;accent-color:var(--accent);flex-shrink:0}
+.chk-label b{font-weight:600}
+.chk-desc{color:var(--ink-3);font-size:12.5px;margin-top:1px}
+
+/* ====== RADIO GROUP ====== */
+.radio-group{margin-bottom:16px}
+.radio-group-label{font-size:13px;font-weight:600;margin-bottom:8px}
+.radio-option{display:flex;align-items:flex-start;gap:8px;padding:4px 0;font-size:13px;cursor:pointer}
+.radio-option input{margin-top:3px;accent-color:var(--accent)}
+
+/* ====== NAV BUTTONS ====== */
+.step-nav{display:flex;gap:12px;margin-top:32px;padding-top:24px;border-top:1px solid var(--line)}
+.btn-prev{border:1px solid var(--accent);color:var(--accent);background:transparent;padding:10px 28px;border-radius:var(--r);font-weight:600;font-size:14px;transition:background .15s}
+.btn-prev:hover{background:var(--accent-soft)}
+.btn-prev:disabled{opacity:.3;cursor:not-allowed}
+.btn-next{background:var(--accent);color:#fff;padding:10px 28px;border-radius:var(--r);font-weight:600;font-size:14px;transition:background .15s}
+.btn-next:hover{background:var(--accent-dark)}
+
+/* ====== VENUE CARDS ====== */
+.venue-rec{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:var(--r);padding:10px 14px;font-size:13px;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.venue-rec .ic{font-size:16px}
+
+.venue-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px}
+.venue-thumb{aspect-ratio:1.2;border-radius:var(--r);overflow:hidden;cursor:pointer;position:relative;border:2px solid transparent;transition:border-color .15s}
+.venue-thumb.sel{border-color:var(--accent);box-shadow:0 0 0 3px rgba(237,122,60,.2)}
+.venue-thumb .ph{width:100%;height:100%;background:linear-gradient(135deg,var(--bg-3),#e0d8cf);display:grid;place-items:center;color:var(--ink-4);font-size:11px;font-weight:600}
+.venue-thumb .name{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:11px;font-weight:600;padding:6px 8px;text-align:center}
+
+/* ====== VENUE DETAIL ====== */
+.venue-detail{margin-bottom:28px}
+.venue-detail-header{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.venue-detail-img{aspect-ratio:1.5;border-radius:var(--r-lg);background:linear-gradient(135deg,#d9cfc4,#b8a998);display:grid;place-items:center;color:rgba(255,255,255,.7);font-size:13px;font-weight:600;overflow:hidden;position:relative}
+.venue-detail-img::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(0,0,0,.03) 0 1px,transparent 1px 14px)}
+.venue-detail-info h3{font-size:18px;font-weight:700;margin-bottom:8px}
+.venue-detail-info p{font-size:13px;color:var(--ink-3);line-height:1.55;margin-bottom:12px}
+
+.feature-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}
+.feature-item{font-size:12.5px;display:flex;align-items:center;gap:6px;padding:2px 0}
+.feature-item::before{content:"✓";color:var(--accent);font-weight:700;font-size:11px}
+
+.cap-table{margin-top:16px}
+.cap-table h4{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:8px}
+.cap-row{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--bg-3)}
+
+/* ====== ACCORDION ====== */
+.accordion{border:1px solid var(--line);border-radius:var(--r-lg);margin-bottom:20px;overflow:hidden}
+.accordion-head{display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;font-size:14px;font-weight:600;background:var(--bg-2)}
+.accordion-head .ic{color:var(--accent);font-size:16px}
+.accordion-head .arrow{margin-left:auto;font-size:12px;color:var(--ink-3);transition:transform .2s}
+.accordion-head .arrow.open{transform:rotate(180deg)}
+.accordion-body{padding:16px;border-top:1px solid var(--line)}
+
+.ext-option{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color .15s}
+.ext-option:hover{border-color:var(--ink-4)}
+.ext-option.sel{border-color:var(--accent);background:var(--accent-soft)}
+.ext-option h5{font-size:13px;font-weight:600;margin-bottom:2px}
+.ext-option p{font-size:12px;color:var(--ink-3);line-height:1.4}
+
+/* ====== FLOOR PLAN LAYOUT ====== */
+.layout-section{margin-bottom:24px}
+.layout-section h4{font-size:14px;font-weight:600;margin-bottom:12px}
+.layout-option{display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;font-size:13px}
+.layout-option input{accent-color:var(--accent)}
+.layout-img{width:100%;aspect-ratio:2;border-radius:var(--r-lg);background:linear-gradient(135deg,var(--bg-3),#ddd);margin:16px 0;display:grid;place-items:center;color:var(--ink-4);font-size:12px;font-weight:600;border:1px solid var(--line)}
+.layout-cap-box{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:var(--r);padding:10px 14px;font-size:12px;margin:12px 0;color:var(--ink-2)}
+
+/* ====== SPACE REQ CHECKBOXES ====== */
+.space-req-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}
+
+/* ====== RENTALS ====== */
+.rental-category{margin-bottom:24px}
+.rental-category h4{font-size:14px;font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.rental-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.rental-card{border:1px solid var(--line);border-radius:var(--r);padding:10px;text-align:center;cursor:pointer;transition:border-color .15s}
+.rental-card:hover{border-color:var(--ink-4)}
+.rental-card.sel{border-color:var(--accent);background:var(--accent-soft)}
+.rental-card .thumb{height:60px;border-radius:4px;background:linear-gradient(135deg,var(--bg-3),#e0d8cf);margin-bottom:6px}
+.rental-card .rname{font-size:12px;font-weight:600;margin-bottom:2px}
+.rental-card .rprice{font-size:11px;color:var(--ink-3)}
+.rental-qty{display:flex;align-items:center;gap:6px;justify-content:center;margin-top:6px}
+.rental-qty button{width:22px;height:22px;border:1px solid var(--line-strong);border-radius:4px;display:grid;place-items:center;font-size:12px;background:var(--bg)}
+.rental-qty button:hover{background:var(--bg-2)}
+.rental-qty span{font-size:12px;min-width:16px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* ====== SERVICE ITEMS ====== */
+.service-group{margin-bottom:20px}
+.service-group h4{font-size:14px;font-weight:600;margin-bottom:10px}
+.service-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--bg-3);font-size:13px}
+.service-item:last-child{border-bottom:none}
+.service-item input{margin-top:3px;accent-color:var(--accent)}
+.service-info{flex:1}
+.service-info b{font-weight:600;display:block;margin-bottom:2px}
+.service-info span{color:var(--ink-3);font-size:12px}
+.service-price{font-weight:600;color:var(--ink-2);font-size:13px;white-space:nowrap}
+
+/* ====== CONDITIONS ====== */
+.condition-box{border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:12px;background:var(--bg-2)}
+.condition-box h5{font-size:13px;font-weight:600;margin-bottom:4px}
+.condition-box p{font-size:12px;color:var(--ink-3);line-height:1.45;margin-bottom:8px}
+
+/* ====== SUMMARY PAGE ====== */
+.summary-card{border:1px solid var(--line);border-radius:var(--r-lg);padding:28px 32px;max-width:640px;margin:0 auto}
+.summary-card h3{font-size:16px;font-weight:700;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--line)}
+
+/* ====== MISC ====== */
+.section-note{font-size:12px;color:var(--ink-3);margin-bottom:16px;line-height:1.45}
+.link{color:var(--accent);text-decoration:underline;cursor:pointer;font-size:13px}
+.see-all{margin-top:16px;font-size:13px}
+.see-all a{color:var(--accent);text-decoration:none}
+.see-all a:hover{text-decoration:underline}
+
+/* ====== DYNAMIC FIELD TOOLTIPS ====== */
+.dyn-tip-trigger:hover{background:var(--accent);color:#fff}
+.dyn-tooltip{display:none;position:absolute;bottom:calc(100% + 10px);left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;font-size:12px;font-weight:400;line-height:1.5;padding:12px 16px;border-radius:8px;width:280px;z-index:90;box-shadow:0 6px 24px rgba(0,0,0,.3);white-space:normal}
+.dyn-tooltip::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#1a1a1a}
+.dyn-tip-trigger:hover .dyn-tooltip{display:block}
+
+/* ====== RESPONSIVE ====== */
+@media(max-width:900px){
+  .body-wrap{grid-template-columns:1fr;padding:24px}
+  .body-main{padding-right:0}
+  .body-sidebar{position:static;margin-top:32px}
+  .venue-grid{grid-template-columns:repeat(2,1fr)}
+  .progress-bar{gap:2px}
+  .progress-line{width:16px}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+/* ================================================================
+   COLLABURO — Client View: "Customize Your Event"
+   Hi-fi interactive prototype
+   ================================================================ */
+
+const STEPS = [
+  { id:1, label:"Personal Details", short:"Personal Details" },
+  { id:2, label:"Event Details", short:"Event Details" },
+  { id:3, label:"Venue Space", short:"Venue Space" },
+  { id:4, label:"Layout", short:"Layout" },
+  { id:5, label:"Rentals", short:"Rentals" },
+  { id:6, label:"Catering", short:"Catering" },
+  { id:7, label:"Addtl. Services", short:"Addtl. Services" },
+  { id:8, label:"Addtl. Info", short:"Addtl. Info" },
+  { id:9, label:"Checkout", short:"Checkout" },
+];
+
+const VENUES = [
+  { id:"main", name:"Main Hall", cap:"Up to 250 guests", img:"Main Hall", desc:"A versatile space to host your corporate meetings, conferences, dinners, special events, weddings, etc. The Main Hall is about 1500 sqft with a possibility to extend up to 1900 sqft with the Elevated Area extension.", features:["Beautiful High Cathedral Ceiling","80 Fabric Chairs","Stage with Beautiful Mirror on Stage Wall","Speakers and over-head Microphone (with stand)","Coat Racks at the entrance","Extended Elevated Area Access (by stage end of hall)","Natural Light, Decorative Lights and String Lights","A/C, Heating, and 3 adjustable ceiling fans","Buffet holders with adjustable tableberry","Butler Kitchen with adjustable tablecloths","Backstage / Priest Corner","Table Linens + Runners","Mirror + Chair of Honor","Custom signage / Chairs","MC podium / LCD projector screen + Audio","Smart TV","Whiteboard for Conferences for video calls"] },
+  { id:"large", name:"Large Room", cap:"Up to 80 guests", img:"Large Room" },
+  { id:"small", name:"Small Room", cap:"Up to 4 guests", img:"Small Room" },
+  { id:"lounge", name:"Lounge Area", cap:"Up to 20 guests", img:"Lounge Area" },
+  { id:"patio", name:"Back Patio", cap:"Up to 40 guests", img:"Back Patio" },
+];
+
+const EXTENSIONS = [
+  { id:"full", name:"Full Area – $800", desc:"The Full Elevated Area adds about 300 sqft to the Main Hall.\n• 20 seats for formal seating\n• 50 seats for reception/cocktail-style\n• 30 seats for theater seating", price:800 },
+  { id:"half", name:"Half Area – $600", desc:"The Half Elevated Area adds about 200 sqft to the Main Hall.\n• 15 seats for formal seating\n• 30 seats for reception/cocktail-style\n• 15 seats for theater seating", price:600 },
+  { id:"deep", name:"Deep Half Area – $400", desc:"The Deep Half Elevated Area adds about 125 sqft to the Main Hall.\n• 10 seats for formal seating\n• 20 seats for reception/cocktail-style\n• 10 seats for theater seating", price:400 },
+];
+
+const FLOOR_LAYOUTS = [
+  "8 Rectangular tables with buffet area on raised area (max 4 people)",
+  "Rectangular tables with dance floor on one side (max 75 people)",
+  "Rectangular tables with dance floor - two stage (max 4 people)",
+  "Circular tables with buffet on raised area (max 4 people)",
+  "Circular tables with buffet on raised area (max 6 people)",
+  "Circular tables on raised area (max 4 people)",
+  "Others: please write in Floor Layout field below",
+];
+
+const ELEVATED_LAYOUTS = [
+  "Extra Seating Banquet #1","Extra Seating Banquet #2","Extra Seating Banquet #3",
+  "Extra Seating Banquet #4","Extra Seating Banquet #(Y)","Extra Round Banquet #1",
+  "Extra Round Banquet #2","Others: please write in Floor Layout field below",
+];
+
+const STAGE_LAYOUTS = [
+  "Stage Layout #1","Stage Layout #2","Stage Layout #3",
+  "Stage Layout #4","Stage Layout #5","Stage Layout #6",
+  "Others: please write in Stage Layout field below",
+];
+
+const SPACE_REQS = [
+  "Dance Floor Table","Dance Area","Photo Booth (photos booth can hold up to 8 people)",
+  "Dessert Table","Coat Area","Clean Up Area (Event by caterers)",
+];
+
+const MAIN_HALL_RENTALS = [
+  { id:"rect6", name:"Rectangular 6' Tables", price:"$12 ea", from:12 },
+  { id:"rect8", name:"Rectangular 8' Tables", price:"$14 ea", from:14 },
+  { id:"round", name:"Round Tables (60\")", price:"$12 ea", from:12 },
+  { id:"cocktail", name:"Cocktail Tables", price:"$15 ea", from:15 },
+  { id:"cushion", name:"Cushion Chairs", price:"$3 ea", from:3 },
+  { id:"chiavari", name:"Chiavari Chairs", price:"$6 ea", from:6 },
+];
+
+const CONTENT_RENTALS = [
+  { id:"projector", name:"Projector + Screen", price:"$80" },
+  { id:"speaker", name:"Bluetooth Speakers", price:"$40" },
+  { id:"mic", name:"Wireless Mic", price:"$30" },
+  { id:"backdrop", name:"Photo Backdrop", price:"$90" },
+  { id:"lighting", name:"Custom Uplighting", price:"$180" },
+  { id:"fog", name:"Fog Machine", price:"$60" },
+];
+
+const SETUP_SERVICES = [
+  { id:"basic_setup", name:"Basic Setup", desc:"Tables and chairs arranged per floor plan", price:"$67.50" },
+  { id:"decor_setup", name:"Decor Setup", desc:"Linens, centerpieces, signage placement", price:"$120" },
+  { id:"av_setup",    name:"AV Setup", desc:"Projector, mic, and speaker testing", price:"$45" },
+];
+
+const EVENT_SERVICES = [
+  { id:"bartender", name:"Licensed Bartender", desc:"Required for any alcohol service", price:"$180" },
+  { id:"coord",     name:"Event Coordinator", desc:"On-site coordination for 4 hours", price:"$250" },
+  { id:"security",  name:"Security Guard", desc:"Required for events over 100 guests", price:"$200" },
+];
+
+const CLEANUP_SERVICES = [
+  { id:"basic_clean", name:"Basic Cleanup", desc:"Tables cleared, floors swept", price:"$60" },
+  { id:"deep_clean",  name:"Deep Cleanup", desc:"Full venue restore including kitchen", price:"$150" },
+];
+
+const THIRD_PARTY = [
+  { id:"florist",  name:"Florist", desc:"External floral arrangements" },
+  { id:"dj",       name:"DJ / Band", desc:"External entertainment" },
+  { id:"photog",   name:"Photographer", desc:"External photography" },
+  { id:"caterer",  name:"External Caterer", desc:"Bring your own caterer" },
+];
+
+// Catering options handled inline in Step6
+
+const ALCOHOL_OPTIONS = [
+  { id:"yes", label:"Yes", desc:"There will be alcohol/liquor/wine served at the party." },
+  { id:"no",  label:"No", desc:"There will not be any alcohol/liquor/wine served at the party." },
+];
+
+const EVENT_TYPES_GROUPED = {
+  "Business": ["Business / Board Meeting","Conference","Workshop / Training","Other - Business and non-alcoholic events"],
+  "Social": ["Lecture / Theater / Movie","Social Event with dancing / Party","Social Event without dancing / Banquet","Reception / Cocktail Party","Wedding & Reception","Ceremony / Graduation","Memorial / End of Life Celebration","Festival / Market / Show","Other - Social and/or alcoholic events"],
+};
+
+/* ================================================================
+   COST SIDEBAR
+   ================================================================ */
+function CostSidebar({ step }) {
+  // Steps 1-2 show $0.00, steps 3+ show mock populated values
+  const filled = step >= 3;
+  const space = filled ? "$2,603.00" : "$0.00";
+  const content = filled ? "$1,124.00" : "$0.00";
+  const setup = filled ? "$67.50" : "$0.00";
+  const cleanup = filled ? "$60.00" : "$0.00";
+  const sub = filled ? "$3,854.50" : "$0.00";
+  const tax = filled ? "$501.09" : "$0.00";
+  const total = filled ? "$4,355.59" : "$0.00";
+
+  return (
+    <div className="cost-card">
+      <h3>Summary of Cost</h3>
+      <div className="cost-label">Total Quote:</div>
+      <div className="cost-row indent"><span>Space Rental</span><span>{space}</span></div>
+      <div className="cost-row indent"><span>Space Content Rentals</span><span>{content}</span></div>
+      <div className="cost-row indent"><span>Catering Cost</span><span>$0.00</span></div>
+      <div className="cost-row indent"><span>Set up Service Cost</span><span>{setup}</span></div>
+      <div className="cost-row indent"><span>Clear up Service Cost</span><span>{cleanup}</span></div>
+      <div className="cost-sep"/>
+      <div className="cost-row"><span>Discount</span><span>$0.00</span></div>
+      <div className="cost-row"><b>Subtotal</b><b>{sub}</b></div>
+      <div className="cost-row"><span>Tax (13%)</span><span>{tax}</span></div>
+      <div className="cost-total"><span>Total</span><span>{total}</span></div>
+      <div style={{height:12}}/>
+      <div className="cost-row"><span>Damage Waiver (refundable)</span><span>$0.00</span></div>
+      <div className="cost-sep"/>
+      <div className="cost-row"><b>Total with Damage Waiver</b><b>{total}</b></div>
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 1: PERSONAL DETAILS
+   ================================================================ */
+function Step1({ data, set }) {
+  return (
+    <div>
+      <div className="step-title">Personal Details</div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Client First Name: <span className="req">*</span></label>
+          <input className="form-input" placeholder="Enter first name" value={data.firstName||""} onChange={e=>set({firstName:e.target.value})}/>
+        </div>
+        <div className="form-group">
+          <label>Last Name: <span className="req">*</span></label>
+          <input className="form-input" placeholder="Enter last name" value={data.lastName||""} onChange={e=>set({lastName:e.target.value})}/>
+        </div>
+      </div>
+      <div className="form-row full">
+        <div className="form-group">
+          <label>Organization:</label>
+          <input className="form-input" placeholder="Enter organization or charity name if any" value={data.org||""} onChange={e=>set({org:e.target.value})}/>
+        </div>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Email: <span className="req">*</span></label>
+          <input className="form-input" type="email" placeholder="Enter email address" value={data.email||""} onChange={e=>set({email:e.target.value})}/>
+        </div>
+        <div className="form-group">
+          <label>Phone Number: <span className="req">*</span></label>
+          <input className="form-input" type="tel" placeholder="Enter valid phone number: (123) 123-1234" value={data.phone||""} onChange={e=>set({phone:e.target.value})}/>
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+        <label className="chk-row">
+          <input type="checkbox" checked={!!data.nonprofit} onChange={e=>set({nonprofit:e.target.checked})}/>
+          <span>Not for profit (only check this if you are a registered charity or a not for profit organization)</span>
+        </label>
+        <label className="chk-row">
+          <input type="checkbox" checked={!!data.student} onChange={e=>set({student:e.target.checked})}/>
+          <span>Student Body (only check this if event is fully related to a school or university/college)</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 2: EVENT DETAILS
+   ================================================================ */
+function Step2({ data, set }) {
+  return (
+    <div>
+      <div className="step-title">Event Details</div>
+
+      <div className="radio-group">
+        <div className="radio-group-label">Event Privacy:</div>
+        {[
+          {v:"public",l:"Public:",d:"Events that are advertised publicly, tickets sold/given in advance or at the door."},
+          {v:"semi",l:"Semi Private:",d:"Invitation list to those mostly known to Client."},
+          {v:"private",l:"Private:",d:"Invitation list to those known to Client such as family, friends, coworkers, etc."},
+        ].map(o=>(
+          <label className="radio-option" key={o.v}>
+            <input type="radio" name="privacy" checked={data.privacy===o.v} onChange={()=>set({privacy:o.v})}/>
+            <span><b>{o.l}</b> {o.d}</span>
+          </label>
+        ))}
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Event Type:</label>
+          <select className="form-input" value={data.eventType||""} onChange={e=>set({eventType:e.target.value})}>
+            <option value="">Select one event type</option>
+            {Object.entries(EVENT_TYPES_GROUPED).map(([group,items])=>(
+              <optgroup key={group} label={group+":"}>
+                {items.map(i=><option key={i} value={i}>{i}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Brief Description of Event:</label>
+          <input className="form-input" placeholder='What type of event is this? (ex. "1st Bday", "Family Gathering")' value={data.eventDesc||""} onChange={e=>set({eventDesc:e.target.value})}/>
+        </div>
+      </div>
+
+      <div className="radio-group">
+        <div className="radio-group-label">Alcohol on Site:</div>
+        {ALCOHOL_OPTIONS.map(o=>(
+          <label className="radio-option" key={o.id}>
+            <input type="radio" name="alcohol" checked={data.alcohol===o.id} onChange={()=>set({alcohol:o.id})}/>
+            <span><b>{o.label}:</b> {o.desc}</span>
+          </label>
+        ))}
+      </div>
+
+      <div className="form-row full">
+        <div className="form-group">
+          <label>Expected Number of Attendees: <span className="req">*</span></label>
+          <input className="form-input" type="number" placeholder="30" value={data.attendees||""} onChange={e=>set({attendees:e.target.value})}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 3: VENUE SPACE
+   ================================================================ */
+function Step3({ data, set }) {
+  const sel = data.venue || "main";
+  const venue = VENUES.find(v=>v.id===sel);
+  const [extOpen, setExtOpen] = React.useState(true);
+
+  return (
+    <div>
+      <div className="venue-rec">
+        <span className="ic">💡</span>
+        <span>Select the space that best fits you.<br/>
+        For a <b>Wedding of 80 people</b>, we recommend the <b>Main Hall with the Elevated Area extension</b>.</span>
+      </div>
+
+      <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:"var(--ink-3)",textTransform:"uppercase",letterSpacing:".05em"}}>Venue Space:</div>
+      <div className="venue-grid">
+        {VENUES.map(v=>(
+          <div key={v.id} className={"venue-thumb"+(sel===v.id?" sel":"")} onClick={()=>set({venue:v.id})}>
+            <div className="ph">{v.img}</div>
+            <div className="name">{v.name}</div>
+          </div>
+        ))}
+      </div>
+
+      {venue && (
+        <div className="venue-detail">
+          <div className="venue-detail-header">
+            <div className="venue-detail-img">{venue.img} — Photo</div>
+            <div className="venue-detail-info">
+              <h3>{venue.name}</h3>
+              <p>{venue.desc || `A versatile space perfect for your event. ${venue.cap}.`}</p>
+              {venue.features && (
+                <>
+                  <div style={{fontSize:12,fontWeight:600,marginBottom:6}}>Equipped with:</div>
+                  <div className="feature-grid">
+                    {venue.features.slice(0,12).map((f,i)=><div key={i} className="feature-item">{f}</div>)}
+                  </div>
+                  <div style={{marginTop:8}}><a href="#" className="link" onClick={e=>e.preventDefault()}>Show gallery</a></div>
+                </>
+              )}
+              <div className="cap-table">
+                <h4>Recommended Max Capacity:</h4>
+                {["Rectangular Tables – 75 people","Circular Tables – 72 people","Cocktail / Reception – 110 people","Conference Room – 50 people (sit-down)","Classroom Style – 95 people"].map((r,i)=>
+                  <div className="cap-row" key={i}><span>• {r}</span></div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {sel === "main" && (
+            <div className="accordion">
+              <div className="accordion-head" onClick={()=>setExtOpen(!extOpen)}>
+                <span className="ic">🔶</span>
+                <span>Optional Extension (Elevated Area)</span>
+                <span className={"arrow"+(extOpen?" open":"")}>▼</span>
+              </div>
+              {extOpen && (
+                <div className="accordion-body">
+                  <p className="section-note">The Elevated space is an extension of the Main Hall and has its own entrance. The attendees sitting in this space can see the Main Hall and stage.</p>
+                  {EXTENSIONS.map(ext=>(
+                    <div key={ext.id} className={"ext-option"+(data.extension===ext.id?" sel":"")} onClick={()=>set({extension:data.extension===ext.id?null:ext.id})}>
+                      <h5>{ext.name}</h5>
+                      <p>{ext.desc.split("\n")[0]}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Booking Start Date: <span className="req">*</span></label>
+              <input className="form-input" type="date" value={data.startDate||""} onChange={e=>set({startDate:e.target.value})}/>
+            </div>
+            <div className="form-group">
+              <label>Booking End Date: <span className="req">*</span></label>
+              <input className="form-input" type="date" value={data.endDate||""} onChange={e=>set({endDate:e.target.value})}/>
+            </div>
+          </div>
+          <p className="section-note" style={{marginTop:8}}>Total Space Rental (Including set-up, tear-down, and clean-up)</p>
+          <p className="section-note" style={{color:"var(--accent)",fontWeight:600}}>* Booking start and end date are required for monthly calculations</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 4: LAYOUT
+   ================================================================ */
+function Step4({ data, set }) {
+  return (
+    <div>
+      <div className="step-title">Venue Layout</div>
+
+      <div className="layout-section">
+        <h4>Space Requirements:</h4>
+        <div className="space-req-grid">
+          {SPACE_REQS.map((r,i)=>(
+            <label className="chk-row" key={i}>
+              <input type="checkbox" checked={!!(data.spaceReqs||{})[i]} onChange={e=>{
+                const sr={...(data.spaceReqs||{})};
+                sr[i]=e.target.checked;
+                set({spaceReqs:sr});
+              }}/>
+              <span>{r}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="layout-section">
+        <h4>Main Hall Floor Layout:</h4>
+        {FLOOR_LAYOUTS.map((l,i)=>(
+          <label className="layout-option" key={i}>
+            <input type="radio" name="floor" checked={data.floorLayout===i} onChange={()=>set({floorLayout:i})}/>
+            <span>{l}</span>
+          </label>
+        ))}
+        <div className="layout-img">Recommended for 75 people — Floor Plan Image</div>
+        <div className="layout-cap-box">
+          <b>Recommended capacity ≈ 75 people</b><br/>
+          • 8 Rectangular 6' Tables<br/>• 2 Rectangular 8' Tables
+        </div>
+      </div>
+
+      <div className="layout-section">
+        <h4>Raised Area + Elevated Area Floor Layout:</h4>
+        {ELEVATED_LAYOUTS.map((l,i)=>(
+          <label className="layout-option" key={i}>
+            <input type="radio" name="elevated" checked={data.elevLayout===i} onChange={()=>set({elevLayout:i})}/>
+            <span>{l}</span>
+          </label>
+        ))}
+        <div className="layout-img">Additional capacity ≈ 30 people — Floor Plan Image</div>
+      </div>
+
+      <div className="layout-section">
+        <h4>Stage Layout:</h4>
+        {STAGE_LAYOUTS.map((l,i)=>(
+          <label className="layout-option" key={i}>
+            <input type="radio" name="stage" checked={data.stageLayout===i} onChange={()=>set({stageLayout:i})}/>
+            <span>{l}</span>
+          </label>
+        ))}
+        <div className="layout-img">Stage Layout Diagram</div>
+      </div>
+
+      <div className="form-row full">
+        <div className="form-group">
+          <label>Floor Layout Notes:</label>
+          <textarea className="form-input" placeholder="Upload a floor layout you have in mind. Use one of our blank layouts to help with notes and projections." value={data.layoutNotes||""} onChange={e=>set({layoutNotes:e.target.value})}/>
+        </div>
+      </div>
+
+      <div className="layout-section">
+        <h4>Main Hall Rentals:</h4>
+        <div className="rental-grid">
+          {MAIN_HALL_RENTALS.map(r=>{
+            const qty = (data.hallRentals||{})[r.id]||0;
+            return (
+              <div key={r.id} className={"rental-card"+(qty>0?" sel":"")}>
+                <div className="thumb"/>
+                <div className="rname">{r.name}</div>
+                <div className="rprice">{r.price}</div>
+                <div className="rental-qty">
+                  <button onClick={()=>{const hr={...(data.hallRentals||{})};hr[r.id]=Math.max(0,qty-1);set({hallRentals:hr})}}>−</button>
+                  <span>{qty}</span>
+                  <button onClick={()=>{const hr={...(data.hallRentals||{})};hr[r.id]=qty+1;set({hallRentals:hr})}}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 5: RENTALS
+   ================================================================ */
+function Step5({ data, set }) {
+  return (
+    <div>
+      <div className="step-title">Rentals</div>
+      <p className="section-note">Select additional rentals for your event. Items with quantities allow you to specify how many you need.</p>
+
+      <div className="rental-category">
+        <h4>Main Hall Rentals</h4>
+        <div className="rental-grid">
+          {MAIN_HALL_RENTALS.map(r=>{
+            const qty=(data.rentals||{})[r.id]||0;
+            return(
+              <div key={r.id} className={"rental-card"+(qty>0?" sel":"")}>
+                <div className="thumb"/>
+                <div className="rname">{r.name}</div>
+                <div className="rprice">{r.price}</div>
+                <div className="rental-qty">
+                  <button onClick={()=>{const rr={...(data.rentals||{})};rr[r.id]=Math.max(0,qty-1);set({rentals:rr})}}>−</button>
+                  <span>{qty}</span>
+                  <button onClick={()=>{const rr={...(data.rentals||{})};rr[r.id]=qty+1;set({rentals:rr})}}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rental-category">
+        <h4>Content Rentals (AV & Decor)</h4>
+        <div className="rental-grid">
+          {CONTENT_RENTALS.map(r=>{
+            const qty=(data.contentRentals||{})[r.id]||0;
+            return(
+              <div key={r.id} className={"rental-card"+(qty>0?" sel":"")}>
+                <div className="thumb"/>
+                <div className="rname">{r.name}</div>
+                <div className="rprice">{r.price}</div>
+                <div className="rental-qty">
+                  <button onClick={()=>{const cr={...(data.contentRentals||{})};cr[r.id]=Math.max(0,qty-1);set({contentRentals:cr})}}>−</button>
+                  <span>{qty}</span>
+                  <button onClick={()=>{const cr={...(data.contentRentals||{})};cr[r.id]=qty+1;set({contentRentals:cr})}}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="form-row full">
+        <div className="form-group">
+          <label>Other 3rd Party Rentals (as as detailed as possible):</label>
+          <textarea className="form-input" placeholder="Describe any external rentals you plan to bring..." value={data.otherRentals||""} onChange={e=>set({otherRentals:e.target.value})}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 6: CATERING
+   ================================================================ */
+function Step6({ data, set }) {
+  return (
+    <div>
+      <div className="step-title">Catering</div>
+
+      <div className="form-group mb">
+        <label style={{fontWeight:700,fontSize:14}}>Beverage Package <span style={{cursor:"help"}} title="Included beverage service">ℹ</span></label>
+      </div>
+      <div className="radio-group">
+        <label className="radio-option">
+          <input type="radio" name="bevPkg" checked={data.bevPkg==="hot_cold"} onChange={()=>set({bevPkg:"hot_cold"})}/>
+          <span>Hot/Cold Beverages (Coffee, Tea, Soft Drinks)</span>
+        </label>
+        {data.bevPkg==="hot_cold" && (
+          <div style={{paddingLeft:24,marginBottom:8}}>
+            {["Up to 30 People","Up to 50 People","Up to 100 People"].map(o=>(
+              <label className="radio-option" key={o} style={{paddingLeft:8}}>
+                <input type="radio" name="bevSize" checked={data.bevSize===o} onChange={()=>set({bevSize:o})}/>
+                <span>{o}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        <label className="radio-option">
+          <input type="radio" name="bevPkg" checked={data.bevPkg==="none"} onChange={()=>set({bevPkg:"none"})}/>
+          <span>No beverages required</span>
+        </label>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+        <label className="chk-row">
+          <input type="checkbox" checked={!!data.buffetCovers} onChange={e=>set({buffetCovers:e.target.checked})}/>
+          <span><b>Buffet Table with Wipeable Covers (for Main Hall):</b></span>
+          {data.buffetCovers && (
+            <span style={{display:"flex",gap:8,marginLeft:8}}>
+              {["12'","16'","18'","24'"].map(s=>(
+                <label key={s} style={{display:"flex",alignItems:"center",gap:4,fontSize:12}}>
+                  <input type="radio" name="buffetSize" checked={data.buffetSize===s} onChange={()=>set({buffetSize:s})} style={{accentColor:"var(--accent)"}}/>{s}
+                </label>
+              ))}
+            </span>
+          )}
+        </label>
+        <label className="chk-row" style={{alignItems:"center"}}>
+          <input type="checkbox" checked={!!data.spandexCovers} onChange={e=>set({spandexCovers:e.target.checked})}/>
+          <span><b>Buffet Tables Spandex Covers :</b></span>
+          {data.spandexCovers && (
+            <span style={{display:"flex",gap:8,marginLeft:8,alignItems:"center"}}>
+              <input className="form-input" type="number" min="0" value={data.spandexQty||0} onChange={e=>set({spandexQty:e.target.value})} style={{width:50,padding:"4px 8px",fontSize:13}}/>
+              <select className="form-input" value={data.spandexColor||""} onChange={e=>set({spandexColor:e.target.value})} style={{width:100,padding:"4px 8px",fontSize:13}}>
+                <option value="">Color</option>
+                <option value="white">White</option>
+                <option value="black">Black</option>
+                <option value="ivory">Ivory</option>
+              </select>
+            </span>
+          )}
+        </label>
+      </div>
+
+      <div className="radio-group">
+        <div className="radio-group-label">Do you require catering?</div>
+        <label className="radio-option">
+          <input type="radio" name="catering" checked={data.catering==="no_food"} onChange={()=>set({catering:"no_food"})}/>
+          <span>No, there will be no food at the event</span>
+        </label>
+        <label className="radio-option">
+          <input type="radio" name="catering" checked={data.catering==="own"} onChange={()=>set({catering:"own"})}/>
+          <span>No, I will be bringing my own catered food and/or snacks.</span>
+        </label>
+        <label className="radio-option">
+          <input type="radio" name="catering" checked={data.catering==="yes"} onChange={()=>set({catering:"yes"})}/>
+          <span>Yes, please provide me catering options for</span>
+        </label>
+        {data.catering==="yes" && (
+          <div style={{paddingLeft:28,display:"flex",flexDirection:"column",gap:4}}>
+            {["Breakfast","Lunch","Dinner","Snack Food"].map(m=>(
+              <label className="chk-row" key={m}>
+                <input type="checkbox" checked={!!(data.meals||{})[m]} onChange={e=>{const ml={...(data.meals||{})};ml[m]=e.target.checked;set({meals:ml})}}/>
+                <span>{m}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Catering Specifics ( + for an additional cost ):</label>
+          <textarea className="form-input" placeholder='Specify the catering you would like Collaburo to organize for you (ex. Continental Breakfast, Italian Dinner, etc) with the budget in mind. This will not be included in the quote and will be calculated separately.' value={data.cateringNotes||""} onChange={e=>set({cateringNotes:e.target.value})}/>
+        </div>
+        <div className="form-group">
+          <label>Catering Delivery Time:</label>
+          <input className="form-input" type="time" value={data.cateringTime||"14:00"} onChange={e=>set({cateringTime:e.target.value})}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 7: ADDITIONAL SERVICES
+   ================================================================ */
+function Step7({ data, set }) {
+  const toggle = (group, id) => {
+    const g = { ...(data[group] || {}) };
+    g[id] = !g[id];
+    set({ [group]: g });
+  };
+  return (
+    <div>
+      <div className="step-title">Additional Services</div>
+
+      <div className="service-group">
+        <h4>Set up Services</h4>
+        {SETUP_SERVICES.map(s=>(
+          <div className="service-item" key={s.id}>
+            <input type="checkbox" checked={!!(data.setupSvc||{})[s.id]} onChange={()=>toggle("setupSvc",s.id)}/>
+            <div className="service-info"><b>{s.name}</b><span>{s.desc}</span></div>
+            <div className="service-price">{s.price}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="service-group">
+        <h4>Event Services</h4>
+        {EVENT_SERVICES.map(s=>(
+          <div className="service-item" key={s.id}>
+            <input type="checkbox" checked={!!(data.eventSvc||{})[s.id]} onChange={()=>toggle("eventSvc",s.id)}/>
+            <div className="service-info"><b>{s.name}</b><span>{s.desc}</span></div>
+            <div className="service-price">{s.price}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="service-group">
+        <h4>Clear-up Services</h4>
+        {CLEANUP_SERVICES.map(s=>(
+          <div className="service-item" key={s.id}>
+            <input type="checkbox" checked={!!(data.cleanSvc||{})[s.id]} onChange={()=>toggle("cleanSvc",s.id)}/>
+            <div className="service-info"><b>{s.name}</b><span>{s.desc}</span></div>
+            <div className="service-price">{s.price}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="service-group">
+        <h4>3rd Party Services</h4>
+        <p className="section-note">Check any external vendors you plan to bring.</p>
+        {THIRD_PARTY.map(s=>(
+          <div className="service-item" key={s.id}>
+            <input type="checkbox" checked={!!(data.thirdParty||{})[s.id]} onChange={()=>toggle("thirdParty",s.id)}/>
+            <div className="service-info"><b>{s.name}</b><span>{s.desc}</span></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 8: ADDITIONAL INFO
+   ================================================================ */
+function Step8({ data, set }) {
+  return (
+    <div>
+      <div className="step-title">Additional Information</div>
+
+      <div className="form-group mb">
+        <label>Expected Guest Arrival Time:</label>
+        <input className="form-input" placeholder="Enter the time communicated to majority of guests to come at" value={data.arrivalTime||""} onChange={e=>set({arrivalTime:e.target.value})}/>
+      </div>
+
+      <div style={{marginBottom:16}}>
+        <label style={{fontWeight:600,fontSize:13,display:"block",marginBottom:4}}>Emergency Contact during event:</label>
+        <p className="section-note" style={{marginBottom:10}}>Provide the contact information of someone attending the event that will most likely answer the phone or respond to text messages when main guest (bride/groom, birthday person) is busy.</p>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Name:</label>
+            <input className="form-input" placeholder="Enter name of emergency contact" value={data.emergName||""} onChange={e=>set({emergName:e.target.value})}/>
+          </div>
+          <div className="form-group">
+            <label>Phone Number:</label>
+            <input className="form-input" type="tel" placeholder="Enter valid phone number: (123) 123-1234" value={data.emergPhone||""} onChange={e=>set({emergPhone:e.target.value})}/>
+          </div>
+        </div>
+      </div>
+
+      <div className="form-group mb">
+        <label>Special Notes:</label>
+        <textarea className="form-input" style={{minHeight:100}} placeholder="Share any details or special requests that will help us tailor your event to perfection!" value={data.notes||""} onChange={e=>set({notes:e.target.value})}/>
+      </div>
+
+      <div style={{height:1,background:"var(--line)",margin:"20px 0"}}/>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Blackboard Sign Message:</label>
+          <input className="form-input" placeholder="Ex. Welcome to Joanna's 20th Birthday Party" value={data.signMsg||""} onChange={e=>set({signMsg:e.target.value})}/>
+        </div>
+        <div className="form-group">
+          <label>Security Deposit (refundable):</label>
+          <input className="form-input" style={{background:"var(--bg-3)"}} value={data.secDeposit||"0"} onChange={e=>set({secDeposit:e.target.value})}/>
+        </div>
+      </div>
+
+      <div style={{marginTop:16}}>
+        <label style={{fontWeight:600,fontSize:13,display:"block",marginBottom:10}}>Add-Ons:</label>
+        {[
+          {id:"wifi",label:"Wi-Fi",tip:"Wireless internet access for guests"},
+          {id:"sink",label:"Sink Access",tip:"Access to kitchen sink area"},
+          {id:"fridge",label:"Mini Fridge",tip:"Small refrigerator for beverages"},
+          {id:"elevator",label:"Accessibility Elevator",tip:"Elevator access for guests with mobility needs"},
+          {id:"printer",label:"Printer Access",tip:"Access to on-site printer"},
+        ].map(a=>(
+          <label className="chk-row" key={a.id}>
+            <input type="checkbox" checked={!!(data.addons||{})[a.id]} onChange={e=>{const ad={...(data.addons||{})};ad[a.id]=e.target.checked;set({addons:ad})}}/>
+            <span>{a.label} <span style={{cursor:"help",color:"var(--ink-4)",fontSize:12}} title={a.tip}>ℹ</span></span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   STEP 9: CHECKOUT
+   ================================================================ */
+function Step9({ data, set }) {
+  return (
+    <div>
+      <div style={{maxWidth:640,margin:"0 auto"}}>
+        <div className="summary-card">
+          <h3>Summary</h3>
+          <div className="cost-label">Total Quote:</div>
+          <div className="cost-row indent"><span>Space Rental</span><span>$2,603.00</span></div>
+          <div className="cost-row indent"><span>Space Content Rentals (not including delivery)</span><span>$1,124.00</span></div>
+          <div className="cost-row indent"><span>Catering Cost (price not guaranteed until invoiced by caterer)</span><span>$0.00</span></div>
+          <div className="cost-row indent"><span>Set up Service Cost</span><span>$67.50</span></div>
+          <div className="cost-row indent"><span>Clear up Service Cost</span><span>$60.00</span></div>
+          <div className="cost-sep"/>
+          <div className="cost-row"><span>Discount</span><span>$0.00</span></div>
+          <div className="cost-row"><b>Subtotal</b><b>$3,854.50</b></div>
+          <div className="cost-row"><span>Tax (13%)</span><span>$501.09</span></div>
+          <div className="cost-total"><span>Total</span><span>$4,355.59</span></div>
+          <div style={{height:12}}/>
+          <div className="cost-row"><span>Damage Waiver (refundable)</span><span>$0.00</span></div>
+        </div>
+
+        <div className="see-all"><a href="#">See all options on one page ↗</a></div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   MAIN APP
+   ================================================================ */
+function App() {
+  const [step, setStep] = React.useState(1);
+  const [formData, setFormData] = React.useState({ privacy:"private", alcohol:"yes", venue:"main" });
+
+  const updateData = (patch) => setFormData(prev => ({ ...prev, ...patch }));
+
+  const goNext = () => { if(step<9) { setStep(step+1); window.scrollTo(0,0); }};
+  const goPrev = () => { if(step>1) { setStep(step-1); window.scrollTo(0,0); }};
+  const goTo = (s) => { setStep(s); window.scrollTo(0,0); };
+
+  const renderStep = () => {
+    switch(step){
+      case 1: return <Step1 data={formData} set={updateData}/>;
+      case 2: return <Step2 data={formData} set={updateData}/>;
+      case 3: return <Step3 data={formData} set={updateData}/>;
+      case 4: return <Step4 data={formData} set={updateData}/>;
+      case 5: return <Step5 data={formData} set={updateData}/>;
+      case 6: return <Step6 data={formData} set={updateData}/>;
+      case 7: return <Step7 data={formData} set={updateData}/>;
+      case 8: return <Step8 data={formData} set={updateData}/>;
+      case 9: return <Step9 data={formData} set={updateData}/>;
+      default: return null;
+    }
+  };
+
+  const isCheckout = step === 9;
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <h1>Customize Your Event</h1>
+        <div className="progress-bar">
+          {STEPS.map((s,i)=>(
+            <React.Fragment key={s.id}>
+              {i>0 && <div className={"progress-line"+(s.id<=step?" done":"")}/>}
+              <div className="progress-step" onClick={()=>goTo(s.id)}>
+                <div className={"progress-dot"+(s.id===step?" active":s.id<step?" done":"")}>
+                  {s.id < step ? "✓" : s.id}
+                </div>
+                <span className={"progress-label"+(s.id===step?" active":s.id<step?" done":"")}>{s.short}</span>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+      <div className="page-divider"/>
+
+      {isCheckout ? (
+        <div style={{maxWidth:1400,width:"100%",margin:"0 auto",padding:"40px 48px 80px"}}>
+          {renderStep()}
+          <div className="step-nav" style={{maxWidth:640,margin:"24px auto 0",justifyContent:"center"}}>
+            <button className="btn-prev" onClick={goPrev}>Previous</button>
+            <button className="btn-next" onClick={()=>alert("✓ Booking request submitted!")}>Submit</button>
+          </div>
+        </div>
+      ) : (
+        <div className="body-wrap">
+          <div className="body-main">
+            {renderStep()}
+            <div className="step-nav">
+              {step>1 && <button className="btn-prev" onClick={goPrev}>Previous</button>}
+              <button className="btn-next" onClick={goNext}>{step===8?"Review & Checkout":"Next"}</button>
+            </div>
+          </div>
+          <div className="body-sidebar">
+            <CostSidebar step={step}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================
+   DYNAMIC APP — reads steps from admin localStorage
+   ================================================================ */
+const ADMIN_STORAGE_KEY = "collaburo.admin.workflow.v14";
+
+function loadAdminSteps() {
+  try {
+    const raw = localStorage.getItem(ADMIN_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return null;
+}
+
+// 4-level rich options tree helpers
+const _RICH_HAS_CHILD = { option: "hasSubOptions", subOption: "hasSelections", selection: "hasSpecifications", specification: null };
+const _RICH_CHILD     = { option: "subOptions",    subOption: "selections",    selection: "specifications",    specification: null };
+const _RICH_NEXT      = { option: "subOption",     subOption: "selection",     selection: "specification",     specification: null };
+
+// Pricing structure presets (mirrored from admin file)
+const _PRICING_UNITS = {
+  flat: "flat fee",
+  per_person: "/ person",
+  per_hour: "/ hour",
+  per_person_hour: "/ person / hr",
+  included: "included",
+};
+const _pricingUnitFor = (s) => _PRICING_UNITS[s] || "";
+
+// Look up total guest count from workflow answers.
+function findGuestCount(steps, answers) {
+  for (const step of (steps || [])) {
+    for (const f of (step.fields || [])) {
+      const lab = (f.label || "").toLowerCase();
+      if (lab.includes("attendees") || lab.includes("guests") || lab.includes("number of people")) {
+        const v = answers ? answers[f.id] : null;
+        const n = Number(v);
+        if (v != null && v !== "" && !isNaN(n) && n > 0) return n;
+      }
+    }
+  }
+  return 0;
+}
+
+// Compute priced lines + total. Quantities live as __qty_people / __qty_hours on each value slice.
+function computeRichCost(field, value, guestCount) {
+  if (!field || !value || typeof value !== "object") return { total: 0, lines: [] };
+  const lines = [];
+  let total = 0;
+  const walk = (items, valueSlice, level, depth) => {
+    if (!items || !valueSlice || typeof valueSlice !== "object") return;
+    const items_ = items.map(i => typeof i === "string" ? { label: i } : i);
+    items_.forEach(item => {
+      const childValue = valueSlice[item.label];
+      if (childValue === undefined) return;
+      const basePrice = item.enablePrice ? (Number(item.price) || 0) : 0;
+      const guests = Number(guestCount) || 0;
+      let qtyPeople = item.peopleLinkedToGuests
+        ? guests
+        : ((childValue && Number(childValue.__qty_people)) || 1);
+      const qtyHours = (childValue && Number(childValue.__qty_hours)) || 1;
+      let multiplier = 1;
+      if (item.pricingStructure === "per_person") multiplier = qtyPeople;
+      else if (item.pricingStructure === "per_hour") multiplier = qtyHours;
+      else if (item.pricingStructure === "per_person_hour") multiplier = qtyPeople * qtyHours;
+      const price = basePrice * multiplier;
+      lines.push({
+        label: item.label, price, basePrice, qtyPeople, qtyHours, multiplier,
+        depth, enablePrice: !!item.enablePrice, pricingStructure: item.pricingStructure
+      });
+      total += price;
+      const childKey = _RICH_CHILD[level];
+      const nextLevel = _RICH_NEXT[level];
+      const hasChildKey = _RICH_HAS_CHILD[level];
+      if (childKey && nextLevel && hasChildKey && item[hasChildKey] && item[childKey]) {
+        walk(item[childKey], childValue, nextLevel, depth + 1);
+      }
+    });
+  };
+  walk(field.options || [], value, "option", 0);
+  return { total, lines };
+}
+
+// Aggregate options costs across all rich-options fields in the workflow.
+function computeWorkflowOptionsCost(steps, answers) {
+  const guestCount = findGuestCount(steps, answers);
+  const out = [];
+  (steps || []).forEach(step => {
+    (step.fields || []).forEach(f => {
+      if (f.visibleToClient === false) return;
+      const hasRich = (f.options || []).some(o => typeof o === "object");
+      if (!hasRich) return;
+      const v = answers[f.id];
+      if (!v || typeof v !== "object" || Object.keys(v).length === 0) return;
+      const { total, lines } = computeRichCost(f, v, guestCount);
+      if (lines.length === 0) return;
+      out.push({ fieldId: f.id, fieldLabel: f.label, total, lines });
+    });
+  });
+  return out;
+}
+
+// Dynamic cost sidebar for the admin-driven workflow flow.
+function DynCostSidebar({ steps, answers }) {
+  const fmt = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Only surface priced items. Drop selected items with enablePrice off, and drop fields
+  // entirely if they have no priced items selected.
+  const optionsCost = computeWorkflowOptionsCost(steps, answers)
+    .map((fc) => ({ ...fc, lines: fc.lines.filter((ln) => ln.enablePrice) }))
+    .filter((fc) => fc.lines.length > 0);
+  const optionsTotal = optionsCost.reduce((s, c) => s + c.total, 0);
+  const grandTotal = optionsTotal;
+
+  return (
+    <div className="cost-card">
+      <h3>Summary of Cost</h3>
+      <div className="cost-label">Estimated Quote:</div>
+      {optionsCost.length === 0 && (
+        <div style={{fontSize:12,color:"var(--ink-4)",padding:"8px 0",fontStyle:"italic"}}>
+          Select options to see pricing here.
+        </div>
+      )}
+      {optionsCost.map(fc => (
+        <div key={fc.fieldId} style={{marginBottom:8}}>
+          <div className="cost-row" style={{fontWeight:600,color:"var(--ink)"}}>
+            <span>{fc.fieldLabel}</span>
+            <span>{fc.total > 0 ? fmt(fc.total) : ""}</span>
+          </div>
+          {fc.lines.map((ln, i) => {
+            let breakdown = "";
+            if (ln.enablePrice && ln.basePrice > 0 && ln.multiplier > 1) {
+              if (ln.pricingStructure === "per_person_hour") breakdown = ln.qtyPeople + " × " + ln.qtyHours + "hr × $" + ln.basePrice;
+              else if (ln.pricingStructure === "per_person") breakdown = ln.qtyPeople + " × $" + ln.basePrice;
+              else if (ln.pricingStructure === "per_hour") breakdown = ln.qtyHours + "hr × $" + ln.basePrice;
+            }
+            const priceText = ln.enablePrice && ln.price > 0 ? fmt(ln.price) : "";
+            return (
+              <React.Fragment key={i}>
+                <div className="cost-row" style={{paddingLeft:8 + ln.depth*12,fontSize:12,color:"var(--ink-3)"}}>
+                  <span>{ln.label}</span>
+                  <span style={{fontSize:11}}>{priceText}</span>
+                </div>
+                {breakdown && (
+                  <div className="cost-row" style={{paddingLeft:20 + ln.depth*12,fontSize:10,color:"var(--ink-4)",fontStyle:"italic"}}>
+                    <span>{breakdown}</span>
+                    <span></span>
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      ))}
+      {optionsCost.length > 0 && (
+        <>
+          <div className="cost-sep"/>
+          <div className="cost-row"><b>Subtotal</b><b>{fmt(grandTotal)}</b></div>
+          <div className="cost-total"><span>Total</span><span>{fmt(grandTotal)}</span></div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Inline description with See more / See less
+function DynInlineDescription({ text }) {
+  const [expanded, setExpanded] = React.useState(false);
+  if (!text) return null;
+  const isLong = text.length > 220;
+  const shown = (!isLong || expanded) ? text : text.slice(0, 220).trimEnd() + "…";
+  return (
+    <div style={{fontSize:13,color:"#444",lineHeight:1.55,marginTop:4,marginBottom:6,paddingLeft:30}}>
+      {shown.split("\n").map((para, i) => (
+        <span key={i}>{i > 0 && <br />}{para}</span>
+      ))}
+      {isLong && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded(x => !x); }}
+          style={{background:"none",border:"none",color:"#6b6b6b",fontSize:13,fontWeight:500,cursor:"pointer",padding:0,marginLeft:4,textDecoration:"underline"}}
+        >
+          {expanded ? "See less" : "See more…"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Admin-controlled selectors (Sex / # of people / # of hours).
+// When the People selector is linked to guest count, the dropdown is replaced by a guest-count indicator.
+function DynQuantityRow({ item, value, onChange, label, guestCount }) {
+  const hasSex = !!item.hasSexOption;
+  const peopleLinked = !!item.peopleLinkedToGuests;
+  const hasPeopleSelector = !!item.hasPeopleOption && !peopleLinked;
+  const showLinkedIndicator = !!item.hasPeopleOption && peopleLinked;
+  const hasHours = !!item.hasHoursOption;
+  if (!hasSex && !hasPeopleSelector && !hasHours && !showLinkedIndicator) return null;
+
+  const cur = value[label] || {};
+  const peopleRange = item.peopleRange || { min: 1, max: 50 };
+  const hoursRange = item.hoursRange || { min: 1, max: 24 };
+  const sexOptions = item.sexOptions || [];
+
+  const peopleVals = Array.from({length: Math.max(0, peopleRange.max - peopleRange.min + 1)}, (_, i) => peopleRange.min + i);
+  const hoursVals = Array.from({length: Math.max(0, hoursRange.max - hoursRange.min + 1)}, (_, i) => hoursRange.min + i);
+
+  const setVal = (key, val) => onChange({ ...value, [label]: { ...cur, [key]: val } });
+
+  const req = !!item.requireSelections;
+  const reqMark = req ? <span style={{color:"#d44",fontWeight:700,marginLeft:2}}>*</span> : null;
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:18,paddingLeft:30,marginTop:4,marginBottom:6,fontSize:13,flexWrap:"wrap"}}>
+      {showLinkedIndicator && (
+        <span style={{display:"inline-flex",alignItems:"center",gap:6,color:"#6b6b6b",fontStyle:"italic"}}>
+          <span>📊</span>
+          <span># of people: <b style={{color:"#1a1a1a"}}>{guestCount || 0}</b> {guestCount ? "(from total guest count)" : "(set total guest count in Step 2)"}</span>
+        </span>
+      )}
+      {hasSex && sexOptions.length > 0 && (
+        <label style={{display:"inline-flex",alignItems:"center",gap:8}}>
+          <span style={{fontWeight:600}}>Sex{reqMark}:</span>
+          <select className="form-input" value={cur.__sex || ""} onChange={(e)=>setVal("__sex", e.target.value)} style={{width:"auto",minWidth:110,padding:"6px 28px 6px 10px"}}>
+            <option value="">Select…</option>
+            {sexOptions.map((opt, i) => <option key={i} value={opt}>{opt}</option>)}
+          </select>
+        </label>
+      )}
+      {hasPeopleSelector && (
+        <label style={{display:"inline-flex",alignItems:"center",gap:8}}>
+          <span style={{fontWeight:600}}># of people{reqMark}:</span>
+          <select className="form-input" value={cur.__qty_people || peopleRange.min} onChange={(e)=>setVal("__qty_people",Number(e.target.value))} style={{width:"auto",minWidth:70,padding:"6px 28px 6px 10px"}}>
+            {peopleVals.map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+      )}
+      {hasHours && (
+        <label style={{display:"inline-flex",alignItems:"center",gap:8}}>
+          <span style={{fontWeight:600}}># of hours{reqMark}:</span>
+          <select className="form-input" value={cur.__qty_hours || hoursRange.min} onChange={(e)=>setVal("__qty_hours",Number(e.target.value))} style={{width:"auto",minWidth:70,padding:"6px 28px 6px 10px"}}>
+            {hoursVals.map(n=><option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+      )}
+    </div>
+  );
+}
+
+function DynRichTree({ items, level, displayAs, value, onChange, fieldId, depth, levelDisplays, stepType, guestCount }) {
+  const items_ = (items || []).map(i => typeof i === "string" ? { label: i } : i);
+  const hasChildKey = _RICH_HAS_CHILD[level];
+  const childKey = _RICH_CHILD[level];
+  const nextLevel = _RICH_NEXT[level];
+
+  const isSelected = (label) => !!(value && value[label]);
+  const setSelected = (label, selected) => {
+    if (displayAs === "checkbox") {
+      const next = { ...(value || {}) };
+      if (selected) {
+        if (next[label] === undefined) next[label] = {};
+      } else {
+        delete next[label];
+      }
+      onChange(next);
+    } else {
+      if (selected) onChange({ [label]: (value && value[label]) || {} });
+      else onChange({});
+    }
+  };
+
+  const renderInfoIcons = (it) => (
+    <>
+      {it.infoText && (
+        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:15,height:15,borderRadius:"50%",background:"#efefef",color:"#6b6b6b",fontSize:9,fontWeight:700,cursor:"help",position:"relative",marginLeft:5}} className="dyn-tip-trigger">
+          i
+          <span className="dyn-tooltip" style={{minWidth:160}}>
+            <span style={{display:"block",fontSize:12}}>{it.infoText}</span>
+          </span>
+        </span>
+      )}
+      {it.infoImages && it.infoImages.length > 0 && (
+        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",height:15,padding:"0 4px",borderRadius:8,background:"#fff4eb",color:"#ed7a3c",fontSize:8,fontWeight:800,cursor:"pointer",position:"relative",marginLeft:4,letterSpacing:0.3}} className="dyn-tip-trigger">
+          IMG
+          <span className="dyn-tooltip" style={{minWidth:200}}>
+            {it.infoImages.map((im, ii) => (
+              <img key={ii} src={im} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:6,display:"block",marginBottom:4}} />
+            ))}
+          </span>
+        </span>
+      )}
+    </>
+  );
+
+  if (displayAs === "select") {
+    const selLabel = Object.keys(value || {})[0] || "";
+    const selItem = items_.find(it => it.label === selLabel);
+    return (
+      <div>
+        <select
+          className="form-input"
+          value={selLabel}
+          onChange={(e) => {
+            const lbl = e.target.value;
+            if (!lbl) onChange({});
+            else onChange({ [lbl]: (value && value[lbl]) || {} });
+          }}
+        >
+          <option value="">Select…</option>
+          {items_.map((it, i) => {
+            const unit = _pricingUnitFor(it.pricingStructure);
+            const suffix = it.enablePrice && it.pricingStructure === "included"
+              ? " (included)"
+              : it.enablePrice && Number(it.price) > 0
+              ? ` (+$${it.price}${unit ? " " + unit : ""})`
+              : "";
+            return (<option key={i} value={it.label}>{it.label}{suffix}</option>);
+          })}
+        </select>
+        {selItem && hasChildKey && selItem[hasChildKey] && (selItem[childKey] || []).length > 0 && (
+          <div style={{paddingLeft:14,marginTop:8,borderLeft:"2px solid #e5e5e5"}}>
+            <DynRichTree
+              items={selItem[childKey]}
+              level={nextLevel}
+              displayAs={(levelDisplays && levelDisplays[nextLevel]) || "checkbox"}
+              value={(value && value[selLabel]) || {}}
+              onChange={(nv) => onChange({ [selLabel]: nv })}
+              fieldId={fieldId + "_" + selLabel.replace(/\s+/g, "_")}
+              depth={depth + 1}
+              levelDisplays={levelDisplays}
+              guestCount={guestCount}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const isServicesStep = stepType === "services";
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {items_.map((it, i) => {
+        const sel = isSelected(it.label);
+        return (
+          <div key={i}>
+            <label style={{display:"flex",alignItems:"flex-start",gap:10,padding:"6px 0",cursor:"pointer",fontSize:13.5}}>
+              <input
+                type={displayAs === "checkbox" ? "checkbox" : "radio"}
+                name={fieldId}
+                checked={sel}
+                onChange={(e) => setSelected(it.label, e.target.checked)}
+                style={{marginTop:3,accentColor:"#ed7a3c"}}
+              />
+              <span style={{flex:1}}>
+                {it.label}
+                {it.enablePrice && it.pricingStructure === "included" && (
+                  <span style={{color:"#888",marginLeft:8,fontSize:12,fontStyle:"italic"}}>Included in cost</span>
+                )}
+                {it.enablePrice && it.pricingStructure === "quote" && (
+                  <span style={{color:"#6b6b6b",marginLeft:8,fontSize:12,fontStyle:"italic",border:"1px solid #e5e5e5",padding:"1px 8px",borderRadius:10}}>Quote on request</span>
+                )}
+                {it.enablePrice && it.pricingStructure !== "included" && it.pricingStructure !== "quote" && Number(it.price) > 0 && (
+                  <span style={{color:"#ed7a3c",marginLeft:8,fontWeight:600,fontSize:13}}>
+                    +${it.price}{_pricingUnitFor(it.pricingStructure) ? " " + _pricingUnitFor(it.pricingStructure) : ""}
+                  </span>
+                )}
+                {!isServicesStep && renderInfoIcons(it)}
+                {isServicesStep && it.infoImages && it.infoImages.length > 0 && (
+                  <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",height:15,padding:"0 4px",borderRadius:8,background:"#fff4eb",color:"#ed7a3c",fontSize:8,fontWeight:800,cursor:"pointer",position:"relative",marginLeft:4,letterSpacing:0.3}} className="dyn-tip-trigger">
+                    IMG
+                    <span className="dyn-tooltip" style={{minWidth:200}}>
+                      {it.infoImages.map((im, ii) => (<img key={ii} src={im} alt="" style={{maxWidth:"100%",maxHeight:140,borderRadius:6,display:"block",marginBottom:4}} />))}
+                    </span>
+                  </span>
+                )}
+              </span>
+            </label>
+            {isServicesStep && it.infoText && <DynInlineDescription text={it.infoText} />}
+            {sel && <DynQuantityRow item={it} value={value || {}} onChange={onChange} label={it.label} guestCount={guestCount} />}
+            {sel && hasChildKey && it[hasChildKey] && (it[childKey] || []).length > 0 && (
+              <div style={{paddingLeft:28,marginTop:4,marginBottom:6,borderLeft:"2px solid #e5e5e5"}}>
+                <DynRichTree
+                  items={it[childKey]}
+                  level={nextLevel}
+                  displayAs={(levelDisplays && levelDisplays[nextLevel]) || "checkbox"}
+                  value={(value && value[it.label]) || {}}
+                  onChange={(nv) => {
+                    const next = { ...(value || {}) };
+                    next[it.label] = nv;
+                    onChange(next);
+                  }}
+                  fieldId={fieldId + "_" + it.label.replace(/\s+/g, "_")}
+                  depth={depth + 1}
+                  levelDisplays={levelDisplays}
+                  guestCount={guestCount}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DynField({ f, value, onChange, stepType, guestCount }) {
+  if (f.type === "separator") {
+    return <div style={{ gridColumn: "1 / -1", borderTop: "1.5px solid #e5e5e5", margin: "12px 0" }} />;
+  }
+  if (f.type === "instructional") {
+    return (
+      <div style={{ gridColumn: "1 / -1", padding: "6px 0" }}>
+        <p style={{ fontSize: 13, color: "#1a1a1a", lineHeight: 1.6, margin: 0 }}>{f.label}</p>
+        {f.fieldDescription && <p style={{ fontSize: 11.5, color: "#6b6b6b", margin: "4px 0 0", lineHeight: 1.5 }}>{f.fieldDescription}</p>}
+      </div>
+    );
+  }
+  const hasTooltip = f.helpText || f.galleryImage;
+  const tooltipEl = hasTooltip ? (
+    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:"50%",background:"#efefef",color:"#6b6b6b",fontSize:10,fontWeight:700,cursor:"help",position:"relative",verticalAlign:"middle",marginLeft:5,flexShrink:0}} className="dyn-tip-trigger">
+      i
+      <span className="dyn-tooltip">
+        {f.helpText && <span style={{display:"block",marginBottom:f.galleryImage?8:0}}>{f.helpText}</span>}
+        {f.galleryImage && <img src={f.galleryImage} alt="Info" style={{maxWidth:"100%",maxHeight:160,borderRadius:6,display:"block"}} />}
+      </span>
+    </span>
+  ) : null;
+
+  const descEl = f.fieldDescription ? (
+    <span style={{display:"block",width:"100%",fontSize:"11.5px",color:"#6b6b6b",fontWeight:400,lineHeight:1.45,marginTop:2}}>{f.fieldDescription}</span>
+  ) : null;
+
+  // Compute per-field running total for rich-options fields
+  const _hasRichOpts = (f.options || []).some(o => typeof o === "object");
+  const fieldTotal = _hasRichOpts ? computeRichCost(f, value, guestCount).total : 0;
+  const _showTotal = _hasRichOpts && (stepType === "services" || fieldTotal > 0);
+  const totalChip = _showTotal ? (
+    <span style={{marginLeft:"auto",color:"#ed7a3c",fontWeight:700,fontSize:13,paddingLeft:12}}>
+      Total: ${fieldTotal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+    </span>
+  ) : null;
+  const labelEl = (
+    <label style={{fontSize:13,fontWeight:600,position:"relative",display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",width:"100%"}}>
+      <span style={{display:"inline-flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+        {f.label}{f.required && <span className="req"> *</span>}
+        {tooltipEl}
+      </span>
+      {totalChip}
+      {descEl}
+    </label>
+  );
+
+  switch (f.type) {
+    case "textarea":
+      return (<div className="form-group mb">{labelEl}<textarea className="form-input" style={{minHeight:80}} placeholder={f.placeholder||""} value={value||""} onChange={e=>onChange(e.target.value)}/></div>);
+    case "toggle":
+      return (
+        <div className="form-group mb">
+          <label className="chk-row" onClick={()=>onChange(!value)} style={{cursor:"pointer"}}>
+            <input type="checkbox" checked={!!value} readOnly/>
+            <span><b>{f.label}{f.required&&<span className="req"> *</span>}</b>{tooltipEl}{f.fieldDescription&&<span className="chk-desc">{f.fieldDescription}</span>}</span>
+          </label>
+        </div>
+      );
+    case "select": case "multiselect": {
+      const _hasRich = (f.options||[]).some(o => typeof o === "object");
+      if (_hasRich) {
+        const treeValue = (value && typeof value === "object" && !value.main) ? value : {};
+        const _levelDisplays = {
+          option: f.displayAs || (f.type === "select" ? "select" : f.type === "multiselect" ? "checkbox" : "radio"),
+          subOption: f.subOptionDisplayAs || "checkbox",
+          selection: f.selectionDisplayAs || "checkbox",
+          specification: f.specificationDisplayAs || "checkbox",
+        };
+        return (
+          <div className="form-group mb">
+            {labelEl}
+            <DynRichTree
+              items={f.options || []}
+              level="option"
+              displayAs={_levelDisplays.option}
+              value={treeValue}
+              onChange={(v) => onChange(v)}
+              fieldId={f.id}
+              depth={0}
+              levelDisplays={_levelDisplays}
+              stepType={stepType}
+              guestCount={guestCount}
+            />
+          </div>
+        );
+      }
+      const _optLabels = (f.options||[]).map(o => typeof o === "string" ? o : o.label);
+      return (<div className="form-group mb">{labelEl}<select className="form-input" value={value||""} onChange={e=>onChange(e.target.value)} style={{appearance:"none",backgroundImage:"url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round'/></svg>\")",backgroundRepeat:"no-repeat",backgroundPosition:"right 12px center",paddingRight:32,cursor:"pointer"}}><option value="">{f.placeholder||"Select…"}</option>{_optLabels.map((o,i)=><option key={i} value={o}>{o}</option>)}</select></div>);
+    }
+    case "date":
+      return (<div className="form-group mb">{labelEl}<input className="form-input" type="date" value={value||""} onChange={e=>onChange(e.target.value)}/></div>);
+    case "daterange":
+      return (<div className="form-group mb">{labelEl}<div className="form-row"><input className="form-input" type="date" value={(value&&value.start)||""} onChange={e=>onChange({...(value||{}),start:e.target.value})}/><input className="form-input" type="date" value={(value&&value.end)||""} onChange={e=>onChange({...(value||{}),end:e.target.value})}/></div></div>);
+    case "radio": {
+      const _hasRich = (f.options||[]).some(o => typeof o === "object");
+      if (_hasRich) {
+        // Rich options on radio → route through 4-level tree
+        const treeValue = (value && typeof value === "object" && !value.main) ? value : {};
+        const _levelDisplays = {
+          option: "radio",
+          subOption: f.subOptionDisplayAs || "checkbox",
+          selection: f.selectionDisplayAs || "checkbox",
+          specification: f.specificationDisplayAs || "checkbox",
+        };
+        return (
+          <div className="form-group mb">
+            {labelEl}
+            <DynRichTree
+              items={f.options || []}
+              level="option"
+              displayAs="radio"
+              value={treeValue}
+              onChange={(v) => onChange(v)}
+              fieldId={f.id}
+              depth={0}
+              levelDisplays={_levelDisplays}
+            />
+          </div>
+        );
+      }
+      const opts = (f.options || []).map(o => { const p = o.split("|"); return { label: p[0], desc: p[1] || "" }; });
+      return (
+        <div className="form-group mb">
+          {labelEl}
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {opts.map((o,i) => (
+              <label key={i} style={{display:"flex",alignItems:"flex-start",gap:10,border:"1px solid "+(value===o.label?"#ed7a3c":"#d0d0d0"),borderRadius:8,padding:"12px 14px",cursor:"pointer",background:value===o.label?"#fff4eb":"#fff",transition:"border-color .15s,background .15s"}} onClick={()=>onChange(o.label)}>
+                <input type="radio" name={f.id} checked={value===o.label} readOnly style={{marginTop:3,accentColor:"#ed7a3c"}}/>
+                <span>
+                  <div style={{fontSize:13.5,fontWeight:600}}>{o.label}</div>
+                  {o.desc && <div style={{fontSize:12,color:"#6b6b6b",marginTop:2,lineHeight:1.45}}>{o.desc}</div>}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    case "groupselect": {
+      const groups = []; let cur = { label: "", items: [] };
+      (f.options || []).forEach(o => { if (o.startsWith("@")) { if (cur.label||cur.items.length) groups.push(cur); cur = { label: o.slice(1), items: [] }; } else { cur.items.push(o); } });
+      if (cur.label||cur.items.length) groups.push(cur);
+      return (
+        <div className="form-group mb">
+          {labelEl}
+          <select className="form-input" value={value||""} onChange={e=>onChange(e.target.value)} style={{appearance:"none",backgroundImage:"url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round'/></svg>\")",backgroundRepeat:"no-repeat",backgroundPosition:"right 12px center",paddingRight:32,cursor:"pointer"}}>
+            <option value="">{f.placeholder||"Select…"}</option>
+            {groups.map((g,gi) => g.label ? (<optgroup key={gi} label={g.label}>{g.items.map((it,ii)=><option key={ii} value={it}>{it}</option>)}</optgroup>) : g.items.map((it,ii)=><option key={"u"+ii} value={it}>{it}</option>))}
+          </select>
+        </div>
+      );
+    }
+    case "number":
+      return (<div className="form-group mb">{labelEl}<input className="form-input" type="tel" placeholder={f.placeholder||""} value={value||""} onChange={e=>onChange(e.target.value)}/>{(f.min!=null||f.max!=null)&&<span style={{fontSize:11,color:"#999",marginTop:3}}>{f.min!=null&&f.max!=null?`Between ${f.min} and ${f.max}`:f.min!=null?`Minimum: ${f.min}`:`Maximum: ${f.max}`}</span>}</div>);
+    case "file":
+      return (<div className="form-group mb">{labelEl}<div className="form-input" style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",color:"#999",background:"#f7f7f7",borderStyle:"dashed"}}>📎 Drop a file or click to upload</div></div>);
+    case "price":
+      return (<div className="form-group mb">{labelEl}<input className="form-input" placeholder={f.placeholder||"$0.00"} value={value||""} onChange={e=>onChange(e.target.value)}/></div>);
+    case "room":
+      return (
+        <div className="form-group mb">
+          {labelEl}
+          <div className="venue-grid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))"}}>
+            {VENUES.map(v=>(
+              <div key={v.id} className={"venue-thumb"+(value===v.name?" sel":"")} onClick={()=>onChange(v.name)}>
+                <div className="ph">{v.name}</div>
+                <div className="name">{v.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    case "time":
+      return (<div className="form-group mb">{labelEl}<input className="form-input" type="time" value={value||"14:00"} onChange={e=>onChange(e.target.value)} style={{maxWidth:200}}/></div>);
+    case "checkbox": {
+      const _cRichOpts = (f.options||[]).map(o => typeof o === "string" ? { label: o } : o);
+      const _cChecked = typeof value === "object" ? value : { on: !!value };
+      const _cSet = (patch) => onChange({ ..._cChecked, ...patch });
+      return (
+        <div className="form-group mb">
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13.5,cursor:"pointer",fontWeight:600}} onClick={()=>_cSet({on:!_cChecked.on})}>
+              <input type="checkbox" checked={!!_cChecked.on} readOnly style={{accentColor:"#ed7a3c"}}/>
+              <span>{f.label}{f.required&&<span className="req"> *</span>}</span>
+              {tooltipEl}
+              {f.fieldDescription&&<span style={{fontWeight:400,fontSize:12,color:"#6b6b6b"}}>({f.fieldDescription})</span>}
+            </label>
+            {_cChecked.on && f.displayAs==="radio" && _cRichOpts.map((o,i)=>(
+              <label key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:13,cursor:"pointer"}} onClick={()=>_cSet({sub:o.label})}>
+                <input type="radio" name={f.id} checked={_cChecked.sub===o.label} readOnly style={{accentColor:"#ed7a3c"}}/>{o.label}
+              </label>
+            ))}
+            {_cChecked.on && f.displayAs==="select" && (
+              <select className="form-input" style={{width:"auto",minWidth:70}} value={_cChecked.sub||""} onChange={e=>_cSet({sub:e.target.value})}>
+                <option value="">Select…</option>
+                {_cRichOpts.map((o,i)=><option key={i} value={o.label}>{o.label}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+      );
+    }
+    case "dietary": {
+      const _dSel = value || {};
+      return (
+        <div className="form-group mb">
+          {labelEl}
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {(f.dietaryOptions||[]).map((d,i)=>(
+              <label key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer"}} onClick={()=>onChange({..._dSel,[d]:!_dSel[d]})}>
+                <input type="checkbox" checked={!!_dSel[d]} readOnly style={{accentColor:"#ed7a3c"}}/>{d}
+              </label>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    default:
+      return (<div className="form-group mb">{labelEl}<input className="form-input" placeholder={f.placeholder||""} value={value||""} onChange={e=>onChange(e.target.value)}/></div>);
+  }
+}
+
+// Venue body for dynamic steps
+function DynVenueBody({ step, answers, allSteps, onAnswer }) {
+  const [selectedId, _setSelectedId] = React.useState(null);
+  const setSelectedId = (id) => { _setSelectedId(id); if (onAnswer) onAnswer("_selectedVenueId", id); };
+  const [subSpaceId, setSubSpaceId] = React.useState(null);
+  const [startDate, setStartDate] = React.useState("");
+  const [startTime, setStartTime] = React.useState("");
+  const [endDate, setEndDate] = React.useState("");
+  const [endTime, setEndTime] = React.useState("");
+  const [showGallery, setShowGallery] = React.useState(false);
+  const [galleryIdx, setGalleryIdx] = React.useState(0);
+  const [subSpaceOpen, setSubSpaceOpen] = React.useState(false);
+  const [dateWarning, setDateWarning] = React.useState("");
+
+  const venues = (step.venues || []).filter(v => v.active && v.visibility !== "admin_only");
+  const selected = venues.find(v => v.id === selectedId) || null;
+  const fmt = n => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Booking hours helpers
+  const DAY_KEYS = ["sun","mon","tue","wed","thu","fri","sat"];
+  const dayNames = {sun:"Sundays",mon:"Mondays",tue:"Tuesdays",wed:"Wednesdays",thu:"Thursdays",fri:"Fridays",sat:"Saturdays"};
+  const getHoursForDate = (dateStr) => {
+    if (!selected || !dateStr) return null;
+    const d = new Date(dateStr + "T00:00:00");
+    if (isNaN(d)) return null;
+    const bh = (selected.advancedPricing || {}).bookingHours || {};
+    const val = bh[DAY_KEYS[d.getDay()]];
+    if (!val || val.toLowerCase() === "closed") return "closed";
+    const m = val.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+    return m ? { open: m[1], close: m[2] } : null;
+  };
+  const isDateClosed = (dateStr) => getHoursForDate(dateStr) === "closed";
+  const closedDaysList = selected ? DAY_KEYS.filter(k => {
+    const bh = (selected.advancedPricing || {}).bookingHours || {};
+    const v = bh[k]; return v && v.toLowerCase() === "closed";
+  }) : [];
+
+  const handleStartDate = (val) => {
+    if (isDateClosed(val)) {
+      const d = new Date(val + "T00:00:00");
+      const dayKey = DAY_KEYS[d.getDay()];
+      setDateWarning("This venue is closed on " + dayNames[dayKey] + ". Please pick another date.");
+      setStartDate(""); setStartTime(""); return;
+    }
+    setDateWarning(""); setStartDate(val);
+    if (endDate && val > endDate) setEndDate(val);
+  };
+  const handleEndDate = (val) => {
+    if (isDateClosed(val)) {
+      const d = new Date(val + "T00:00:00");
+      const dayKey = DAY_KEYS[d.getDay()];
+      setDateWarning("This venue is closed on " + dayNames[dayKey] + ". Please pick another date.");
+      setEndDate(""); setEndTime(""); return;
+    }
+    setDateWarning(""); setEndDate(val);
+  };
+  const clampTime = (timeVal, dateStr) => {
+    const hrs = getHoursForDate(dateStr);
+    if (!hrs || hrs === "closed") return timeVal;
+    if (timeVal < hrs.open) return hrs.open;
+    if (timeVal > hrs.close) return hrs.close;
+    return timeVal;
+  };
+
+  // Recommendation — uses venueCapacity + suitableEventTypes
+  const getRec = () => {
+    let eventType = "", attendeeCount = 0;
+    allSteps.forEach(s => {
+      if (s.stepType === "venue") return;
+      (s.fields || []).forEach(f => {
+        const val = answers[f.id]; if (!val) return;
+        const lab = (f.label || "").toLowerCase();
+        if (lab.includes("event type")) eventType = String(val);
+        if (lab.includes("attendee") || lab.includes("number of guest")) attendeeCount = parseInt(val, 10) || 0;
+      });
+    });
+    if (!attendeeCount && !eventType) return null;
+    const scored = venues.map(v => {
+      const cap = v.venueCapacity || 0;
+      const types = v.suitableEventTypes || [];
+      let score = 0;
+      if (!attendeeCount || cap >= attendeeCount) score += 10;
+      if (!eventType || types.length === 0 || types.includes(eventType)) score += 10;
+      if ((!attendeeCount || cap >= attendeeCount) && cap > 0) score += (1000 - cap) / 1000;
+      return { venue: v, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0];
+    if (!best || best.score === 0) return null;
+    const parts = [];
+    if (eventType) parts.push("your " + eventType);
+    if (attendeeCount) parts.push(attendeeCount + " attendees");
+    return { venue: best.venue, reason: parts.length > 0 ? "Based on " + parts.join(" with ") + ", we recommend:" : "We recommend:" };
+  };
+  const rec = getRec();
+
+  // Price calculator — auto-select cheapest plan
+  const calcPrice = () => {
+    if (!selected || !startDate || !startTime || !endDate || !endTime) return null;
+    const start = new Date(startDate + "T" + startTime);
+    const end = new Date(endDate + "T" + endTime);
+    if (isNaN(start) || isNaN(end) || end <= start) return null;
+    const totalHours = Math.ceil((end - start) / (1000 * 60 * 60) * 10) / 10;
+    let bestPlan = null, bestTotal = Infinity;
+    selected.pricing.forEach(p => {
+      let base = p.basePrice, extra = 0;
+      if (p.rateType !== "flat") { extra = Math.max(0, totalHours - (p.includedHours || 0)) * (p.extraHourRate || 0); }
+      const t = base + extra;
+      if (t < bestTotal) { bestTotal = t; bestPlan = p; }
+    });
+    const plan = bestPlan || selected.pricing[0];
+    if (!plan) return null;
+    let venueBase = plan.basePrice;
+    let extraHours = plan.rateType === "flat" ? 0 : Math.max(0, totalHours - (plan.includedHours || 0));
+    let extraCost = extraHours * (plan.extraHourRate || 0);
+    const adv = selected.advancedPricing || {};
+    let subCost = 0, subName = "";
+    if (subSpaceId && selected.subSpace?.enabled) {
+      const opt = (selected.subSpace.options || []).find(o => o.id === subSpaceId);
+      if (opt) { subCost = opt.price || 0; subName = opt.name; }
+    }
+    const subtotal = venueBase + extraCost + (adv.setupFee || 0) + (adv.cleanupFee || 0) + subCost;
+    return { plan, totalHours, venueBase, extraHours, extraCost, setup: adv.setupFee || 0, cleanup: adv.cleanupFee || 0, deposit: adv.securityDeposit || 0, subCost, subName, total: subtotal + (adv.securityDeposit || 0) };
+  };
+  const price = calcPrice();
+
+  return (
+    <div>
+      {/* Gallery modal (venue or sub-space) */}
+      {showGallery && selected && (() => {
+        let imgs = [];
+        if (showGallery === true) { imgs = selected.gallery || []; }
+        else if (typeof showGallery === "string" && showGallery.startsWith("sub_")) {
+          const subId = showGallery.replace("sub_", "");
+          const opt = (selected.subSpace?.options || []).find(o => o.id === subId);
+          imgs = opt?.gallery || [];
+        }
+        if (imgs.length === 0) return null;
+        return (
+          <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={() => setShowGallery(false)}>
+            <div style={{position:"relative",maxWidth:720,width:"90%",background:"#000",borderRadius:12,overflow:"hidden"}} onClick={e => e.stopPropagation()}>
+              <img src={imgs[galleryIdx]} alt={"Gallery " + (galleryIdx + 1)} style={{width:"100%",maxHeight:"70vh",objectFit:"contain",display:"block"}} />
+              <div style={{position:"absolute",top:12,right:12,width:32,height:32,borderRadius:"50%",background:"rgba(255,255,255,.2)",display:"grid",placeItems:"center",cursor:"pointer",color:"#fff",fontSize:18}} onClick={() => setShowGallery(false)}>✕</div>
+              {imgs.length > 1 && (
+                <>
+                  <div style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,.2)",display:"grid",placeItems:"center",cursor:"pointer",color:"#fff",fontSize:18}} onClick={() => setGalleryIdx((galleryIdx - 1 + imgs.length) % imgs.length)}>‹</div>
+                  <div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,.2)",display:"grid",placeItems:"center",cursor:"pointer",color:"#fff",fontSize:18}} onClick={() => setGalleryIdx((galleryIdx + 1) % imgs.length)}>›</div>
+                </>
+              )}
+              <div style={{textAlign:"center",padding:"10px 0",color:"#fff",fontSize:12}}>{galleryIdx + 1} / {imgs.length}</div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {rec && (
+        <div className="venue-rec" style={{cursor:"pointer"}} onClick={() => { setSelectedId(rec.venue.id); setSubSpaceId(null); setSubSpaceOpen(false); }}>
+          <span className="ic">✦</span>
+          <div><span style={{fontSize:11,color:"var(--ink-4)"}}>{rec.reason}</span><br/><strong>{rec.venue.name}</strong></div>
+          <span style={{marginLeft:"auto",fontSize:12,color:"var(--accent)",fontWeight:600}}>Select →</span>
+        </div>
+      )}
+      <div className="venue-grid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))"}}>
+        {venues.map(v => (
+          <div key={v.id} className={"venue-thumb" + (selectedId === v.id ? " sel" : "")} onClick={() => { setSelectedId(v.id); setSubSpaceId(null); setSubSpaceOpen(false); }}>
+            <div className="ph">{v.thumbnail ? <img src={v.thumbnail} alt={v.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : v.name}</div>
+            <div className="name">{v.name}</div>
+          </div>
+        ))}
+      </div>
+      {selected && (
+        <div className="venue-detail">
+          <div className="venue-detail-header" style={{padding:"16px 16px 0 16px"}}>
+            <div className="venue-detail-img" style={{borderRadius:8,overflow:"hidden"}}>
+              {selected.thumbnail ? <img src={selected.thumbnail} alt={selected.name} style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:8}} /> : selected.name + " — Photo"}
+            </div>
+            <div className="venue-detail-info">
+              <h3>{selected.name}</h3>
+              <p>{selected.description}</p>
+              {(selected.gallery || []).length > 0 && (
+                <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:6,fontSize:12.5,color:"var(--accent)",fontWeight:600,cursor:"pointer"}} onClick={() => { setGalleryIdx(0); setShowGallery(true); }}>
+                  📷 View gallery ({selected.gallery.length} photos)
+                </div>
+              )}
+              {selected.equippedWith && (
+                <div style={{marginTop:8}}>
+                  <h5 style={{fontSize:11,fontWeight:700,margin:"0 0 4px",textTransform:"uppercase"}}>Equipped With</h5>
+                  <div style={{fontSize:12,color:"var(--ink-3)",lineHeight:1.6}}>{selected.equippedWith.split("\n").filter(Boolean).map((item,i) => <div key={i}>• {item.trim()}</div>)}</div>
+                </div>
+              )}
+            </div>
+          </div>
+          {selected.maxCapacity && (
+            <div style={{padding:"12px 16px 16px",fontSize:12}}>
+              <h5 style={{fontSize:11,fontWeight:700,margin:"0 0 4px",textTransform:"uppercase"}}>Max Capacity</h5>
+              <div style={{color:"var(--ink-3)",lineHeight:1.6}}>{selected.maxCapacity.split("\n").filter(Boolean).map((item,i) => <div key={i}>• {item.trim()}</div>)}</div>
+            </div>
+          )}
+
+          {/* Sub-space — checkbox + accordion */}
+          {selected.subSpace?.enabled && (selected.subSpace.options || []).length > 0 && (
+            <div style={{padding:"0 16px 16px"}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,fontWeight:600}}>
+                <input type="checkbox" checked={subSpaceOpen} onChange={e => { setSubSpaceOpen(e.target.checked); if (!e.target.checked) setSubSpaceId(null); }} style={{width:16,height:16,accentColor:"var(--accent)"}} />
+                {selected.subSpace.title || "Add Optional Sub-Space"}
+              </label>
+              {selected.subSpace.description && <p style={{fontSize:12,color:"var(--ink-3)",margin:"4px 0 0",paddingLeft:24}}>{selected.subSpace.description}</p>}
+              {subSpaceOpen && (
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:10}}>
+                  {selected.subSpace.options.map(opt => (
+                    <div key={opt.id} className={"venue-thumb" + (subSpaceId === opt.id ? " sel" : "")} style={{aspectRatio:"auto",padding:10,fontSize:12,display:"flex",gap:10,alignItems:"flex-start"}} onClick={() => setSubSpaceId(opt.id)}>
+                      {opt.thumbnail && <img src={opt.thumbnail} alt={opt.name} style={{width:70,height:52,objectFit:"cover",borderRadius:6,flexShrink:0}} />}
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                          <strong>{opt.name}</strong>
+                          <span style={{color:"var(--accent)",fontWeight:700,flexShrink:0}}>{fmt(opt.price)}</span>
+                        </div>
+                        {opt.description && <div style={{fontSize:11,color:"var(--ink-4)",marginTop:2}}>{opt.description.split("\n")[0]}</div>}
+                        {(opt.gallery || []).length > 0 && (
+                          <div style={{marginTop:3,fontSize:11,color:"var(--accent)",fontWeight:600,cursor:"pointer"}} onClick={e => { e.stopPropagation(); setGalleryIdx(0); setShowGallery("sub_" + opt.id); }}>
+                            📷 {opt.gallery.length} photo{opt.gallery.length !== 1 ? "s" : ""}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Booking date/time with hours enforcement */}
+          {(() => {
+            const startHours = getHoursForDate(startDate);
+            const endHours = getHoursForDate(endDate);
+
+            return (
+              <div style={{padding:"0 16px 16px"}}>
+                <h5 style={{fontSize:12,fontWeight:700,margin:"0 0 8px"}}>Booking Date & Time</h5>
+                {closedDaysList.length > 0 && (
+                  <div style={{fontSize:11,color:"var(--ink-3)",marginBottom:10,background:"var(--bg-2)",padding:"8px 10px",borderRadius:6,lineHeight:1.5}}>
+                    <strong>Note:</strong> This venue is closed on {closedDaysList.map(k => dayNames[k]).join(", ")}.
+                  </div>
+                )}
+                {dateWarning && (
+                  <div style={{fontSize:12,color:"#d44",background:"#fff0f0",border:"1px solid #fcc",padding:"8px 12px",borderRadius:6,marginBottom:10}}>
+                    ⚠ {dateWarning}
+                  </div>
+                )}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div>
+                    <label style={{fontSize:11,color:"var(--ink-4)"}}>Start Date</label>
+                    <input className="field-input" type="date" value={startDate} onChange={e => handleStartDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:"var(--ink-4)"}}>Start Time{startHours && startHours !== "closed" ? ` (${startHours.open} – ${startHours.close})` : ""}</label>
+                    <input className="field-input" type="time" value={startTime} min={startHours && startHours !== "closed" ? startHours.open : undefined} max={startHours && startHours !== "closed" ? startHours.close : undefined} onChange={e => setStartTime(clampTime(e.target.value, startDate))} disabled={!startDate} />
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:"var(--ink-4)"}}>End Date</label>
+                    <input className="field-input" type="date" value={endDate} min={startDate || undefined} onChange={e => handleEndDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{fontSize:11,color:"var(--ink-4)"}}>End Time{endHours && endHours !== "closed" ? ` (${endHours.open} – ${endHours.close})` : ""}</label>
+                    <input className="field-input" type="time" value={endTime} min={endHours && endHours !== "closed" ? endHours.open : undefined} max={endHours && endHours !== "closed" ? endHours.close : undefined} onChange={e => setEndTime(clampTime(e.target.value, endDate))} disabled={!endDate} />
+                  </div>
+                </div>
+                {price && (
+                  <div style={{marginTop:14,padding:14,background:"var(--bg-2)",borderRadius:10,border:"1px solid var(--line)",fontSize:13}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span>{selected.name} — {price.plan.rateType === "per_hour" ? "Per Hour" : price.plan.rateType === "per_day" ? "Per Day" : "Flat"}</span><span>{fmt(price.venueBase)}</span></div>
+                    <div style={{fontSize:11,color:"var(--ink-4)",marginBottom:4}}>{price.plan.includedHours > 0 && ("Includes " + price.plan.includedHours + " hours · ")}Duration: {price.totalHours} hrs</div>
+                    {price.extraHours > 0 && <div style={{display:"flex",justifyContent:"space-between"}}><span>Extra hours ({price.extraHours} × {fmt(price.plan.extraHourRate)})</span><span>{fmt(price.extraCost)}</span></div>}
+                    {price.subCost > 0 && <div style={{display:"flex",justifyContent:"space-between"}}><span>{price.subName}</span><span>{fmt(price.subCost)}</span></div>}
+                    {price.setup > 0 && <div style={{display:"flex",justifyContent:"space-between"}}><span>Set up fee</span><span>{fmt(price.setup)}</span></div>}
+                    {price.cleanup > 0 && <div style={{display:"flex",justifyContent:"space-between"}}><span>Clean up fee</span><span>{fmt(price.cleanup)}</span></div>}
+                    {price.deposit > 0 && <div style={{display:"flex",justifyContent:"space-between"}}><span>Security deposit</span><span>{fmt(price.deposit)}</span></div>}
+                    <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid var(--line)",marginTop:8,paddingTop:8,fontWeight:700,fontSize:15}}><span>Estimated Total</span><span>{fmt(price.total)}</span></div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----- Layout Preview Body (for stepType === "layout") -----
+function DynLayoutBody({ step, allSteps, answers }) {
+  const spaceReqs = step.spaceRequirements || [];
+  const floorLayouts = step.floorLayouts || {};
+  const [selectedSpaceReqs, setSelectedSpaceReqs] = React.useState([]);
+  const [selectedLayouts, setSelectedLayouts] = React.useState({});
+  const [floorPlanNotes, setFloorPlanNotes] = React.useState("");
+
+  const venueStep = allSteps.find(s => s.stepType === "venue");
+  const allVenues = venueStep ? (venueStep.venues || []).filter(v => v.active && v.visibility !== "admin_only") : [];
+  const selectedVenueId = answers._selectedVenueId || null;
+
+  // Get guest count from step 2
+  let guestCount = 0;
+  allSteps.forEach(s => {
+    if (s.stepType === "venue" || s.stepType === "layout") return;
+    (s.fields || []).forEach(f => {
+      const lab = (f.label || "").toLowerCase();
+      if ((lab.includes("attendee") || lab.includes("number of guest") || lab.includes("number of attendees")) && answers[f.id]) {
+        guestCount = parseInt(answers[f.id], 10) || 0;
+      }
+    });
+  });
+
+  const venueAreas = [];
+  allVenues.forEach(v => {
+    if (selectedVenueId && v.id !== selectedVenueId) return;
+    if (floorLayouts[v.id] && (floorLayouts[v.id].layouts || []).length > 0) {
+      const layouts = floorLayouts[v.id].layouts.filter(l => {
+        if (!guestCount || (!l.capacityMin && !l.capacityMax)) return true;
+        return guestCount >= (l.capacityMin || 0) && guestCount <= (l.capacityMax || Infinity);
+      });
+      if (layouts.length > 0) venueAreas.push({ id: v.id, name: v.name, layouts, blankFloorPlan: floorLayouts[v.id].blankFloorPlan || "" });
+    }
+    if (v.subSpace?.enabled) {
+      (v.subSpace.options || []).forEach(sub => {
+        if (floorLayouts[sub.id] && (floorLayouts[sub.id].layouts || []).length > 0) {
+          const layouts = floorLayouts[sub.id].layouts.filter(l => {
+            if (!guestCount || (!l.capacityMin && !l.capacityMax)) return true;
+            return guestCount >= (l.capacityMin || 0) && guestCount <= (l.capacityMax || Infinity);
+          });
+          if (layouts.length > 0) venueAreas.push({ id: sub.id, name: sub.name + " (sub-space of " + v.name + ")", layouts, blankFloorPlan: floorLayouts[sub.id].blankFloorPlan || "" });
+        }
+      });
+    }
+  });
+
+  const toggleSpaceReq = (srId) => {
+    setSelectedSpaceReqs(prev => prev.includes(srId) ? prev.filter(x => x !== srId) : [...prev, srId]);
+  };
+
+  const selectLayout = (venueId, layoutId) => {
+    setSelectedLayouts(prev => ({ ...prev, [venueId]: layoutId }));
+  };
+
+  return (
+    <div>
+      {/* Space Requirements */}
+      <div style={{marginBottom:28}}>
+        <h4 style={{fontSize:14,fontWeight:700,marginBottom:4}}>Space Requirements</h4>
+        <p style={{fontSize:12,color:"var(--ink-3)",marginBottom:10,lineHeight:1.5}}>Select the spaces you need for your event.</p>
+        <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:4}}>
+          {spaceReqs.filter(sr => sr.active && sr.name).map(sr => (
+            <label key={sr.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer",padding:"5px 0"}}>
+              <input type="checkbox" checked={selectedSpaceReqs.includes(sr.id)} onChange={() => toggleSpaceReq(sr.id)} style={{accentColor:"var(--accent)",width:15,height:15,flexShrink:0}} />
+              <span style={{fontSize:15}}>{sr.icon}</span>
+              <span>{sr.name}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Floor Layouts per venue area */}
+      {venueAreas.map(area => {
+        const chosenId = selectedLayouts[area.id] || null;
+        const chosenLayout = area.layouts.find(l => l.id === chosenId) || null;
+
+        return (
+          <div key={area.id} style={{marginBottom:32,borderTop:"2px solid var(--line)",paddingTop:20}}>
+            <h4 style={{fontSize:14,fontWeight:700,marginBottom:12}}>{area.name} Floor Layout:</h4>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {area.layouts.map(layout => (
+                  <label key={layout.id} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,cursor:"pointer",padding:"6px 0"}}>
+                    <input type="radio" name={"layout_" + area.id} checked={chosenId === layout.id} onChange={() => selectLayout(area.id, layout.id)} style={{accentColor:"var(--accent)",marginTop:2}} />
+                    <span>{layout.name}</span>
+                  </label>
+                ))}
+                <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,cursor:"pointer",padding:"6px 0"}}>
+                  <input type="radio" name={"layout_" + area.id} checked={chosenId === "_other_" + area.id} onChange={() => selectLayout(area.id, "_other_" + area.id)} style={{accentColor:"var(--accent)",marginTop:2}} />
+                  <span>Others (please write in Floor Layout field below)</span>
+                </label>
+              </div>
+
+              <div style={{minHeight:180,background:"var(--bg-2)",borderRadius:8,border:"1px solid var(--line)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
+                {chosenLayout && chosenLayout.image ? (
+                  <img src={chosenLayout.image} alt={chosenLayout.name} style={{width:"100%",height:"100%",objectFit:"contain"}} />
+                ) : (
+                  <span style={{fontSize:12,color:"var(--ink-4)",textAlign:"center",padding:20}}>
+                    {chosenLayout ? "No image available for this layout" : "Select a layout to see the floor plan"}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {chosenLayout && (
+              <div style={{marginTop:12,padding:"10px 14px",background:"var(--accent-soft)",border:"1px solid var(--accent-line)",borderRadius:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                  <span style={{color:"var(--accent)",fontSize:14}}>📍</span>
+                  <strong style={{fontSize:13}}>Recommended for: {chosenLayout.recommendedFor || "—"} people</strong>
+                  <span style={{width:14,height:14,borderRadius:"50%",background:"var(--ink)",color:"#fff",display:"inline-grid",placeItems:"center",fontSize:9,cursor:"help"}} title="This is a suggested layout and may/may not include all the space requirements you have selected.">●</span>
+                </div>
+                {chosenLayout.recommendedDescription && (
+                  <div style={{fontSize:12,color:"var(--ink-2)",lineHeight:1.6,paddingLeft:22}}>
+                    {chosenLayout.recommendedDescription.split("\n").map((line, i) => <div key={i}>{line}</div>)}
+                  </div>
+                )}
+                <div style={{fontSize:11,color:"var(--ink-4)",marginTop:6,fontStyle:"italic"}}>
+                  This is a suggested layout and may/may not include all the space requirements you have selected.
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Floor Layout Plan (blank upload + notes) */}
+      <div style={{marginBottom:24,borderTop:"2px solid var(--line)",paddingTop:20}}>
+        <h4 style={{fontSize:14,fontWeight:700,marginBottom:4}}>Floor Layout Plan:</h4>
+        <p style={{fontSize:12,color:"var(--ink-3)",marginBottom:12,lineHeight:1.5}}>
+          Upload a floor layout you have in mind. Use one of our blank copies to help with sizes and proportions.
+          {venueAreas.some(a => a.blankFloorPlan) && " "}
+          {venueAreas.filter(a => a.blankFloorPlan).map((a, i) => (
+            <span key={a.id}>
+              {i > 0 && " | "}
+              <a href={a.blankFloorPlan} download={a.name.replace(/\s+/g, "_") + "_blank_layout.png"} style={{color:"var(--accent)",cursor:"pointer",textDecoration:"underline"}}>
+                Download {a.name} blank
+              </a>
+            </span>
+          ))}
+        </p>
+        <div style={{marginBottom:10}}>
+          <input type="file" accept="image/*,.pdf" style={{fontSize:12}} />
+        </div>
+        <textarea className="field-input" rows={4} value={floorPlanNotes} onChange={e => setFloorPlanNotes(e.target.value)} placeholder="Please describe your desired floor plan, seating arrangement, or setup notes." style={{width:"100%",fontSize:13,lineHeight:1.5}} />
+      </div>
+    </div>
+  );
+}
+
+function DynamicApp() {
+  const adminSteps = React.useMemo(() => loadAdminSteps(), []);
+  const steps = adminSteps.filter(s =>
+    s.stepType === "venue"
+      ? (s.venues || []).some(v => v.active && v.visibility !== "admin_only")
+      : s.stepType === "layout"
+      ? true
+      : s.fields.length > 0 && s.fields.some(f => f.visibleToClient !== false)
+  );
+  const [stepIdx, setStepIdx] = React.useState(0);
+  const [answers, setAnswers] = React.useState({});
+
+  const step = steps[stepIdx];
+  const isLast = stepIdx === steps.length - 1;
+
+  const setAnswer = (fid, val) => setAnswers(a => ({ ...a, [fid]: val }));
+
+  const visibleFields = step ? (step.fields || []).filter(f => {
+    if (f.visibleToClient === false) return false;
+    if (!f.visibility) return true;
+    const allFields = steps.flatMap(s => s.fields || []);
+    const r = f.visibility;
+    const ref = r.fieldId ? allFields.find(x => x.id === r.fieldId) : allFields.find(x => x.label === r.field);
+    if (!ref) return true;
+    let v = answers[ref.id];
+    // Handle rich value objects (4-level tree). Backward-compat: old shape was { main, subs }.
+    if (v && typeof v === "object") {
+      if (v.main !== undefined) v = v.main;
+      else v = Object.keys(v).join(" "); // new shape: keys are selected option labels
+    }
+    switch (r.op) {
+      case "has_value": return v != null && v !== "" && v !== false;
+      case "is_empty":  return v == null || v === "" || v === false;
+      case "equals":    return String(v) === String(r.value);
+      case "not_equals":return String(v) !== String(r.value);
+      case "contains":  return String(v || "").toLowerCase().includes(String(r.value || "").toLowerCase());
+      case "is_true":   return !!v;
+      case "is_false":  return !v;
+      default: return true;
+    }
+  }) : [];
+
+  const guestCount = findGuestCount(steps, answers);
+  const goTo = (i) => { setStepIdx(i); window.scrollTo(0,0); };
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <h1>Customize Your Event</h1>
+        <div className="progress-bar">
+          {steps.map((s,i) => (
+            <React.Fragment key={s.id}>
+              {i > 0 && <div className={"progress-line" + (i <= stepIdx ? " done" : "")} />}
+              <div className="progress-step" onClick={() => goTo(i)}>
+                <div className={"progress-dot" + (i === stepIdx ? " active" : i < stepIdx ? " done" : "")}>
+                  {i < stepIdx ? "✓" : i + 1}
+                </div>
+                <span className={"progress-label" + (i === stepIdx ? " active" : i < stepIdx ? " done" : "")}>{s.name}</span>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+      <div className="page-divider" />
+
+      <div className="body-wrap">
+        <div className="body-main">
+          {step && (
+            <>
+              <div className="step-title">{step.name}</div>
+              {step.description && <p className="section-note">{step.description}</p>}
+              {step.stepType === "venue" ? (
+                <>
+                  <DynVenueBody step={step} answers={answers} allSteps={steps} onAnswer={setAnswer} />
+                  {visibleFields.length > 0 && visibleFields.map(f => (
+                    <DynField key={f.id} f={f} value={answers[f.id]} onChange={v => setAnswer(f.id, v)} stepType={step.stepType} guestCount={guestCount} />
+                  ))}
+                </>
+              ) : step.stepType === "layout" ? (
+                <>
+                  <DynLayoutBody step={step} allSteps={steps} answers={answers} />
+                  {visibleFields.length > 0 && visibleFields.map(f => (
+                    <DynField key={f.id} f={f} value={answers[f.id]} onChange={v => setAnswer(f.id, v)} stepType={step.stepType} guestCount={guestCount} />
+                  ))}
+                </>
+              ) : (
+                visibleFields.map(f => (
+                  <DynField key={f.id} f={f} value={answers[f.id]} onChange={v => setAnswer(f.id, v)} stepType={step.stepType} guestCount={guestCount} />
+                ))
+              )}
+              <div className="step-nav">
+                {stepIdx > 0 && <button className="btn-prev" onClick={() => goTo(stepIdx - 1)}>Previous</button>}
+                <button className="btn-next" onClick={() => {
+                  if (isLast) alert("✓ Booking request submitted!");
+                  else goTo(stepIdx + 1);
+                }}>{isLast ? "Submit" : "Next"}</button>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="body-sidebar">
+          <DynCostSidebar steps={steps} answers={answers} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Decide which app to render: if admin data exists, use dynamic; otherwise use hardcoded
+const adminData = loadAdminSteps();
+const RootApp = adminData ? DynamicApp : App;
+ReactDOM.createRoot(document.getElementById("root")).render(<RootApp/>);
+</script>
+</body>
+</html>

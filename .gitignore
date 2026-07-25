@@ -1,0 +1,11 @@
+.dev.vars
+.env.local
+.wrangler/
+node_modules/
+.DS_Store
+.next/
+.open-next/
+out/
+cloudflare-env.d.ts
+.claude/
+.gstack/
