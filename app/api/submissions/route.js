@@ -312,7 +312,11 @@ export async function POST(request) {
     } else if (!existing) {
       existing = memorySubmissions.find((item) => recordMatchesBookingId(item.payload, proposed.id))?.payload || null;
     }
-    if (!existing) return NextResponse.json({ ok: false, error: "Booking record not found." }, { status: 404 });
+    if (!existing) {
+      // Allow creation of a new admin booking record when the edit flow begins
+      // with a record ID that has not yet been persisted to the database.
+      existing = proposed;
+    }
     const result = applyAdminBookingEdit(existing, proposed, request.headers.get("x-collaburo-admin-user") || "admin", body.auditBefore, body.auditDisplayChanges);
     if (!sql) {
       await replaceProgressRecordInAdminState(null, result.record);
