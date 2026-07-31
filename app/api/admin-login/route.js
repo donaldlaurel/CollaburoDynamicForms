@@ -22,5 +22,7 @@ export async function POST(request) {
 
   const response = NextResponse.json({ ok: true, account });
   await setAdminSessionCookie(response, account.username || username, password);
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
   return response;
 }
