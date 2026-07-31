@@ -1,5 +1,4 @@
 .dev.vars
-.env.local
 .wrangler/
 node_modules/
 .DS_Store
