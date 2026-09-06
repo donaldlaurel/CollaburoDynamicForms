@@ -28,7 +28,7 @@ export async function POST(request) {
     "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif", "image/heic", "image/heif",
     "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/plain", "text/csv",
+    "text/plain", "text/csv", "text/html",
   ]);
   if (!allowedMimeTypes.has(mimeType)) {
     return NextResponse.json({ ok: false, error: "This file type is not supported." }, { status: 415 });

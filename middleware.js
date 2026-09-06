@@ -35,6 +35,7 @@ const RATE_RULES = [
   { name: "login", limit: 12, windowMs: 5 * 60_000, match: (path, method) => path === "/api/admin-login" && method === "POST" },
   { name: "email", limit: 30, windowMs: 5 * 60_000, match: (path) => path.startsWith("/api/send-email") },
   { name: "email-verification", limit: 10, windowMs: 5 * 60_000, match: (path, method) => path === "/api/email-verification" && method === "POST" },
+  { name: "contract-sign", limit: 20, windowMs: 5 * 60_000, match: (path, method) => path === "/api/contracts/sign" && method === "POST" },
   { name: "uploads", limit: 120, windowMs: 5 * 60_000, match: (path) => path.startsWith("/api/uploads") },
   { name: "state-read", limit: 120, windowMs: 60_000, match: (path, method) => path === "/api/admin-state" && method === "GET" },
 ];
@@ -78,6 +79,7 @@ function isPublicApi(pathname, method) {
   // The public booking flow needs the (sanitized) app config and submits requests.
   if (pathname === "/api/admin-state" && method === "GET") return true;
   if (pathname === "/api/submissions" && method === "POST") return true;
+  if (pathname === "/api/contracts/sign" && method === "POST") return true;
   if (pathname === "/api/email-verification" && method === "POST") return true;
   if (pathname === "/api/uploads/images" && method === "POST") return true;
   return false;

@@ -38,6 +38,18 @@ export async function POST(request) {
     return NextResponse.json({ ok: false, error: "Resend is not configured. Add RESEND_API_KEY to the environment." }, { status: 501 });
   }
 
+  const attachments = Array.isArray(body.attachments)
+    ? body.attachments
+        .filter((item) => item && (item.content || item.path))
+        .slice(0, 5)
+        .map((item) => ({
+          filename: String(item.filename || "attachment").slice(0, 180),
+          ...(item.content ? { content: String(item.content) } : {}),
+          ...(item.path ? { path: String(item.path) } : {}),
+          ...(item.contentType ? { content_type: String(item.contentType) } : {}),
+        }))
+    : [];
+
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -52,6 +64,7 @@ export async function POST(request) {
       subject,
       text,
       html: textToHtml(text),
+      ...(attachments.length ? { attachments } : {}),
       tags: [{ name: "collaburo_type", value: String(body.type || "progress") }],
     }),
   });
