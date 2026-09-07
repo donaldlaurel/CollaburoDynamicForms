@@ -1161,14 +1161,45 @@ a { color: inherit; text-decoration: none; }
 }
 .rich-editor{border:1px solid var(--line-strong);border-radius:var(--r-2);background:var(--surface);overflow:hidden}
 .rich-editor:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklch,var(--accent) 18%,transparent)}
-.rich-editor-toolbar{display:flex;align-items:center;gap:4px;padding:6px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.rich-editor-toolbar{display:flex;align-items:center;gap:4px;padding:6px;border-bottom:1px solid var(--line);background:var(--surface-2);flex-wrap:wrap}
+.rich-editor-toolbar-sep{width:1px;height:18px;background:var(--line);margin:0 2px}
 .rich-editor-toolbar button{height:26px;min-width:28px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0 8px}
 .rich-editor-toolbar button:hover{border-color:var(--accent-soft-line);background:var(--accent-soft)}
+.rich-editor-color{position:relative;display:inline-flex;align-items:center;justify-content:center;height:26px;min-width:28px;border:1px solid var(--line);border-radius:6px;background:var(--surface);cursor:pointer;overflow:hidden;padding:0 6px}
+.rich-editor-color input[type="color"]{position:absolute;inset:0;opacity:0;border:0;padding:0;cursor:pointer;width:100%;height:100%}
+.rich-editor-color-label{font-size:12px;font-weight:800;line-height:1;pointer-events:none;padding:1px 2px;border-radius:3px}
+.rich-editor-highlight .rich-editor-color-label{color:#111;border:1px solid var(--line)}
+.rich-editor-swatches{display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap;max-width:120px}
+.rich-editor-swatch{width:14px!important;height:14px!important;min-width:14px!important;padding:0!important;border-radius:3px!important;border:1px solid var(--line-strong)!important}
+.rich-editor-size{height:26px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;font-size:11px;font-weight:700;padding:0 6px;cursor:pointer}
+.rich-editor-size-group{display:inline-flex;align-items:center;gap:4px}
+.rich-editor-size-input{width:52px;height:26px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:inherit;font-size:11px;font-weight:700;padding:0 6px}
+.rich-editor-size-unit{font-size:11px;font-weight:700;color:var(--ink-3)}
 .rich-editor-input{padding:9px 10px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;min-height:96px}
 .rich-editor-input:empty:before{content:attr(data-placeholder);color:var(--ink-4);pointer-events:none}
-.rich-editor-input ul,.rich-editor-input ol,.rich-text-display ul,.rich-text-display ol,.cv-rich-text ul,.cv-rich-text ol{margin:6px 0 0 18px;padding:0}
-.rich-editor-input p,.rich-text-display p,.cv-rich-text p{margin:0 0 6px}
+.rich-editor-input ul,.rich-editor-input ol,.rich-text-display ul,.rich-text-display ol,.cv-rich-text ul,.cv-rich-text ol,.contract-rich-text ul,.contract-rich-text ol{margin:6px 0 0 18px;padding:0}
+.rich-editor-input p,.rich-text-display p,.cv-rich-text p,.contract-rich-text p{margin:0 0 6px}
 .cv-rich-text{font-size:12.5px;line-height:1.5;color:inherit}
+.contract-rich-text,.contract-rich-editor-input{font-size:13.5px;line-height:1.55}
+.contract-rich-text table,.contract-rich-editor-input table,.rich-editor-input table{
+  width:100%;
+  border-collapse:collapse;
+  margin:8px 0;
+  font-size:inherit;
+  white-space:normal;
+}
+.contract-rich-text th,.contract-rich-text td,
+.contract-rich-editor-input th,.contract-rich-editor-input td,
+.rich-editor-input th,.rich-editor-input td{
+  border:1px solid var(--line-strong);
+  padding:6px 8px;
+  vertical-align:top;
+  text-align:left;
+}
+.contract-rich-text th,.contract-rich-editor-input th,.rich-editor-input th{
+  background:var(--surface-2);
+  font-weight:700;
+}
 .select {
   appearance: none;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%236b6760' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
