@@ -139,6 +139,363 @@ function fillContractTokens(text, tokenMap = {}) {
   });
 }
 
+function escapeHtmlText(value = "") {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function looksLikeHtml(value = "") {
+  return /<\/?[a-z][\s\S]*>/i.test(String(value || ""));
+}
+
+function fillContractTokensHtml(html, tokenMap = {}) {
+  return String(html || "").replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}?/g, (token, name) => {
+    const canonical = `{{${name}}}`;
+    const value = tokenMap[canonical];
+    if (value == null) return token;
+    return escapeHtmlText(String(value)).replace(/\n/g, "<br/>");
+  });
+}
+
+const CONTRACT_RICH_TAGS = new Set([
+  "P", "BR", "DIV", "SPAN", "B", "STRONG", "I", "EM", "U", "FONT",
+  "UL", "OL", "LI", "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TH", "TD",
+  "H1", "H2", "H3", "H4", "H5", "H6",
+]);
+
+function sanitizeCssColor(value = "") {
+  const v = String(value || "").trim();
+  if (!v) return "";
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v)) return v;
+  if (/^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/i.test(v)) return v;
+  if (/^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)$/i.test(v)) return v;
+  if (/^[a-z]{1,20}$/i.test(v)) return v.toLowerCase();
+  return "";
+}
+
+function sanitizeFontSizeValue(value = "") {
+  const v = String(value || "").trim();
+  if (/^\d+(\.\d+)?(px|pt|em|rem|%)$/i.test(v)) return v;
+  return "";
+}
+
+function sanitizeContractStyleAttr(styleValue = "") {
+  const raw = String(styleValue || "");
+  const parts = [];
+  const align = /text-align\s*:\s*(left|center|right|justify)/i.exec(raw);
+  if (align) parts.push(`text-align:${align[1].toLowerCase()}`);
+
+  const colorMatch = /(?:^|;)\s*color\s*:\s*([^;]+)/i.exec(raw);
+  if (colorMatch) {
+    const color = sanitizeCssColor(colorMatch[1]);
+    if (color) parts.push(`color:${color}`);
+  }
+
+  const bgMatch = /background(?:-color)?\s*:\s*([^;]+)/i.exec(raw);
+  if (bgMatch) {
+    const bg = sanitizeCssColor(bgMatch[1]);
+    if (bg) parts.push(`background-color:${bg}`);
+  }
+
+  const sizeMatch = /font-size\s*:\s*([^;]+)/i.exec(raw);
+  if (sizeMatch) {
+    const size = sanitizeFontSizeValue(sizeMatch[1]);
+    if (size) parts.push(`font-size:${size}`);
+  }
+
+  return parts.join(";");
+}
+
+function sanitizeContractHtml(html = "") {
+  if (typeof document === "undefined") {
+    return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, "");
+  }
+  const root = document.createElement("div");
+  root.innerHTML = String(html || "");
+
+  const scrubNode = (node) => {
+    if (node.nodeType === Node.COMMENT_NODE) {
+      node.parentNode?.removeChild(node);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    if (!CONTRACT_RICH_TAGS.has(node.tagName)) {
+      const parent = node.parentNode;
+      if (!parent) return;
+      const moved = Array.from(node.childNodes);
+      moved.forEach((child) => parent.insertBefore(child, node));
+      parent.removeChild(node);
+      moved.forEach(scrubNode);
+      return;
+    }
+
+    Array.from(node.attributes).forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      if (name === "style") {
+        const cleaned = sanitizeContractStyleAttr(attr.value || "");
+        if (cleaned) node.setAttribute("style", cleaned);
+        else node.removeAttribute("style");
+        return;
+      }
+      if (node.tagName === "FONT") {
+        if (name === "color") {
+          const color = sanitizeCssColor(attr.value || "");
+          if (color) node.setAttribute("color", color);
+          else node.removeAttribute("color");
+          return;
+        }
+        if (name === "size") {
+          if (/^[1-7]$/.test(attr.value || "")) return;
+          node.removeAttribute("size");
+          return;
+        }
+      }
+      if ((name === "colspan" || name === "rowspan") && (node.tagName === "TD" || node.tagName === "TH")) {
+        if (!/^\d{1,2}$/.test(attr.value || "")) node.removeAttribute(attr.name);
+        return;
+      }
+      if (name === "border" && node.tagName === "TABLE") return;
+      node.removeAttribute(attr.name);
+    });
+
+    Array.from(node.childNodes).forEach(scrubNode);
+  };
+
+  Array.from(root.childNodes).forEach(scrubNode);
+  return root.innerHTML;
+}
+
+function contractBodyDisplayHtml(body = "", tokenMap = {}) {
+  const raw = String(body || "");
+  if (!raw.trim()) return "";
+  if (looksLikeHtml(raw)) {
+    return sanitizeContractHtml(fillContractTokensHtml(raw, tokenMap));
+  }
+  return escapeHtmlText(fillContractTokens(raw, tokenMap)).replace(/\n/g, "<br/>");
+}
+
+const CONTRACT_FONT_SIZE_PX = [10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48];
+
+const CONTRACT_SWATCH_COLORS = [
+  "#111111", "#444444", "#c62828", "#ad1457", "#6a1b9a",
+  "#1565c0", "#00838f", "#2e7d32", "#ef6c00", "#ffffff",
+];
+
+const CONTRACT_HIGHLIGHT_COLORS = [
+  "#fff59d", "#ffcc80", "#ffab91", "#ce93d8", "#90caf9",
+  "#a5d6a7", "#e0e0e0", "#ffffff",
+];
+
+function ContractRichTextEditor({ value = "", onChange, placeholder = "Write paragraph content…", rows = 7 }) {
+  const ref = React.useRef(null);
+  const [fontColor, setFontColor] = React.useState("#111111");
+  const [highlightColor, setHighlightColor] = React.useState("#fff59d");
+  const [fontSizePx, setFontSizePx] = React.useState("14");
+
+  React.useEffect(() => {
+    if (ref.current && ref.current.innerHTML !== (value || "")) {
+      ref.current.innerHTML = value || "";
+    }
+  }, [value]);
+
+  const emit = () => onChange && onChange(ref.current?.innerHTML || "");
+
+  const run = (command, commandValue = null) => {
+    ref.current?.focus();
+    try {
+      document.execCommand("styleWithCSS", false, true);
+    } catch {
+      // Some browsers may not support styleWithCSS.
+    }
+    document.execCommand(command, false, commandValue);
+    emit();
+  };
+
+  const applyTextColor = (color) => {
+    setFontColor(color);
+    run("foreColor", color);
+  };
+
+  const applyHighlight = (color) => {
+    setHighlightColor(color);
+    ref.current?.focus();
+    try {
+      document.execCommand("styleWithCSS", false, true);
+    } catch {
+      // ignore
+    }
+    const applied = document.execCommand("hiliteColor", false, color);
+    if (!applied) document.execCommand("backColor", false, color);
+    emit();
+  };
+
+  const applyFontSize = (sizePx) => {
+    const numeric = Number.parseInt(String(sizePx).replace(/px$/i, ""), 10);
+    if (!Number.isFinite(numeric) || numeric < 8 || numeric > 96 || !ref.current) return;
+    const sizeValue = `${numeric}px`;
+    setFontSizePx(String(numeric));
+    ref.current.focus();
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    if (!ref.current.contains(range.commonAncestorContainer)) return;
+
+    const span = document.createElement("span");
+    span.style.fontSize = sizeValue;
+    try {
+      range.surroundContents(span);
+    } catch {
+      const contents = range.extractContents();
+      span.appendChild(contents);
+      range.insertNode(span);
+    }
+    selection.removeAllRanges();
+    const next = document.createRange();
+    next.selectNodeContents(span);
+    selection.addRange(next);
+    emit();
+  };
+
+  const insertTable = () => {
+    ref.current?.focus();
+    const tableHtml = [
+      '<table border="1"><thead><tr><th>Header 1</th><th>Header 2</th></tr></thead>',
+      "<tbody><tr><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td></tr></tbody></table><p><br/></p>",
+    ].join("");
+    document.execCommand("insertHTML", false, tableHtml);
+    emit();
+  };
+
+  return (
+    <div className="rich-editor">
+      <div className="rich-editor-toolbar" onMouseDown={(e) => e.preventDefault()}>
+        <button type="button" title="Bold" onClick={() => run("bold")}><b>B</b></button>
+        <button type="button" title="Italic" onClick={() => run("italic")}><i>I</i></button>
+        <button type="button" title="Underline" onClick={() => run("underline")}><u>U</u></button>
+        <span className="rich-editor-toolbar-sep" aria-hidden="true" />
+        <button type="button" title="Align left" onClick={() => run("justifyLeft")}>Left</button>
+        <button type="button" title="Align center" onClick={() => run("justifyCenter")}>Center</button>
+        <button type="button" title="Align right" onClick={() => run("justifyRight")}>Right</button>
+        <span className="rich-editor-toolbar-sep" aria-hidden="true" />
+        <label className="rich-editor-color" title="Font color">
+          <span className="rich-editor-color-label" style={{ color: fontColor }}>A</span>
+          <input
+            type="color"
+            value={fontColor}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => applyTextColor(e.target.value)}
+          />
+        </label>
+        <div className="rich-editor-swatches" title="Font color presets">
+          {CONTRACT_SWATCH_COLORS.map((color) => (
+            <button
+              key={`fg-${color}`}
+              type="button"
+              className="rich-editor-swatch"
+              style={{ background: color }}
+              title={color}
+              onClick={() => applyTextColor(color)}
+            />
+          ))}
+        </div>
+        <label className="rich-editor-color rich-editor-highlight" title="Highlight color">
+          <span className="rich-editor-color-label" style={{ background: highlightColor }}>H</span>
+          <input
+            type="color"
+            value={highlightColor}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => applyHighlight(e.target.value)}
+          />
+        </label>
+        <div className="rich-editor-swatches" title="Highlight presets">
+          {CONTRACT_HIGHLIGHT_COLORS.map((color) => (
+            <button
+              key={`bg-${color}`}
+              type="button"
+              className="rich-editor-swatch"
+              style={{ background: color }}
+              title={color}
+              onClick={() => applyHighlight(color)}
+            />
+          ))}
+        </div>
+        <div className="rich-editor-size-group" title="Font size in px">
+          <select
+            className="rich-editor-size"
+            value={CONTRACT_FONT_SIZE_PX.includes(Number(fontSizePx)) ? fontSizePx : ""}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              applyFontSize(e.target.value);
+            }}
+          >
+            <option value="" disabled>
+              px
+            </option>
+            {CONTRACT_FONT_SIZE_PX.map((px) => (
+              <option key={px} value={String(px)}>
+                {px}px
+              </option>
+            ))}
+          </select>
+          <input
+            className="rich-editor-size-input"
+            type="number"
+            min={8}
+            max={96}
+            step={1}
+            value={fontSizePx}
+            aria-label="Custom font size in pixels"
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => setFontSizePx(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                applyFontSize(fontSizePx);
+              }
+            }}
+          />
+          <span className="rich-editor-size-unit">px</span>
+          <button type="button" title="Apply font size" onClick={() => applyFontSize(fontSizePx)}>
+            Apply
+          </button>
+        </div>
+        <span className="rich-editor-toolbar-sep" aria-hidden="true" />
+        <button type="button" title="Bulleted list" onClick={() => run("insertUnorderedList")}>• List</button>
+        <button type="button" title="Numbered list" onClick={() => run("insertOrderedList")}>1. List</button>
+        <button type="button" title="Insert table" onClick={insertTable}>Table</button>
+        <button type="button" title="Clear formatting" onClick={() => run("removeFormat")}>Clear</button>
+      </div>
+      <div
+        ref={ref}
+        className="rich-editor-input contract-rich-editor-input"
+        contentEditable
+        data-placeholder={placeholder}
+        onInput={emit}
+        onBlur={emit}
+        style={{ minHeight: rows * 24 }}
+        suppressContentEditableWarning
+      />
+    </div>
+  );
+}
+
+function ContractRichTextDisplay({ value = "", tokenMap = {}, className = "" }) {
+  const html = contractBodyDisplayHtml(value, tokenMap);
+  if (!html) return null;
+  return (
+    <div
+      className={className || "contract-rich-text"}
+      style={{ fontSize: 13.5, lineHeight: 1.55 }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
 export function SignaturePad({ value, onChange, height = 160, disabled = false }) {
   const canvasRef = React.useRef(null);
   const drawing = React.useRef(false);
@@ -265,7 +622,7 @@ function ContractBlockPreview({ block, tokenMap = {}, signatures = {}, interacti
     return (
       <div style={{ marginBottom: 18 }}>
         {block.title ? <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>{fillContractTokens(block.title, tokenMap)}</h3> : null}
-        <div style={{ whiteSpace: "pre-wrap", fontSize: 13.5, lineHeight: 1.55 }}>{fillContractTokens(block.body, tokenMap)}</div>
+        <ContractRichTextDisplay value={block.body} tokenMap={tokenMap} />
       </div>
     );
   }
@@ -461,7 +818,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
           <div>
             <span className="editor-head-tag">{Ic.File ? <Ic.File size={11} /> : null} Contract</span>
             <h1>Contract</h1>
-            <p>Build a flexible contract template with headers, paragraphs, images, and signature areas. Other customers can reshape blocks without code changes.</p>
+            <p>Build a flexible contract template with headers, paragraphs, images, and signature areas. Format paragraph text with bold, italic, alignment, and tables. Other customers can reshape blocks without code changes.</p>
           </div>
         </div>
 
@@ -512,7 +869,15 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
                     </div>
                     <div>
                       <label className="lbl">Paragraph content</label>
-                      <textarea className="textarea" rows={7} value={block.body || ""} onChange={(e) => updateBlock(block.id, { body: e.target.value })} />
+                      <ContractRichTextEditor
+                        value={block.body || ""}
+                        onChange={(body) => updateBlock(block.id, { body })}
+                        placeholder="Write paragraph content. Use the toolbar for bold, color, highlight, size, alignment, and tables."
+                        rows={8}
+                      />
+                      <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--ink-3)" }}>
+                        Select text first, then choose a size in px from the dropdown or type a custom value (8–96) and click Apply. Dynamic tokens like {"{{Client_Name}}"} still work when typed in the content.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -573,7 +938,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
               <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 14 }}>
                 <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Dynamic Fields List</h3>
                 <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--ink-3)" }}>
-                  Type these tokens in header fields or paragraph content. They are replaced from the Progress List record when the contract is generated / signed.
+                  Type these tokens in header fields or paragraph content (including inside formatted text and tables). They are replaced from the Progress List record when the contract is generated / signed.
                 </p>
                 <div style={{ columns: 1, fontSize: 12, lineHeight: 1.55, maxHeight: 360, overflow: "auto" }}>
                   {(dynamicFields.length ? dynamicFields : [
@@ -598,10 +963,12 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
 
 function buildSignedContractHtml(settings, tokenMap, signatures) {
   const contract = normalizeContractSettings(settings);
-  const escape = (value) => String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  const escape = escapeHtmlText;
+  const tableStyles = [
+    "table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}",
+    "th,td{border:1px solid #bbb;padding:6px 8px;vertical-align:top;text-align:left}",
+    "th{background:#f3f3f3;font-weight:700}",
+  ].join("");
   const parts = [`<h1>${escape(contract.title)}</h1>`];
   (contract.blocks || []).forEach((block) => {
     if (block.type === "header") {
@@ -610,7 +977,7 @@ function buildSignedContractHtml(settings, tokenMap, signatures) {
       });
     } else if (block.type === "paragraph") {
       if (block.title) parts.push(`<h2>${escape(fillContractTokens(block.title, tokenMap))}</h2>`);
-      parts.push(`<p>${escape(fillContractTokens(block.body, tokenMap)).replace(/\n/g, "<br/>")}</p>`);
+      parts.push(`<div>${contractBodyDisplayHtml(block.body, tokenMap)}</div>`);
     } else if (block.type === "image" && block.url) {
       parts.push(`<p><img src="${escape(block.url)}" alt="${escape(block.alt)}" style="max-width:100%"/></p>`);
     } else if (block.type === "signature") {
@@ -620,7 +987,7 @@ function buildSignedContractHtml(settings, tokenMap, signatures) {
       if (block.ownerName) parts.push(`<p>${escape(block.ownerName)}</p>`);
     }
   });
-  return `<!doctype html><html><body style="font-family:Georgia,serif;padding:24px;color:#111">${parts.join("")}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"/><style>${tableStyles}</style></head><body style="font-family:Georgia,serif;padding:24px;color:#111;line-height:1.55">${parts.join("")}</body></html>`;
 }
 
 export function ContractSignView({ record, siteSettings, tokenMap, onSigned, onError }) {
