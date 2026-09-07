@@ -9,6 +9,7 @@ import "./icons";
 import "./runtime-widgets";
 import { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT } from "./navigation";
 import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-data";
+import { ContractSettingsView, ContractSignView, normalizeContractSettings, createDefaultContractSettings } from "./contract";
 
 
 
@@ -13768,19 +13769,59 @@ const DYNAMIC_EMAIL_FIELDS = [
   ["{{Client_Name}}", "Name of Client"],
   ["{{Organization}}", "Organization Name of Client"],
   ["{{Email}}", "Contact Email of Client"],
+  ["{{Phone}}", "Contact phone of client"],
+  ["{{Booking_ID}}", "Booking / progress ID code"],
   ["{{Copy_Link}}", "Unique rental progress link"],
   ["{{Contract_Link}}", "Contract or sign form link"],
   ["{{Insurance_Link}}", "Insurance quote link"],
   ["{{AGCO_Link}}", "AGCO application link"],
   ["{{Event_Privacy}}", "Public, Semi-private, or Private"],
+  ["{{Event_Type}}", "Event type"],
+  ["{{Event_Description}}", "Brief event description"],
   ["{{Alcohol_On_Site}}", "Alcohol on site answer"],
   ["{{Expected_Number_of_Attendees}}", "Guest count"],
   ["{{Space}}", "Selected space"],
+  ["{{Booking_DateTime}}", "Full booking date/time range"],
   ["{{Booking_Start_datetime}}", "Starting date/time of booking"],
   ["{{Booking_end_datetime}}", "Ending date/time of booking"],
-  ["{{Set_up_Service}}", "Selected set-up service"],
-  ["{{Clean_up_Service}}", "Selected clean-up service"],
+  ["{{Guests_Arrival}}", "Guests arrival notes"],
+  ["{{No_One_On_Site}}", "No one on site notes"],
+  ["{{Set_up_Service}}", "Selected set-up / service notes"],
+  ["{{Clean_up_Service}}", "Selected clean-up / service notes"],
+  ["{{Special_Notes}}", "Special notes / admin instructions"],
+  ["{{Catering_Specifics}}", "Catering specifics"],
+  ["{{Security_Deposit}}", "Security deposit amount"],
+  ["{{Security_Deposit_Note}}", "Security deposit note"],
+  ["{{Space_Rental_Total}}", "Space rental total"],
+  ["{{Space_Content_Total}}", "Space content / rentals total"],
+  ["{{Catering_Total}}", "Catering total"],
+  ["{{Setup_Total}}", "Set-up service total"],
+  ["{{Event_Service_Total}}", "Event service total"],
+  ["{{Cleanup_Total}}", "Clear-up service total"],
+  ["{{Subtotal}}", "Subtotal before fees"],
+  ["{{Fees_Total}}", "Fees / tax total"],
+  ["{{Discount_Total}}", "Discount total"],
+  ["{{Total}}", "Contract total"],
+  ["{{Total_With_Deposit}}", "Total including security deposit"],
+  ["{{Space_Lines}}", "Space rental line items"],
+  ["{{Space_Content_Lines}}", "Content / rental item lines"],
+  ["{{Catering_Lines}}", "Catering line items"],
+  ["{{Setup_Lines}}", "Set-up service line items"],
+  ["{{Event_Service_Lines}}", "Event service line items"],
+  ["{{Cleanup_Lines}}", "Clear-up service line items"],
+  ["{{Fee_Lines}}", "Fee / tax line items"],
+  ["{{Discount_Lines}}", "Discount line items"],
+  ["{{Cost_Breakdown}}", "Full cost breakdown block"],
+  ["{{Item_Details}}", "All selected item / service lines"],
+  ["{{Layout_Selections}}", "Floor layout / selection summary"],
+  ["{{Answer_Summary}}", "Booking form answer summary"],
+  ["{{Contract_Generated_At}}", "When contract was generated"],
+  ["{{Contract_Status}}", "Not Generated / Generated / Sent"],
+  ["{{Agreement_Status}}", "Not Signed / Signed"],
+  ["{{Today_Date}}", "Today's date when contract is viewed"],
 ];
+
+const DYNAMIC_CONTRACT_FIELDS = DYNAMIC_EMAIL_FIELDS;
 
 const SAMPLE_SITE_SETTINGS = {
   branding: {
@@ -13814,6 +13855,7 @@ const SAMPLE_SITE_SETTINGS = {
     replyTo: DEFAULT_EMAIL_ADDRESS,
     templates: DEFAULT_EMAIL_TEMPLATES,
   },
+  contractSettings: createDefaultContractSettings(),
   fulfillment: {
     deliveryOptions: DEFAULT_DELIVERY_OPTIONS,
   },
@@ -14233,6 +14275,7 @@ function normalizeSiteSettings(settings = {}) {
         return acc;
       }, {}),
     },
+    contractSettings: normalizeContractSettings(source.contractSettings || sample.contractSettings),
     fulfillment: {
       ...(sample.fulfillment || {}),
       ...(source.fulfillment || {}),
@@ -15711,25 +15754,160 @@ function getEmailTemplate(settings, typeId) {
   return normalized.emailSettings?.templates?.[typeId] || DEFAULT_EMAIL_TEMPLATES[typeId] || DEFAULT_EMAIL_TEMPLATES["fill-form"];
 }
 
+function formatContractMoney(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "";
+  return "$" + amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatContractCostLines(lines = []) {
+  return (Array.isArray(lines) ? lines : [])
+    .map((line) => {
+      if (line == null) return "";
+      if (typeof line === "string" || typeof line === "number") return String(line);
+      const label = String(line.label || line.name || line.description || "").trim();
+      const meta = String(line.meta || "").trim();
+      const qty = line.quantity != null && Number(line.quantity) !== 1 ? ` × ${line.quantity}` : "";
+      const total = line.total ?? line.amount ?? line.price;
+      const money = total == null || total === "" ? "" : formatContractMoney(total);
+      const head = [label + qty, meta].filter(Boolean).join(" — ");
+      if (head && money) return `${head}: ${money}`;
+      return head || money;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatContractAnswerSummary(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const label = String(row?.label || row?.name || "").trim();
+      const value = row?.value == null ? "" : String(row.value).trim();
+      if (!label && !value) return "";
+      return label ? `${label}: ${value}` : value;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatContractLayoutSelections(selections = []) {
+  return (Array.isArray(selections) ? selections : [])
+    .map((item) => {
+      if (typeof item === "string") return item;
+      return String(item?.label || item?.name || item?.title || "").trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildContractCostBreakdown(costs = {}) {
+  const sections = [
+    ["Space Rental", costs.spaceRentalTotal, costs.spaceLines],
+    ["Space Content / Rentals", costs.spaceContentTotal, costs.spaceContentLines],
+    ["Catering", costs.cateringTotal, costs.cateringLines],
+    ["Set-up Service", costs.setupTotal, costs.setupLines],
+    ["Event Service", costs.eventTotal, costs.eventLines],
+    ["Clear-up Service", costs.cleanupTotal, costs.cleanupLines],
+    ["Fees / Tax", null, costs.feeLines],
+    ["Discounts", null, costs.discountLines],
+  ];
+  const blocks = sections
+    .map(([title, total, lines]) => {
+      const lineText = formatContractCostLines(lines);
+      const totalText = total == null || total === "" ? "" : formatContractMoney(total);
+      if (!lineText && !totalText) return "";
+      return [title + (totalText ? ` (${totalText})` : ""), lineText].filter(Boolean).join("\n");
+    })
+    .filter(Boolean);
+  const totals = [
+    costs.subtotal != null ? `Subtotal: ${formatContractMoney(costs.subtotal)}` : "",
+    costs.total != null ? `Total: ${formatContractMoney(costs.total)}` : "",
+    costs.securityDeposit != null ? `Security Deposit: ${formatContractMoney(costs.securityDeposit)}` : "",
+    costs.totalWithDeposit != null ? `Total with Deposit: ${formatContractMoney(costs.totalWithDeposit)}` : "",
+  ].filter(Boolean);
+  return [...blocks, totals.join("\n")].filter(Boolean).join("\n\n");
+}
+
 function emailTokenMap(record = {}) {
   const bookingText = record.request?.bookingDateTime || "";
   const [bookingStart = bookingText, bookingEnd = ""] = String(bookingText).split(/\s+-\s+/);
+  const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "https://collaburo.app";
+  const costs = record.costs || {};
+  const feeTotal = Array.isArray(costs.feeLines)
+    ? costs.feeLines.reduce((sum, line) => sum + Number(line?.total || line?.amount || 0), 0)
+    : Number(costs.feesTotal || 0);
+  const discountTotal = Array.isArray(costs.discountLines)
+    ? costs.discountLines.reduce((sum, line) => sum + Math.abs(Number(line?.total || line?.amount || 0)), 0)
+    : Number(costs.discountTotal || 0);
+  const itemDetails = [
+    formatContractCostLines(costs.spaceLines),
+    formatContractCostLines(costs.spaceContentLines),
+    formatContractCostLines(costs.cateringLines),
+    formatContractCostLines(costs.setupLines),
+    formatContractCostLines(costs.eventLines),
+    formatContractCostLines(costs.cleanupLines),
+  ].filter(Boolean).join("\n");
+  const today = new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
   return {
     "{{Client_Name}}": record.client?.name || "",
     "{{Organization}}": record.client?.organization || "",
     "{{Email}}": record.client?.email || "",
-    "{{Copy_Link}}": `https://collaburo.app/book?record=${bookingCodeForRecord(record)}`,
-    "{{Contract_Link}}": `https://collaburo.app/book?record=${bookingCodeForRecord(record)}&action=sign`,
+    "{{Phone}}": record.client?.phone || "",
+    "{{Booking_ID}}": bookingCodeForRecord(record),
+    "{{Copy_Link}}": `${origin}/book?record=${bookingCodeForRecord(record)}`,
+    "{{Contract_Link}}": `${origin}/book?record=${bookingCodeForRecord(record)}&action=sign`,
     "{{Insurance_Link}}": "https://duuo.ca/event-insurance",
     "{{AGCO_Link}}": "https://www.agco.ca/",
     "{{Event_Privacy}}": record.request?.eventPrivacy || "",
+    "{{Event_Type}}": record.request?.eventType || "",
+    "{{Event_Description}}": record.request?.description || "",
     "{{Alcohol_On_Site}}": record.request?.alcoholOnSite || "",
     "{{Expected_Number_of_Attendees}}": record.request?.attendeeCount || "",
     "{{Space}}": record.request?.space || "",
+    "{{Booking_DateTime}}": bookingText,
     "{{Booking_Start_datetime}}": bookingStart.trim(),
     "{{Booking_end_datetime}}": bookingEnd.trim(),
+    "{{Guests_Arrival}}": record.request?.guestsArrival || "",
+    "{{No_One_On_Site}}": record.request?.noOneOnSite || "",
     "{{Set_up_Service}}": record.adminSections?.serviceNotes || "",
     "{{Clean_up_Service}}": record.adminSections?.serviceNotes || "",
+    "{{Special_Notes}}": record.adminSections?.specialNotes || record.adminSections?.instructions || "",
+    "{{Catering_Specifics}}": record.adminSections?.cateringSpecifics || "",
+    "{{Security_Deposit}}": (() => {
+      const raw = record.progress?.securityDepositCost;
+      if (raw != null && String(raw).trim() !== "" && !Number.isFinite(Number(raw))) return String(raw);
+      return formatContractMoney(raw ?? costs.securityDeposit);
+    })(),
+    "{{Security_Deposit_Note}}": record.progress?.securityDepositNote || "",
+    "{{Space_Rental_Total}}": formatContractMoney(costs.spaceRentalTotal),
+    "{{Space_Content_Total}}": formatContractMoney(costs.spaceContentTotal),
+    "{{Catering_Total}}": formatContractMoney(costs.cateringTotal),
+    "{{Setup_Total}}": formatContractMoney(costs.setupTotal),
+    "{{Event_Service_Total}}": formatContractMoney(costs.eventTotal),
+    "{{Cleanup_Total}}": formatContractMoney(costs.cleanupTotal),
+    "{{Subtotal}}": formatContractMoney(costs.subtotal),
+    "{{Fees_Total}}": formatContractMoney(feeTotal),
+    "{{Discount_Total}}": formatContractMoney(discountTotal),
+    "{{Total}}": formatContractMoney(costs.total),
+    "{{Total_With_Deposit}}": formatContractMoney(costs.totalWithDeposit),
+    "{{Space_Lines}}": formatContractCostLines(costs.spaceLines),
+    "{{Space_Content_Lines}}": formatContractCostLines(costs.spaceContentLines),
+    "{{Catering_Lines}}": formatContractCostLines(costs.cateringLines),
+    "{{Setup_Lines}}": formatContractCostLines(costs.setupLines),
+    "{{Event_Service_Lines}}": formatContractCostLines(costs.eventLines),
+    "{{Cleanup_Lines}}": formatContractCostLines(costs.cleanupLines),
+    "{{Fee_Lines}}": formatContractCostLines(costs.feeLines),
+    "{{Discount_Lines}}": formatContractCostLines(costs.discountLines),
+    "{{Cost_Breakdown}}": buildContractCostBreakdown(costs),
+    "{{Item_Details}}": itemDetails,
+    "{{Layout_Selections}}": formatContractLayoutSelections(record.layoutSelections),
+    "{{Answer_Summary}}": formatContractAnswerSummary(record.answerSummary),
+    "{{Contract_Generated_At}}": record.progress?.contractGeneratedAt
+      ? new Date(record.progress.contractGeneratedAt).toLocaleString()
+      : "",
+    "{{Contract_Status}}": record.progress?.contract || "Not Generated",
+    "{{Agreement_Status}}": record.progress?.agreement || "Not Signed",
+    "{{Today_Date}}": today,
   };
 }
 
@@ -17010,7 +17188,7 @@ function BookingAuditModal({ audit, steps = [], onClose }) {
   );
 }
 
-function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookingAnswers, onViewSubmittedAnswers, onEditClient, onSave }) {
+function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookingAnswers, onViewSubmittedAnswers, onEditClient, onSave, onEmail }) {
   const Ic = window.Icons;
   const [costBreakdown, setCostBreakdown] = React.useState(null);
   const [selectedAudit, setSelectedAudit] = React.useState(null);
@@ -17196,7 +17374,47 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
                   )}
                 </div>
               </div>
-              <div><label className="lbl">Generate Contract</label><select className="select" value={record.progress?.contract || "Not Generated"} onChange={(e) => patchProgress({ contract: e.target.value })}>{["Not Generated", "Generated", "Sent"].map((o) => <option key={o}>{o}</option>)}</select></div>
+              <div>
+                <label className="lbl">Generate Contract</label>
+                <div className="progress-document-row" style={{ alignItems: "center" }}>
+                  <select className="select" value={record.progress?.contract || "Not Generated"} onChange={(e) => patchProgress({ contract: e.target.value })}>
+                    {["Not Generated", "Generated", "Sent"].map((o) => <option key={o}>{o}</option>)}
+                  </select>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn dark sm"
+                      onClick={() => patchProgress({
+                        contract: "Generated",
+                        contractGeneratedAt: new Date().toISOString(),
+                      })}
+                    >
+                      Generate
+                    </button>
+                    <button
+                      type="button"
+                      className="btn sm"
+                      disabled={(record.progress?.contract || "Not Generated") === "Not Generated"}
+                      onClick={() => {
+                        patchProgress({ contract: "Sent", contractSentAt: new Date().toISOString() });
+                        onEmail?.(record, "sign-form");
+                      }}
+                      title="Send sign-form email with contract link"
+                    >
+                      Send
+                    </button>
+                    <a
+                      className="btn-gray sm"
+                      href={`/book?record=${encodeURIComponent(bookingCodeForRecord(record))}&action=sign`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+                    >
+                      Open link
+                    </a>
+                  </div>
+                </div>
+              </div>
             </div>
 
             </div>
@@ -17325,6 +17543,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const [siteSettings, setSiteSettings] = React.useState(() => loadSiteSettings() || normalizeSiteSettings(SAMPLE_SITE_SETTINGS));
   const [progressRecords, setProgressRecords] = React.useState(() => loadProgressRecords() || normalizeProgressRecords(SAMPLE_PROGRESS_RECORDS));
   const [publicEditRecord, setPublicEditRecord] = React.useState(null);
+  const [publicRecordLookupDone, setPublicRecordLookupDone] = React.useState(false);
   const [activeProgressId, setActiveProgressId] = React.useState(null);
   const [submittedAnswersRecordId, setSubmittedAnswersRecordId] = React.useState(null);
   const [adminEditRecordId, setAdminEditRecordId] = React.useState(() => new URLSearchParams(window.location.search).get("edit") || null);
@@ -17492,7 +17711,11 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   React.useEffect(() => {
     if (!publicMode) return;
     const recordId = new URLSearchParams(window.location.search).get("record");
-    if (!recordId) return;
+    if (!recordId) {
+      setPublicRecordLookupDone(true);
+      return;
+    }
+    setPublicRecordLookupDone(false);
     collaburoApi("/api/submissions", {
       method: "POST",
       body: JSON.stringify({ action: "get-progress-record", recordId }),
@@ -17502,7 +17725,8 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       })
       .catch((error) => {
         pushToast({ kind: "danger", title: "Could not load request", desc: error.message || "The edit link may no longer be available." });
-      });
+      })
+      .finally(() => setPublicRecordLookupDone(true));
   }, [publicMode, pushToast]);
 
   // Empty-vs-populated tweak
@@ -18246,6 +18470,15 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           />
         );
       }
+      if (activeSection === "contract") {
+        return (
+          <ContractSettingsView
+            settings={siteSettings}
+            onChange={updateSiteSettings}
+            dynamicFields={DYNAMIC_CONTRACT_FIELDS}
+          />
+        );
+      }
       if (activeSection === "clients") {
         const submittedAnswersRecord = progressRecords.find((record) => record.id === submittedAnswersRecordId);
         const activeRecord = progressRecords.find((record) => record.id === activeProgressId);
@@ -18262,6 +18495,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
             onViewSubmittedAnswers={(record) => setSubmittedAnswersRecordId(record.id)}
             onEditClient={openClientProgress}
             onSave={save}
+            onEmail={(record, typeId) => setEmailDraft({ recordId: record.id, typeId })}
           />
         ) : (
           <RentalsProgressListView
@@ -18376,6 +18610,30 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   }
 
   if (publicMode) {
+    const publicAction = new URLSearchParams(window.location.search).get("action");
+    if (publicAction === "sign") {
+      if (!publicRecordLookupDone && clientRecordId) {
+        return <div className="booking-answers-loading" style={{ minHeight: "100vh", display: "grid", placeItems: "center", fontWeight: 700 }}>Loading contract…</div>;
+      }
+      return (
+        <ContractSignView
+          record={clientEditRecord}
+          siteSettings={siteSettings}
+          tokenMap={emailTokenMap(clientEditRecord || {})}
+          onSigned={(signedRecord) => {
+            if (signedRecord) {
+              setPublicEditRecord(normalizeProgressRecord(signedRecord));
+              setProgressRecords((records) => {
+                const next = records.map((item) => String(item.id) === String(signedRecord.id) ? normalizeProgressRecord(signedRecord) : item);
+                if (!next.some((item) => String(item.id) === String(signedRecord.id))) next.unshift(normalizeProgressRecord(signedRecord));
+                return next;
+              });
+            }
+          }}
+          onError={(error) => pushToast({ kind: "danger", title: "Contract signing failed", desc: error.message || "Please try again." })}
+        />
+      );
+    }
     return (
       <>
 	        <ClientPreview

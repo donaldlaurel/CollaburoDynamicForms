@@ -3,6 +3,7 @@ const SIDE_NAV = [
   { id: "rentals",  label: "Rentals",        icon: "Tag",    count: "59" },
   { id: "pricing",  label: "Pricing Rules",  icon: "Dollar", count: "12" },
   { id: "email-settings", label: "Email Settings", icon: "Mail" },
+  { id: "contract", label: "Contract", icon: "File" },
   { id: "site",     label: "Site Settings",  icon: "Settings" },
 ];
 
@@ -19,6 +20,7 @@ const SECTION_LABEL = {
   site: "Site Settings",
   clients: "Rentals Progress List",
   "email-settings": "Email Settings",
+  contract: "Contract",
   calendar: "Booking Calendar",
   reports: "Reports",
 };
@@ -30,6 +32,7 @@ const SECTION_PARENT = {
   site: "Settings",
   clients: "Progress",
   "email-settings": "Settings",
+  contract: "Settings",
   calendar: "Operations",
   reports: "Operations",
 };
