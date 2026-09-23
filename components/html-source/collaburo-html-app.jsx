@@ -10,6 +10,7 @@ import "./runtime-widgets";
 import { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT } from "./navigation";
 import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-data";
 import { ContractSettingsView, ContractSignView, normalizeContractSettings, createDefaultContractSettings } from "./contract";
+import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 
 
 
@@ -49,6 +50,20 @@ const SAMPLE_PRICING_RULES = {
       conditions: [{ id: "cond_not_for_profit", fieldId: "f6", fieldLabel: "Not for profit", operator: "is_true", value: "true" }],
       stackable: true,
       priority: 10,
+      maxDiscount: { enabled: false, valueType: "flat", amount: 0 },
+      active: true,
+    },
+    {
+      id: "disc_community_organization",
+      name: "Community Organization Discount",
+      valueType: "percentage",
+      amount: 0,
+      applyTo: "subtotal",
+      targets: [],
+      conditionsMode: "all",
+      conditions: [{ id: "cond_community_organization", fieldId: "f8", fieldLabel: "Community Organization", operator: "is_true", value: "true" }],
+      stackable: true,
+      priority: 20,
       maxDiscount: { enabled: false, valueType: "flat", amount: 0 },
       active: true,
     },
@@ -5795,8 +5810,9 @@ const STEP_PRESETS = {
     { label: "Organization", type: "text", required: false, placeholder: "Enter organization or charity name if any", helpText: "If booking on behalf of a business, non-profit, or organization.", category: "Contact" },
     { label: "Email", type: "text", required: true, placeholder: "Enter email address", category: "Contact" },
     { label: "Phone Number", type: "number", required: true, placeholder: "Enter valid phone number: (123) 123-1234", category: "Contact" },
-    { label: "Not for profit", type: "toggle", required: false, linkedToPricing: true, fieldDescription: "(only check this if you are a registered charity or a not for profit organization)", category: "Discount" },
-    { label: "Student Body", type: "toggle", required: false, adminRequired: true, linkedToPricing: true, fieldDescription: "(only check this if event is fully related to a school or university/college)", category: "Discount" },
+    { label: "Not for profit", type: "toggle", required: false, linkedToPricing: true, fieldDescription: "(only check this if you are a registered charity or a not-for-profit organization - proof may be requested)", category: "Discount" },
+    { label: "Student Body", type: "toggle", required: false, adminRequired: true, linkedToPricing: true, fieldDescription: "(only check this if event is fully related to a school or university/college - proof may be requested)", category: "Discount" },
+    { label: "Community Organization", type: "toggle", required: false, linkedToPricing: true, fieldDescription: "(only check this if you are a community group with an established public identity, such as a sports team, community theater, cultural or identity group or a religious gathering that are not a registered Not for Profit Group - proof may be requested)", category: "Discount" },
   ],
   "Event Details": [
     { label: "Event Privacy", type: "radio", required: true, options: ["Public|Events advertised publicly, tickets sold/given in advance or at the door.", "Semi-private|A mostly private event but some guests may be from the general public.", "Private|A private event for family, friends, coworkers, or invited guests only."], category: "Event" },
@@ -5998,23 +6014,48 @@ const STEP_PRESETS = {
   ],
 };
 
-function recommendedFieldPresetFromField(field = {}) {
-  const preset = cloneData(field) || {};
-  delete preset.id;
-  delete preset.legacyDuplicateId;
-  delete preset.excludeFromRecommended;
-  return preset;
+function resolveOldSiteCatalogStepName(stepName = "") {
+  const name = String(stepName || "").trim();
+  if (name === "Submit Request") return "Review & Submit";
+  return name;
 }
 
-function buildRecommendedFieldPresetsByStep(steps = []) {
-  return (steps || []).reduce((acc, step) => {
-    const presets = (step.fields || [])
-      .filter((field) => !field.excludeFromRecommended)
-      .map(recommendedFieldPresetFromField);
-    acc[step.id] = presets;
-    if (step.name) acc[step.name] = presets;
-    return acc;
-  }, {});
+function mergeRecommendedPresets(...lists) {
+  const byLabel = new Map();
+  lists.flat().forEach((preset) => {
+    const label = String(preset?.label || "").trim().toLowerCase();
+    if (!label) return;
+    if (!byLabel.has(label)) byLabel.set(label, preset);
+  });
+  return Array.from(byLabel.values());
+}
+
+function getOldSiteRecommendedPresets(stepName = "") {
+  const catalogKey = resolveOldSiteCatalogStepName(stepName);
+  const catalog = oldSitePresetsForStep(catalogKey).map((preset) => ({
+    ...cloneData(preset),
+    // Safest import: never force client-required on bulk add.
+    required: false,
+    adminRequired: false,
+    visibleToClient: preset.visibleToClient !== false,
+    safeImport: true,
+  }));
+  const legacy = (STEP_PRESETS[catalogKey] || STEP_PRESETS[stepName] || []).map((preset) => ({
+    ...cloneData(preset),
+    required: false,
+    adminRequired: !!preset.adminRequired,
+    visibleToClient: preset.visibleToClient !== false,
+    safeImport: true,
+    source: preset.source || "step_preset",
+  }));
+  return mergeRecommendedPresets(catalog, legacy);
+}
+
+function defaultRecommendedSpaceFilter(presets = []) {
+  const spaces = Array.from(new Set(presets.map((p) => p.oldSiteSpace || "Shared")));
+  if (spaces.includes("Shared")) return "Shared";
+  if (spaces.includes("Main Hall")) return "Main Hall";
+  return spaces[0] || "Shared";
 }
 
 // ---------------- Recommended Fields Modal ----------------
@@ -6023,61 +6064,113 @@ function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConf
   const existingLabels = new Set(existingFields.map((f) => String(f.label || "").toLowerCase()).filter(Boolean));
   const isExistingPreset = (preset) => existingLabels.has(String(preset.label || "").toLowerCase());
 
-  const [selected, setSelected] = React.useState(() => {
-    const init = {};
-    presets.forEach((p, i) => {
-      init[i] = true;
-    });
-    return init;
-  });
+  const spaces = React.useMemo(() => {
+    const set = new Set(presets.map((p) => p.oldSiteSpace || "Shared"));
+    const ordered = [];
+    if (set.has("Shared")) ordered.push("Shared");
+    Array.from(set).filter((s) => s !== "Shared").sort().forEach((s) => ordered.push(s));
+    return ordered.length ? ordered : ["Shared"];
+  }, [presets]);
 
-  const allSelected = presets.length > 0 && presets.every((_, i) => selected[i]);
-  const selectedMissingCount = presets.filter((preset, i) => selected[i] && !isExistingPreset(preset)).length;
+  const [spaceFilter, setSpaceFilter] = React.useState(() => defaultRecommendedSpaceFilter(presets));
+  const visiblePresets = React.useMemo(
+    () => presets.filter((p) => (p.oldSiteSpace || "Shared") === spaceFilter),
+    [presets, spaceFilter]
+  );
+
+  const [selected, setSelected] = React.useState({});
+
+  React.useEffect(() => {
+    const init = {};
+    visiblePresets.forEach((p, i) => {
+      // Pre-select only missing fields (safe additive import).
+      init[i] = !isExistingPreset(p);
+    });
+    setSelected(init);
+  }, [spaceFilter, stepName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const allSelected = visiblePresets.length > 0 && visiblePresets.every((_, i) => selected[i]);
+  const selectedMissingCount = visiblePresets.filter((preset, i) => selected[i] && !isExistingPreset(preset)).length;
   const noneSelected = selectedMissingCount === 0;
+  const alreadyCount = visiblePresets.filter((p) => isExistingPreset(p)).length;
 
   const toggleAll = () => {
     const next = {};
     const val = !allSelected;
-    presets.forEach((preset, i) => { next[i] = isExistingPreset(preset) ? true : val; });
+    visiblePresets.forEach((preset, i) => {
+      next[i] = isExistingPreset(preset) ? false : val;
+    });
     setSelected(next);
   };
 
   const toggle = (i) => {
-    if (isExistingPreset(presets[i])) return;
+    if (isExistingPreset(visiblePresets[i])) return;
     setSelected({ ...selected, [i]: !selected[i] });
   };
 
   const handleConfirm = () => {
-    const chosen = presets.filter((preset, i) => selected[i] && !isExistingPreset(preset));
+    const chosen = visiblePresets
+      .filter((preset, i) => selected[i] && !isExistingPreset(preset))
+      .map((preset) => ({
+        ...cloneData(preset),
+        required: false,
+        adminRequired: false,
+        safeImport: true,
+        excludeFromRecommended: true,
+      }));
     onConfirm(chosen);
   };
 
   return (
     <div className="rec-overlay" onClick={onClose}>
-      <div className="rec-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Add Field</h3>
+      <div className="rec-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+        <h3>Add missing fields from old site</h3>
         <div className="sub">Step: {stepName}</div>
-        <div className="rec-toggle-all" onClick={toggleAll}>
-          {allSelected ? "Deselect all" : "Select all"}
-        </div>
-        {presets.map((p, i) => (
-          <div
-            key={i}
-            className={"rec-field" + (selected[i] ? " sel" : "")}
-            onClick={() => toggle(i)}
-          >
-            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <input type="checkbox" checked={!!selected[i]} disabled={isExistingPreset(p)} readOnly />
-              <span>{p.label}</span>
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {isExistingPreset(p) && <span className="rental-muted" style={{ fontSize: 10.5 }}>Already in workflow</span>}
-              <span className="field-type-pill" style={{ fontSize: 10.5 }}>{TYPE_META[p.type]?.label || p.type}</span>
+        <p className="rental-muted" style={{ margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.45 }}>
+          Adds only fields not already in this step. Imports as <b>optional</b> so the live form stays safe until you review required flags.
+          Then <b>Save</b>, open client preview, and <b>Publish</b> when ready. Catalog version {OLD_SITE_FIELD_CATALOG_VERSION}.
+        </p>
+        {spaces.length > 1 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+            <label className="lbl" style={{ margin: 0 }}>Space</label>
+            <select className="select" value={spaceFilter} onChange={(e) => setSpaceFilter(e.target.value)} style={{ minWidth: 160 }}>
+              {spaces.map((space) => (
+                <option key={space} value={space}>{space}</option>
+              ))}
+            </select>
+            <span className="rental-muted" style={{ fontSize: 12 }}>
+              {visiblePresets.length} listed · {alreadyCount} already present
             </span>
           </div>
-        ))}
-        <div className="rec-new" onClick={() => { onClose(); }}>
-          <Ic.Plus size={14} /> New custom field
+        )}
+        <div className="rec-toggle-all" onClick={toggleAll}>
+          {allSelected ? "Deselect all missing" : "Select all missing"}
+        </div>
+        <div style={{ maxHeight: 360, overflow: "auto", marginBottom: 8 }}>
+          {visiblePresets.map((p, i) => (
+            <div
+              key={`${p.label}-${i}`}
+              className={"rec-field" + (selected[i] ? " sel" : "") + (isExistingPreset(p) ? " rec-field-existing" : "")}
+              onClick={() => toggle(i)}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <input type="checkbox" checked={!!selected[i]} disabled={isExistingPreset(p)} readOnly />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block" }}>{p.label}</span>
+                  {p.oldSiteUserRequired ? (
+                    <span className="rental-muted" style={{ fontSize: 10.5 }}>Was required on old site — imported optional</span>
+                  ) : null}
+                </span>
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                {isExistingPreset(p) && <span className="rental-muted" style={{ fontSize: 10.5 }}>Already in workflow</span>}
+                <span className="field-type-pill" style={{ fontSize: 10.5 }}>{TYPE_META[p.type]?.label || p.type}</span>
+              </span>
+            </div>
+          ))}
+          {visiblePresets.length === 0 && (
+            <div className="rental-muted" style={{ padding: 12 }}>No old-site fields for this space.</div>
+          )}
         </div>
         <div className="rec-actions">
           <button className="btn-gray" onClick={onClose}>Cancel</button>
@@ -6087,7 +6180,7 @@ function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConf
             style={noneSelected ? { opacity: 0.5, pointerEvents: "none" } : {}}
             onClick={handleConfirm}
           >
-            Confirm ({selectedMissingCount})
+            Add missing ({selectedMissingCount})
           </button>
         </div>
       </div>
@@ -7176,8 +7269,8 @@ function FieldEditor({ step, recommendedFields = [], onUpdateStep, onAddField, o
               </button>
             )}
             {recommendedFields.length > 0 && (
-              <button className="btn ghost sm" onClick={() => setRecOpen(true)} title="Recommended fields for this step">
-                <Ic.CheckSq size={13} /> Recommended
+              <button className="btn ghost sm" onClick={() => setRecOpen(true)} title="Add missing fields from the old site catalog">
+                <Ic.CheckSq size={13} /> From old site
               </button>
             )}
             <button className="btn dark sm" onClick={() => setPickerOpen((o) => !o)}>
@@ -13898,6 +13991,7 @@ const SAMPLE_PROGRESS_RECORDS = [
       duuoEventType: "Select One",
       notForProfit: "No",
       studentBody: "No",
+      communityOrganization: "No",
       source: "",
       createdBy: "Hazel",
       accessibleByRecordLink: true,
@@ -14323,6 +14417,7 @@ function normalizeProgressRecord(record = {}, index = 0) {
       duuoEventType: "Select One",
       notForProfit: "No",
       studentBody: "No",
+      communityOrganization: "No",
       source: "",
       createdBy: "Admin",
       accessibleByRecordLink: true,
@@ -17533,7 +17628,19 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
 
   // Steps — load from localStorage, fallback to sample
   const [steps, setSteps] = React.useState(() => loadSteps() || normalizeWorkflowSteps(window.SAMPLE_STEPS));
-  const [recommendedFieldPresets, setRecommendedFieldPresets] = React.useState(() => buildRecommendedFieldPresetsByStep(loadSteps() || normalizeWorkflowSteps(window.SAMPLE_STEPS)));
+  const [recommendedFieldPresets] = React.useState(() => {
+    // Kept as a map for FieldEditor lookups by step name; sourced from old-site inventory.
+    const names = Object.keys(STEP_PRESETS || {});
+    const catalogNames = [
+      "Personal Details", "Event Details", "Venue Space", "Layout", "Rentals",
+      "Catering", "Additional Services", "Additional Info", "Review & Submit", "Submit Request",
+    ];
+    const map = {};
+    Array.from(new Set([...names, ...catalogNames])).forEach((name) => {
+      map[name] = getOldSiteRecommendedPresets(name);
+    });
+    return map;
+  });
   const [rentalCatalog, setRentalCatalog] = React.useState(() => {
     const initial = loadRentalCatalog() || window.normalizeRentalCatalog(window.SAMPLE_RENTAL_CATALOG);
     setRecommendedRentalCatalogSnapshot(initial);
@@ -17669,7 +17776,6 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           return;
         }
         setSteps(next.steps);
-        setRecommendedFieldPresets(buildRecommendedFieldPresetsByStep(next.steps));
         setRentalCatalog(next.rentalCatalog);
         setRecommendedRentalCatalogSnapshot(next.rentalCatalog);
         setPricingRules(next.pricingRules);
@@ -17944,19 +18050,21 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       const p = cloneData(source);
       delete p.id;
       delete p.legacyDuplicateId;
+      const safe = p.safeImport !== false;
       return ({
       ...p,
       id: uid("f"),
       type: p.type || "text",
       label: p.label || defaultLabelFor(p.type || "text"),
-      required: !!p.required,
-      adminRequired: !!p.adminRequired,
+      required: safe ? false : !!p.required,
+      adminRequired: safe ? false : !!p.adminRequired,
       placeholder: p.placeholder || "",
       visibleToClient: p.visibleToClient !== false,
       helpText: p.helpText || "",
       fieldDescription: p.fieldDescription || "",
       linkedToPricing: !!p.linkedToPricing,
       category: p.category || "",
+      excludeFromRecommended: true,
       ...(p.options ? { options: cloneData(p.options) } : {}),
       ...(p.type === "extras" ? { ...defaultRentalExtrasField(), ...p, id: uid("f") } : {}),
     });
@@ -17966,7 +18074,12 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     ));
     if (newFields.length > 0) setOpenFieldId(newFields[0].id);
     if (newFields.length > 0) revealAddedAdminItem(newFields[0].id);
-    pushToast({ kind: "success", title: `${newFields.length} field${newFields.length > 1 ? "s" : ""} added`, desc: `Recommended fields added to ${activeStep.name}` });
+    pushToast({
+      kind: "success",
+      title: `${newFields.length} field${newFields.length > 1 ? "s" : ""} added (optional)`,
+      desc: "Missing old-site fields were added as optional. Review required flags, Save, preview the client form, then Publish when ready.",
+      duration: 9000,
+    });
   };
   const updateField = (fid, next) => {
     commitSteps((current) => current.map((s) =>
@@ -18223,7 +18336,6 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       buildDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current, currentPublishedState())
         .then((databaseState) => putAdminStateToDatabase(databaseState))
         .then(() => {
-          setRecommendedFieldPresets(buildRecommendedFieldPresetsByStep(stepsRef.current));
           setRecommendedRentalCatalogSnapshot(rentalCatalogRef.current);
           pushToast({ kind: "success", title: "Database saved", desc: "Configuration was saved, and uploaded images were moved to Cloudinary." });
         })
