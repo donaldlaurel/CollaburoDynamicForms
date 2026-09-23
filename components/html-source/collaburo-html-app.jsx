@@ -6032,23 +6032,14 @@ function mergeRecommendedPresets(...lists) {
 
 function getOldSiteRecommendedPresets(stepName = "") {
   const catalogKey = resolveOldSiteCatalogStepName(stepName);
-  const catalog = oldSitePresetsForStep(catalogKey).map((preset) => ({
+  return oldSitePresetsForStep(catalogKey).map((preset) => ({
     ...cloneData(preset),
-    // Safest import: never force client-required on bulk add.
+    // Safest import: never force client-required on bulk add from old site.
     required: false,
     adminRequired: false,
     visibleToClient: preset.visibleToClient !== false,
     safeImport: true,
   }));
-  const legacy = (STEP_PRESETS[catalogKey] || STEP_PRESETS[stepName] || []).map((preset) => ({
-    ...cloneData(preset),
-    required: false,
-    adminRequired: !!preset.adminRequired,
-    visibleToClient: preset.visibleToClient !== false,
-    safeImport: true,
-    source: preset.source || "step_preset",
-  }));
-  return mergeRecommendedPresets(catalog, legacy);
 }
 
 function defaultRecommendedSpaceFilter(presets = []) {
@@ -6059,37 +6050,47 @@ function defaultRecommendedSpaceFilter(presets = []) {
 }
 
 // ---------------- Recommended Fields Modal ----------------
-function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConfirm, onClose }) {
+function RecommendedFieldsModal({
+  stepName,
+  existingFields,
+  presets = [],
+  onConfirm,
+  onClose,
+  variant = "recommended",
+}) {
   const Ic = window.Icons;
+  const isOldSite = variant === "old_site";
   const existingLabels = new Set(existingFields.map((f) => String(f.label || "").toLowerCase()).filter(Boolean));
   const isExistingPreset = (preset) => existingLabels.has(String(preset.label || "").toLowerCase());
 
   const spaces = React.useMemo(() => {
+    if (!isOldSite) return [];
     const set = new Set(presets.map((p) => p.oldSiteSpace || "Shared"));
     const ordered = [];
     if (set.has("Shared")) ordered.push("Shared");
     Array.from(set).filter((s) => s !== "Shared").sort().forEach((s) => ordered.push(s));
     return ordered.length ? ordered : ["Shared"];
-  }, [presets]);
+  }, [presets, isOldSite]);
 
   const [spaceFilter, setSpaceFilter] = React.useState(() => defaultRecommendedSpaceFilter(presets));
-  const visiblePresets = React.useMemo(
-    () => presets.filter((p) => (p.oldSiteSpace || "Shared") === spaceFilter),
-    [presets, spaceFilter]
-  );
+  const visiblePresets = React.useMemo(() => {
+    if (!isOldSite) return presets;
+    return presets.filter((p) => (p.oldSiteSpace || "Shared") === spaceFilter);
+  }, [presets, spaceFilter, isOldSite]);
 
   const [selected, setSelected] = React.useState({});
 
   React.useEffect(() => {
     const init = {};
     visiblePresets.forEach((p, i) => {
-      // Pre-select only missing fields (safe additive import).
-      init[i] = !isExistingPreset(p);
+      // Recommended: select all rows (existing stay checked but disabled).
+      // Old site: pre-select only missing fields.
+      init[i] = isOldSite ? !isExistingPreset(p) : true;
     });
     setSelected(init);
-  }, [spaceFilter, stepName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [spaceFilter, stepName, variant, presets]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const allSelected = visiblePresets.length > 0 && visiblePresets.every((_, i) => selected[i]);
+  const allSelected = visiblePresets.length > 0 && visiblePresets.every((_, i) => selected[i] || isExistingPreset(visiblePresets[i]));
   const selectedMissingCount = visiblePresets.filter((preset, i) => selected[i] && !isExistingPreset(preset)).length;
   const noneSelected = selectedMissingCount === 0;
   const alreadyCount = visiblePresets.filter((p) => isExistingPreset(p)).length;
@@ -6098,7 +6099,7 @@ function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConf
     const next = {};
     const val = !allSelected;
     visiblePresets.forEach((preset, i) => {
-      next[i] = isExistingPreset(preset) ? false : val;
+      next[i] = isExistingPreset(preset) ? (isOldSite ? false : true) : val;
     });
     setSelected(next);
   };
@@ -6111,26 +6112,39 @@ function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConf
   const handleConfirm = () => {
     const chosen = visiblePresets
       .filter((preset, i) => selected[i] && !isExistingPreset(preset))
-      .map((preset) => ({
-        ...cloneData(preset),
-        required: false,
-        adminRequired: false,
-        safeImport: true,
-        excludeFromRecommended: true,
-      }));
+      .map((preset) => {
+        const next = {
+          ...cloneData(preset),
+          excludeFromRecommended: true,
+        };
+        if (isOldSite) {
+          next.required = false;
+          next.adminRequired = false;
+          next.safeImport = true;
+        } else {
+          next.safeImport = false;
+        }
+        return next;
+      });
     onConfirm(chosen);
   };
 
   return (
     <div className="rec-overlay" onClick={onClose}>
       <div className="rec-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
-        <h3>Add missing fields from old site</h3>
+        <h3>{isOldSite ? "Add missing fields from old site" : "Add Field"}</h3>
         <div className="sub">Step: {stepName}</div>
-        <p className="rental-muted" style={{ margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.45 }}>
-          Adds only fields not already in this step. Imports as <b>optional</b> so the live form stays safe until you review required flags.
-          Then <b>Save</b>, open client preview, and <b>Publish</b> when ready. Catalog version {OLD_SITE_FIELD_CATALOG_VERSION}.
-        </p>
-        {spaces.length > 1 && (
+        {isOldSite ? (
+          <p className="rental-muted" style={{ margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.45 }}>
+            Adds only fields not already in this step. Imports as <b>optional</b> so the live form stays safe until you review required flags.
+            Then <b>Save</b>, open client preview, and <b>Publish</b> when ready. Catalog version {OLD_SITE_FIELD_CATALOG_VERSION}.
+          </p>
+        ) : (
+          <p className="rental-muted" style={{ margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.45 }}>
+            Suggested fields for this step. Already-added fields are marked and skipped.
+          </p>
+        )}
+        {isOldSite && spaces.length > 1 && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
             <label className="lbl" style={{ margin: 0 }}>Space</label>
             <select className="select" value={spaceFilter} onChange={(e) => setSpaceFilter(e.target.value)} style={{ minWidth: 160 }}>
@@ -6144,7 +6158,7 @@ function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConf
           </div>
         )}
         <div className="rec-toggle-all" onClick={toggleAll}>
-          {allSelected ? "Deselect all missing" : "Select all missing"}
+          {allSelected ? "Deselect all" : "Select all"}
         </div>
         <div style={{ maxHeight: 360, overflow: "auto", marginBottom: 8 }}>
           {visiblePresets.map((p, i) => (
@@ -6157,7 +6171,7 @@ function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConf
                 <input type="checkbox" checked={!!selected[i]} disabled={isExistingPreset(p)} readOnly />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: "block" }}>{p.label}</span>
-                  {p.oldSiteUserRequired ? (
+                  {isOldSite && p.oldSiteUserRequired ? (
                     <span className="rental-muted" style={{ fontSize: 10.5 }}>Was required on old site — imported optional</span>
                   ) : null}
                 </span>
@@ -6169,9 +6183,16 @@ function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConf
             </div>
           ))}
           {visiblePresets.length === 0 && (
-            <div className="rental-muted" style={{ padding: 12 }}>No old-site fields for this space.</div>
+            <div className="rental-muted" style={{ padding: 12 }}>
+              {isOldSite ? "No old-site fields for this space." : "No recommended fields for this step."}
+            </div>
           )}
         </div>
+        {!isOldSite && (
+          <div className="rec-new" onClick={onClose}>
+            <Ic.Plus size={14} /> New custom field
+          </div>
+        )}
         <div className="rec-actions">
           <button className="btn-gray" onClick={onClose}>Cancel</button>
           <button
@@ -6180,11 +6201,101 @@ function RecommendedFieldsModal({ stepName, existingFields, presets = [], onConf
             style={noneSelected ? { opacity: 0.5, pointerEvents: "none" } : {}}
             onClick={handleConfirm}
           >
-            Add missing ({selectedMissingCount})
+            {isOldSite ? `Add missing (${selectedMissingCount})` : `Confirm (${selectedMissingCount})`}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+function getStepRecommendedPresets(stepName = "") {
+  const catalogKey = resolveOldSiteCatalogStepName(stepName);
+  return (STEP_PRESETS[catalogKey] || STEP_PRESETS[stepName] || []).map((preset) => ({
+    ...cloneData(preset),
+    source: "step_preset",
+    safeImport: false,
+  }));
+}
+
+function RecommendedImportControls({ stepName, existingFields = [], onAddMultipleFields }) {
+  const Ic = window.Icons;
+  const [open, setOpen] = React.useState(false);
+  const presets = React.useMemo(() => getStepRecommendedPresets(stepName), [stepName]);
+  if (!presets.length || typeof onAddMultipleFields !== "function") return null;
+  return (
+    <>
+      <button
+        type="button"
+        className="btn ghost sm"
+        onClick={() => setOpen(true)}
+        title="Recommended fields for this step"
+      >
+        <Ic.CheckSq size={13} /> Recommended
+      </button>
+      {open && (
+        <RecommendedFieldsModal
+          stepName={stepName}
+          existingFields={existingFields}
+          presets={presets}
+          variant="recommended"
+          onConfirm={(chosen) => {
+            onAddMultipleFields(chosen);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function OldSiteImportControls({ stepName, existingFields = [], onAddMultipleFields }) {
+  const Ic = window.Icons;
+  const [open, setOpen] = React.useState(false);
+  const presets = React.useMemo(() => getOldSiteRecommendedPresets(stepName), [stepName]);
+  if (!presets.length || typeof onAddMultipleFields !== "function") return null;
+  return (
+    <>
+      <button
+        type="button"
+        className="btn ghost sm"
+        onClick={() => setOpen(true)}
+        title="Add missing fields from the old site catalog"
+      >
+        <Ic.Layers size={13} /> From old site
+      </button>
+      {open && (
+        <RecommendedFieldsModal
+          stepName={stepName}
+          existingFields={existingFields}
+          presets={presets}
+          variant="old_site"
+          onConfirm={(chosen) => {
+            onAddMultipleFields(chosen);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function WorkflowFieldCatalogButtons({ stepName, existingFields = [], onAddMultipleFields }) {
+  return (
+    <>
+      <RecommendedImportControls
+        stepName={stepName}
+        existingFields={existingFields}
+        onAddMultipleFields={onAddMultipleFields}
+      />
+      <OldSiteImportControls
+        stepName={stepName}
+        existingFields={existingFields}
+        onAddMultipleFields={onAddMultipleFields}
+      />
+    </>
   );
 }
 
@@ -6272,7 +6383,7 @@ function ResetWarningModal({ onConfirm, onCancel }) {
 // No type dropdowns, no display-as, no nested options. Just services and prices.
 // Saves to the same field.options schema, so client renderer + cost sidebar keep working.
 // ============================================================
-function SimpleServicesEditor({ step, onUpdateStep, onUpdateField, onDeleteField, onAddField, openFieldId, onToggleField, onDuplicateField, onReorderFields, onDeleteStep }) {
+function SimpleServicesEditor({ step, onUpdateStep, onUpdateField, onDeleteField, onAddField, onAddMultipleFields, openFieldId, onToggleField, onDuplicateField, onReorderFields, onDeleteStep }) {
   const Ic = window.Icons;
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const confirmDeleteField = (field) => requestDeleteConfirmation({
@@ -6341,6 +6452,11 @@ function SimpleServicesEditor({ step, onUpdateStep, onUpdateField, onDeleteField
             <button className="btn ghost sm" onClick={addServiceGroup}>
               <Ic.Plus size={13} /> Add Service Group
             </button>
+            <WorkflowFieldCatalogButtons
+              stepName={step.name}
+              existingFields={fields}
+              onAddMultipleFields={onAddMultipleFields}
+            />
             <button className="btn dark sm" onClick={() => setPickerOpen((o) => !o)}>
               <Ic.Plus size={13} /> Add field
             </button>
@@ -6935,7 +7051,7 @@ function SimpleServiceRow({ service, onUpdate, onRemove, dragHandlers = {}, targ
   );
 }
 
-function CheckoutEditor({ step, onUpdateStep, onAddField, onDuplicateField, onDeleteField, onUpdateField, openFieldId, onToggleField, onReorderFields, onDeleteStep }) {
+function CheckoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDuplicateField, onDeleteField, onUpdateField, openFieldId, onToggleField, onReorderFields, onDeleteStep }) {
   const Ic = window.Icons;
   const [editingHead, setEditingHead] = React.useState(false);
   const [headDraft, setHeadDraft] = React.useState({ name: "", description: "" });
@@ -7020,6 +7136,11 @@ function CheckoutEditor({ step, onUpdateStep, onAddField, onDuplicateField, onDe
         <div className="section-bar">
           <h2><Ic.List size={13} /> Checkout configuration <span className="count">{agreements.length}</span></h2>
           <div style={{ position: "relative", display: "flex", gap: 6 }}>
+            <WorkflowFieldCatalogButtons
+              stepName={step.name}
+              existingFields={simpleFields}
+              onAddMultipleFields={onAddMultipleFields}
+            />
             <button className="btn dark sm" onClick={() => setPickerOpen((o) => !o)}>
               <Ic.Plus size={13} /> Add field
             </button>
@@ -7161,11 +7282,10 @@ function CheckoutEditor({ step, onUpdateStep, onAddField, onDuplicateField, onDe
   );
 }
 
-function FieldEditor({ step, recommendedFields = [], onUpdateStep, onAddField, onAddMultipleFields, onDuplicateField, onDeleteField, onUpdateField, openFieldId, onToggleField, onReorderFields, onDeleteStep }) {
+function FieldEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDuplicateField, onDeleteField, onUpdateField, openFieldId, onToggleField, onReorderFields, onDeleteStep }) {
   const Ic = window.Icons;
   const [editingHead, setEditingHead] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
-  const [recOpen, setRecOpen] = React.useState(false);
   const [rentalPickerOpen, setRentalPickerOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState(null);
   const [headDraft, setHeadDraft] = React.useState({ name: "", description: "" });
@@ -7268,11 +7388,11 @@ function FieldEditor({ step, recommendedFields = [], onUpdateStep, onAddField, o
                 <Ic.Plus size={13} /> Add rental groups
               </button>
             )}
-            {recommendedFields.length > 0 && (
-              <button className="btn ghost sm" onClick={() => setRecOpen(true)} title="Add missing fields from the old site catalog">
-                <Ic.CheckSq size={13} /> From old site
-              </button>
-            )}
+            <WorkflowFieldCatalogButtons
+              stepName={step.name}
+              existingFields={step.fields || []}
+              onAddMultipleFields={onAddMultipleFields}
+            />
             <button className="btn dark sm" onClick={() => setPickerOpen((o) => !o)}>
               <Ic.Plus size={13} /> Add field
             </button>
@@ -7285,18 +7405,6 @@ function FieldEditor({ step, recommendedFields = [], onUpdateStep, onAddField, o
           </div>
         </div>
 
-        {recOpen && (
-          <RecommendedFieldsModal
-            stepName={step.name}
-            existingFields={step.fields}
-            presets={recommendedFields}
-            onConfirm={(chosen) => {
-              onAddMultipleFields(chosen);
-              setRecOpen(false);
-            }}
-            onClose={() => setRecOpen(false)}
-          />
-        )}
         {rentalPickerOpen && (
           <RentalGroupPickerModal
             existingFields={step.fields}
@@ -7942,7 +8050,7 @@ function VenueCard({ venue, onUpdate, onDelete }) {
   );
 }
 
-function VenueEditor({ step, onUpdateStep, onAddField, onDeleteField, onUpdateField, openFieldId, onToggleField, allSteps, onReorderFields, onDeleteStep }) {
+function VenueEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDeleteField, onUpdateField, openFieldId, onToggleField, allSteps, onReorderFields, onDeleteStep }) {
   const Ic = window.Icons;
   const [filter, setFilter] = React.useState("all");
   const [editingHead, setEditingHead] = React.useState(false);
@@ -8046,6 +8154,11 @@ function VenueEditor({ step, onUpdateStep, onAddField, onDeleteField, onUpdateFi
             <button className="btn ghost sm" onClick={addVenue}>
               <Ic.Building size={13} /> Add Venue
             </button>
+            <WorkflowFieldCatalogButtons
+              stepName={step.name}
+              existingFields={step.fields || []}
+              onAddMultipleFields={onAddMultipleFields}
+            />
             <button className="btn dark sm" onClick={() => setPickerOpen((o) => !o)}>
               <Ic.Plus size={13} /> Add field
             </button>
@@ -8108,7 +8221,7 @@ window.VenueEditor = VenueEditor;
 // =========================================================================
 // LAYOUT EDITOR  (stepType === "layout")
 // =========================================================================
-function LayoutEditor({ step, onUpdateStep, onAddField, onDeleteField, onUpdateField, openFieldId, onToggleField, allSteps, onReorderFields, onDeleteStep }) {
+function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDeleteField, onUpdateField, openFieldId, onToggleField, allSteps, onReorderFields, onDeleteStep }) {
   const Ic = window.Icons;
   const [expandedLayout, setExpandedLayout] = React.useState(null);
   const [previewAsset, setPreviewAsset] = React.useState(null);
@@ -8817,6 +8930,11 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onDeleteField, onUpdateF
             <span className="count">{simpleLayoutFields.length}</span>
           </h2>
           <div style={{ position: "relative", display: "flex", gap: 6 }}>
+            <WorkflowFieldCatalogButtons
+              stepName={step.name}
+              existingFields={step.fields || []}
+              onAddMultipleFields={onAddMultipleFields}
+            />
             <button className="btn dark sm" onClick={() => setPickerOpen((o) => !o)}>
               <Ic.Plus size={13} /> Add field
             </button>
@@ -17628,19 +17746,6 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
 
   // Steps — load from localStorage, fallback to sample
   const [steps, setSteps] = React.useState(() => loadSteps() || normalizeWorkflowSteps(window.SAMPLE_STEPS));
-  const [recommendedFieldPresets] = React.useState(() => {
-    // Kept as a map for FieldEditor lookups by step name; sourced from old-site inventory.
-    const names = Object.keys(STEP_PRESETS || {});
-    const catalogNames = [
-      "Personal Details", "Event Details", "Venue Space", "Layout", "Rentals",
-      "Catering", "Additional Services", "Additional Info", "Review & Submit", "Submit Request",
-    ];
-    const map = {};
-    Array.from(new Set([...names, ...catalogNames])).forEach((name) => {
-      map[name] = getOldSiteRecommendedPresets(name);
-    });
-    return map;
-  });
   const [rentalCatalog, setRentalCatalog] = React.useState(() => {
     const initial = loadRentalCatalog() || window.normalizeRentalCatalog(window.SAMPLE_RENTAL_CATALOG);
     setRecommendedRentalCatalogSnapshot(initial);
@@ -18050,7 +18155,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       const p = cloneData(source);
       delete p.id;
       delete p.legacyDuplicateId;
-      const safe = p.safeImport !== false;
+      const safe = p.safeImport === true;
       return ({
       ...p,
       id: uid("f"),
@@ -18074,11 +18179,14 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     ));
     if (newFields.length > 0) setOpenFieldId(newFields[0].id);
     if (newFields.length > 0) revealAddedAdminItem(newFields[0].id);
+    const fromOldSite = presets.some((p) => p.safeImport === true || p.source === "old_site_inventory");
     pushToast({
       kind: "success",
-      title: `${newFields.length} field${newFields.length > 1 ? "s" : ""} added (optional)`,
-      desc: "Missing old-site fields were added as optional. Review required flags, Save, preview the client form, then Publish when ready.",
-      duration: 9000,
+      title: `${newFields.length} field${newFields.length > 1 ? "s" : ""} added${fromOldSite ? " (optional)" : ""}`,
+      desc: fromOldSite
+        ? "Missing old-site fields were added as optional. Review required flags, Save, preview the client form, then Publish when ready."
+        : `Recommended fields added to ${activeStep?.name || "this step"}. Save when ready.`,
+      duration: fromOldSite ? 9000 : 5000,
     });
   };
   const updateField = (fid, next) => {
@@ -18638,14 +18746,15 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           onReorder={reorderSteps}
         />
         {activeStep && activeStep.stepType === "venue" ? (
-          <VenueEditor step={activeStep} onUpdateStep={updateStep} onAddField={addField} onDeleteField={deleteField} onUpdateField={updateField} openFieldId={openFieldId} onToggleField={(id) => setOpenFieldId(openFieldId === id ? null : id)} allSteps={steps} onReorderFields={reorderFields} onDeleteStep={steps.length > 1 ? () => deleteStep(activeStep.id) : null} />
+          <VenueEditor step={activeStep} onUpdateStep={updateStep} onAddField={addField} onAddMultipleFields={addMultipleFields} onDeleteField={deleteField} onUpdateField={updateField} openFieldId={openFieldId} onToggleField={(id) => setOpenFieldId(openFieldId === id ? null : id)} allSteps={steps} onReorderFields={reorderFields} onDeleteStep={steps.length > 1 ? () => deleteStep(activeStep.id) : null} />
         ) : activeStep && activeStep.stepType === "layout" ? (
-          <LayoutEditor step={activeStep} onUpdateStep={updateStep} onAddField={addField} onDeleteField={deleteField} onUpdateField={updateField} openFieldId={openFieldId} onToggleField={(id) => setOpenFieldId(openFieldId === id ? null : id)} allSteps={steps} onReorderFields={reorderFields} onDeleteStep={steps.length > 1 ? () => deleteStep(activeStep.id) : null} />
+          <LayoutEditor step={activeStep} onUpdateStep={updateStep} onAddField={addField} onAddMultipleFields={addMultipleFields} onDeleteField={deleteField} onUpdateField={updateField} openFieldId={openFieldId} onToggleField={(id) => setOpenFieldId(openFieldId === id ? null : id)} allSteps={steps} onReorderFields={reorderFields} onDeleteStep={steps.length > 1 ? () => deleteStep(activeStep.id) : null} />
         ) : activeStep && activeStep.stepType === "checkout" ? (
           <CheckoutEditor
             step={activeStep}
             onUpdateStep={updateStep}
             onAddField={addField}
+            onAddMultipleFields={addMultipleFields}
             onDuplicateField={duplicateField}
             onDeleteField={deleteField}
             onUpdateField={updateField}
@@ -18661,6 +18770,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
             onUpdateField={updateField}
             onDeleteField={deleteField}
             onAddField={addField}
+            onAddMultipleFields={addMultipleFields}
             onDuplicateField={duplicateField}
             openFieldId={openFieldId}
             onToggleField={(id) => setOpenFieldId(openFieldId === id ? null : id)}
@@ -18670,7 +18780,6 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         ) : (
           <FieldEditor
             step={activeStep}
-            recommendedFields={recommendedFieldPresets[activeStep?.id] || recommendedFieldPresets[activeStep?.name] || []}
             onUpdateStep={updateStep}
             onAddField={addField}
             onAddMultipleFields={addMultipleFields}
