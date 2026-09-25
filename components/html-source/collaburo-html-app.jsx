@@ -11,6 +11,7 @@ import { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT } from "./navi
 import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-data";
 import { ContractSettingsView, ContractSignView, normalizeContractSettings, createDefaultContractSettings } from "./contract";
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
+import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 
 
 
@@ -1669,6 +1670,72 @@ function groupSelectionRuleFor(rows, category) {
   return rows.find((r) => r.category === category && r.groupSelectionRule)?.groupSelectionRule || "optional";
 }
 
+function rentalNameKey(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "").replace(/es$/, "").replace(/s$/, "");
+}
+
+function oldSiteRentalExists(item, rows) {
+  const key = rentalNameKey(item.name);
+  return rows.some((r) => r.id === item.id || r.oldSiteName === item.oldSiteName || rentalNameKey(r.name) === key);
+}
+
+function oldSiteRentalVenueIds(item, venues = []) {
+  const spaces = (item.oldSiteSpaces || []).map((s) => String(s).toLowerCase());
+  const matched = venues.filter((venue) => {
+    const name = String(venue.name || "").toLowerCase();
+    return name && spaces.some((space) => name.includes(space) || space.includes(name));
+  });
+  return matched.length > 0 && matched.length < venues.length ? matched.map((venue) => venue.id) : [];
+}
+
+function oldSiteRentalToCatalogRow(item, rows, venues = []) {
+  const category = item.category || "Decor / Other";
+  const peer = rows.find((r) => r.category === category);
+  const hasRange = item.minUnits != null && item.maxUnits != null;
+  return {
+    id: item.id,
+    schemaVersion: 1,
+    name: item.name,
+    category,
+    imageUrl: "",
+    groupImageUrl: rentalGroupImageForRows(rows, category),
+    priceText: "Quote",
+    unit: "each",
+    priceKey: "",
+    legacyKey: item.oldSiteName || "",
+    oldSiteName: item.oldSiteName || "",
+    pricingModel: "quote",
+    priceEnabled: false,
+    unitPrice: 0,
+    quantitySource: "own",
+    optionGroups: cloneData(item.optionGroups || []),
+    deliveryClass: "none",
+    procurementType: "internal",
+    fulfillmentType: "internal",
+    deliveryRequired: false,
+    deliveryOptionId: "",
+    noStockInventory: false,
+    stock: "",
+    minUnits: hasRange ? item.minUnits : 0,
+    maxUnits: hasRange ? item.maxUnits : "",
+    increment: 1,
+    required: false,
+    adminRequired: false,
+    clientVisible: true,
+    active: true,
+    clientSelectable: true,
+    venueIds: oldSiteRentalVenueIds(item, venues),
+    layoutRecommendationEnabled: false,
+    source: "Old site inventory",
+    notes: (item.oldSiteSpaces || []).length ? "Old site spaces: " + item.oldSiteSpaces.join(", ") : "",
+    infoText: "",
+    infoImageUrl: "",
+    infoImageUrls: [],
+    groupSelectionRule: groupSelectionRuleFor(rows, category),
+    ...(peer?.groupOrder != null ? { groupOrder: peer.groupOrder } : {}),
+  };
+}
+
 function groupSelectionRuleLabel(value) {
   return (RENTAL_GROUP_SELECTION_RULES.find((rule) => rule.value === value) || RENTAL_GROUP_SELECTION_RULES[0]).label;
 }
@@ -1692,7 +1759,7 @@ function RentalGroupSelectionRule({ value, onChange }) {
   );
 }
 
-function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, onGroupSelectionRuleChange, onSelectGroup, onSelect, onAdd, onDuplicate, onDelete, onMoveItem, onManageGroups, onOpenRecommended }) {
+function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, onGroupSelectionRuleChange, onSelectGroup, onSelect, onAdd, onDuplicate, onDelete, onMoveItem, onManageGroups, onOpenRecommended, onOpenOldSite }) {
   const Ic = window.Icons;
   const [query, setQuery] = React.useState("");
   const [movingItem, setMovingItem] = React.useState(null);
@@ -1736,6 +1803,7 @@ function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, on
           <button className="btn sm rental-add-btn" onClick={() => onOpenRecommended(activeGroup)} disabled={recommendedTotal === 0}>
             <Ic.Plus size={12} /> Add recommended
           </button>
+          <button className="btn sm" onClick={() => onOpenOldSite(activeGroup)}><Ic.Plus size={12} /> From old site</button>
           <button className="btn sm" onClick={onManageGroups}><Ic.Edit size={12} /> Add / edit groups</button>
         </div>
       </div>
@@ -3100,6 +3168,79 @@ function RentalRecommendedModal({ group, rows, onClose, onAddSelected }) {
   );
 }
 
+function RentalOldSiteModal({ group, rows, venues = [], onClose, onAddSelected }) {
+  const Ic = window.Icons;
+  const groups = Array.from(new Set(OLD_SITE_RENTAL_ITEMS.map((item) => item.category)));
+  const [groupFilter, setGroupFilter] = React.useState(() => (groups.includes(group) ? group : "all"));
+  const [query, setQuery] = React.useState("");
+  const [selectedIds, setSelectedIds] = React.useState([]);
+  const q = query.trim().toLowerCase();
+  const visible = OLD_SITE_RENTAL_ITEMS.filter((item) => (groupFilter === "all" || item.category === groupFilter) && (!q || item.name.toLowerCase().includes(q)));
+  const missing = visible.filter((item) => !oldSiteRentalExists(item, rows));
+  const allSelected = missing.length > 0 && missing.every((item) => selectedIds.includes(item.id));
+  const toggle = (id) => setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  const toggleAll = () => {
+    const ids = missing.map((item) => item.id);
+    setSelectedIds((prev) => allSelected ? prev.filter((id) => !ids.includes(id)) : Array.from(new Set([...prev, ...ids])));
+  };
+  const addSelected = () => {
+    const chosen = OLD_SITE_RENTAL_ITEMS.filter((item) => selectedIds.includes(item.id) && !oldSiteRentalExists(item, rows));
+    if (chosen.length === 0) return;
+    onAddSelected(chosen[0].category, chosen.map((item) => oldSiteRentalToCatalogRow(item, rows, venues)));
+  };
+  const selectedCount = selectedIds.filter((id) => {
+    const item = OLD_SITE_RENTAL_ITEMS.find((candidate) => candidate.id === id);
+    return item && !oldSiteRentalExists(item, rows);
+  }).length;
+
+  return (
+    <div className="rental-modal-backdrop" onClick={onClose}>
+      <div className="rental-modal" style={{ width: 720 }} onClick={(e) => e.stopPropagation()}>
+        <h3>Add rentals from old site</h3>
+        <div className="rental-modal-body">
+          <div className="rental-muted">
+            Items from the old site's Rentals step. They import as <b>Quote</b> with no price, so set pricing on each item before publishing.
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select className="select" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} style={{ minWidth: 180 }}>
+              <option value="all">All groups</option>
+              {groups.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search old-site items..." style={{ flex: 1, minWidth: 160 }} />
+            <button className="btn sm" onClick={toggleAll} disabled={missing.length === 0}>{allSelected ? "Deselect all" : "Select all"}</button>
+          </div>
+          <div className="rental-muted" style={{ fontSize: 12 }}>{visible.length} listed · {visible.length - missing.length} already in catalog</div>
+          <div className="rental-recommend-list">
+            {visible.map((item) => {
+              const exists = oldSiteRentalExists(item, rows);
+              const styles = (item.optionGroups || []).flatMap((g) => (g.options || []).map((o) => o.label));
+              const range = item.minUnits != null && item.maxUnits != null ? `${item.minUnits}–${item.maxUnits} units` : "";
+              const detail = [groupFilter === "all" ? item.category : "", styles.join(" / "), range, (item.oldSiteSpaces || []).join(", ")].filter(Boolean).join(" · ");
+              return (
+                <label className="rental-recommend-row" key={item.id}>
+                  <input type="checkbox" checked={exists || selectedIds.includes(item.id)} disabled={exists} onChange={() => toggle(item.id)} />
+                  <span>
+                    <b>{item.name}</b>
+                    <span>{exists ? "Already in catalog" : detail}</span>
+                  </span>
+                  <strong>Quote</strong>
+                </label>
+              );
+            })}
+            {visible.length === 0 && <div className="rental-muted">No old-site items match.</div>}
+          </div>
+        </div>
+        <div className="rental-modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn rental-add-btn" onClick={addSelected} disabled={selectedCount === 0}>
+            <Ic.Plus size={12} /> Add selected ({selectedCount})
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RentalEmptySelection({ activeGroup, onAddBlank, onOpenRecommended }) {
   const Ic = window.Icons;
   const recommendedCount = recommendedRentalsForGroup(activeGroup).length;
@@ -3128,6 +3269,7 @@ function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAM
   const [activeGroup, setActiveGroup] = React.useState(() => rows[0]?.category || RENTAL_CATEGORIES[0]);
   const [groupManagerOpen, setGroupManagerOpen] = React.useState(false);
   const [recommendedGroup, setRecommendedGroup] = React.useState(null);
+  const [oldSiteGroup, setOldSiteGroup] = React.useState(null);
   const selected = rows.find((r) => r.id === activeId) || null;
 
   React.useEffect(() => {
@@ -3226,6 +3368,7 @@ function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAM
     setActiveGroup(category);
     setActiveId(additions[0].id);
     setRecommendedGroup(null);
+    setOldSiteGroup(null);
   };
   const selectGroup = (category) => {
     setActiveGroup(category);
@@ -3266,7 +3409,7 @@ function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAM
 
   return (
     <div className="workspace rental-workspace">
-      <RentalCatalogList rows={rows} activeId={selected?.id} activeGroup={activeGroup} groupSelectionRule={groupSelectionRuleFor(rows, activeGroup)} onGroupSelectionRuleChange={(rule) => updateGroupSelectionRule(activeGroup, rule)} onSelectGroup={selectGroup} onSelect={setActiveId} onAdd={() => addItem(activeGroup)} onDuplicate={duplicateItem} onDelete={deleteItem} onMoveItem={moveItem} onManageGroups={() => setGroupManagerOpen(true)} onOpenRecommended={setRecommendedGroup} />
+      <RentalCatalogList rows={rows} activeId={selected?.id} activeGroup={activeGroup} groupSelectionRule={groupSelectionRuleFor(rows, activeGroup)} onGroupSelectionRuleChange={(rule) => updateGroupSelectionRule(activeGroup, rule)} onSelectGroup={selectGroup} onSelect={setActiveId} onAdd={() => addItem(activeGroup)} onDuplicate={duplicateItem} onDelete={deleteItem} onMoveItem={moveItem} onManageGroups={() => setGroupManagerOpen(true)} onOpenRecommended={setRecommendedGroup} onOpenOldSite={setOldSiteGroup} />
       {selected ? (
         <RentalSelectedEditor
           item={selected}
@@ -3284,6 +3427,7 @@ function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAM
       )}
       {groupManagerOpen && <RentalGroupManager rows={rows} onClose={() => setGroupManagerOpen(false)} onAddGroup={addGroup} onRenameGroup={renameGroup} onDeleteGroup={deleteGroup} onMoveGroup={moveGroup} onGroupImageChange={updateGroupImage} />}
       {recommendedGroup && <RentalRecommendedModal group={recommendedGroup} rows={rows} onClose={() => setRecommendedGroup(null)} onAddSelected={addRecommendedItems} />}
+      {oldSiteGroup && <RentalOldSiteModal group={oldSiteGroup} rows={rows} venues={venues} onClose={() => setOldSiteGroup(null)} onAddSelected={addRecommendedItems} />}
     </div>
   );
 }
