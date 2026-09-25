@@ -13,6 +13,8 @@ import { ContractSettingsView, ContractSignView, normalizeContractSettings, crea
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 
+const SHOW_OLD_SITE_IMPORT_BUTTONS = false;
+
 
 
 
@@ -1803,7 +1805,7 @@ function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, on
           <button className="btn sm rental-add-btn" onClick={() => onOpenRecommended(activeGroup)} disabled={recommendedTotal === 0}>
             <Ic.Plus size={12} /> Add recommended
           </button>
-          <button className="btn sm" onClick={() => onOpenOldSite(activeGroup)}><Ic.Plus size={12} /> From old site</button>
+          {SHOW_OLD_SITE_IMPORT_BUTTONS && <button className="btn sm" onClick={() => onOpenOldSite(activeGroup)}><Ic.Plus size={12} /> From old site</button>}
           <button className="btn sm" onClick={onManageGroups}><Ic.Edit size={12} /> Add / edit groups</button>
         </div>
       </div>
@@ -3782,6 +3784,33 @@ const TYPE_META = {
 const SIMPLE_FIELD_TYPES = ["text", "textarea", "email", "phone", "number", "date", "time", "file", "radio", "multiselect", "select", "toggle", "extras", "separator", "instructional"];
 const SIMPLE_OPTION_FIELD_TYPES = ["radio", "multiselect", "select"];
 const SIMPLE_PLACEHOLDER_TYPES = ["text", "textarea", "email", "phone", "number", "select"];
+
+const PHONE_DISALLOWED_CHARS = /[^0-9+()\-.\s]/g;
+const PHONE_MIN_DIGITS = 7;
+const PHONE_MAX_DIGITS = 15;
+const PHONE_FORMAT_HINT = "Accepted: digits 0–9, spaces, dashes (-), dots (.), parentheses ( ) and a leading + for country code. Examples: (613) 555-0100 · 613-555-0100 · 613.555.0100 · +1 613 555 0100";
+const PHONE_INVALID_MESSAGE = `Enter a valid phone number (${PHONE_MIN_DIGITS}–${PHONE_MAX_DIGITS} digits), e.g. (613) 555-0100 or +1 613-555-0100.`;
+
+// Saved form configs still contain phone fields typed as "number", which render
+// an <input type="number"> that rejects dashes, spaces and parentheses.
+function isPhoneLikeField(f) {
+  if (!f) return false;
+  if (f.type === "phone") return true;
+  return f.type === "number" && /phone/i.test(`${f.label || ""} ${f.placeholder || ""}`);
+}
+
+function sanitizePhoneInput(value) {
+  return String(value ?? "").replace(PHONE_DISALLOWED_CHARS, "");
+}
+
+function isValidPhoneNumber(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return true;
+  if (/[^0-9+()\-.\s]/.test(text)) return false;
+  if (text.lastIndexOf("+") > 0) return false;
+  const digits = text.replace(/\D/g, "").length;
+  return digits >= PHONE_MIN_DIGITS && digits <= PHONE_MAX_DIGITS;
+}
 
 function simpleTypeOptions() {
   const seen = new Set();
@@ -6148,7 +6177,7 @@ const STEP_PRESETS = {
     { label: "Last Name", type: "text", required: true, placeholder: "Enter last name", category: "Contact" },
     { label: "Organization", type: "text", required: false, placeholder: "Enter organization or charity name if any", helpText: "If booking on behalf of a business, non-profit, or organization.", category: "Contact" },
     { label: "Email", type: "text", required: true, placeholder: "Enter email address", category: "Contact" },
-    { label: "Phone Number", type: "number", required: true, placeholder: "Enter valid phone number: (123) 123-1234", category: "Contact" },
+    { label: "Phone Number", type: "phone", required: true, placeholder: "Enter valid phone number: (123) 123-1234", category: "Contact" },
     { label: "Not for profit", type: "toggle", required: false, linkedToPricing: true, fieldDescription: "(only check this if you are a registered charity or a not-for-profit organization - proof may be requested)", category: "Discount" },
     { label: "Student Body", type: "toggle", required: false, adminRequired: true, linkedToPricing: true, fieldDescription: "(only check this if event is fully related to a school or university/college - proof may be requested)", category: "Discount" },
     { label: "Community Organization", type: "toggle", required: false, linkedToPricing: true, fieldDescription: "(only check this if you are a community group with an established public identity, such as a sports team, community theater, cultural or identity group or a religious gathering that are not a registered Not for Profit Group - proof may be requested)", category: "Discount" },
@@ -6326,7 +6355,7 @@ const STEP_PRESETS = {
       fieldDescription: "Provide a backup contact in case the primary contact is unavailable on event day.",
       category: "Info" },
     { label: "Name", type: "text", required: false, placeholder: "Enter name of emergency contact", category: "Info" },
-    { label: "Phone Number", type: "number", required: false, placeholder: "Enter valid phone number: (123) 123-1234", category: "Info" },
+    { label: "Phone Number", type: "phone", required: false, placeholder: "Enter valid phone number: (123) 123-1234", category: "Info" },
     { label: "Special Notes", type: "textarea", required: false,
       placeholder: "Share any details or special requests that will help us tailor your event to perfection!",
       category: "Info" },
@@ -6593,7 +6622,7 @@ function OldSiteImportControls({ stepName, existingFields = [], onAddMultipleFie
   const Ic = window.Icons;
   const [open, setOpen] = React.useState(false);
   const presets = React.useMemo(() => getOldSiteRecommendedPresets(stepName), [stepName]);
-  if (!presets.length || typeof onAddMultipleFields !== "function") return null;
+  if (!SHOW_OLD_SITE_IMPORT_BUTTONS || !presets.length || typeof onAddMultipleFields !== "function") return null;
   return (
     <>
       <button
@@ -9768,6 +9797,15 @@ function PreviewField({ f }) {
       </div>
     );
   }
+  if (isPhoneLikeField(f)) {
+    return (
+      <div className="preview-field">
+        {labelEl}
+        <input className="pinput" type="tel" placeholder={f.placeholder || "(123) 123-1234"} />
+        <span style={{ fontSize: 10, color: "var(--ink-3)", marginTop: 2 }}>{PHONE_FORMAT_HINT}</span>
+      </div>
+    );
+  }
   if (f.type === "number") {
     return (
       <div className="preview-field">
@@ -11770,6 +11808,8 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     if (children.length > 0 && !answerHasValue(childValue)) return true;
     return children.some((child) => selectedOptionNeedsChildAnswer(normalizeSimpleOption(child), childValue, nextLevel));
   };
+  const fieldHasInvalidPhone = (field, rawValue) =>
+    isPhoneLikeField(field) && typeof rawValue === "string" && rawValue.trim() !== "" && !isValidPhoneNumber(rawValue);
   const fieldMissingRequiredSubOption = (field, rawValue) => {
     if (!field?.requireSubOptions || !rawValue) return false;
     if (field.type === "select" && field.groupOptions) {
@@ -11874,12 +11914,13 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         const rules = fieldRuleState(f);
         if (rules.disabled) return false;
         const rawValue = f.type === "rental_group" ? answers.__rentalGroups?.[targetStep.id]?.[f.id] : answers[f.id];
-        return (rules.required && !answerHasValue(rawValue)) || fieldMissingRequiredSubOption(f, rawValue);
+        return (rules.required && !answerHasValue(rawValue)) || fieldMissingRequiredSubOption(f, rawValue) || fieldHasInvalidPhone(f, rawValue);
       });
   };
   const validationMessageForField = (field, targetStep) => {
     const rawValue = field.type === "rental_group" ? answers.__rentalGroups?.[targetStep.id]?.[field.id] : answers[field.id];
     if (fieldMissingRequiredSubOption(field, rawValue)) return validations.requiredSubOptionMessage || "Choose a required sub-option.";
+    if (fieldHasInvalidPhone(field, rawValue)) return PHONE_INVALID_MESSAGE;
     return validations.requiredFieldMessage || "This field is required.";
   };
   const fieldErrorFor = (fieldId) => {
@@ -13864,7 +13905,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
     </div>
   );
 
-  switch (f.type) {
+  switch (isPhoneLikeField(f) ? "phone" : f.type) {
     case "textarea":
       return (
         <div className="cv-form-group">
@@ -14266,13 +14307,26 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       );
     case "email":
       return renderEmailVerificationInput();
-    case "phone":
+    case "phone": {
+      const phoneInvalid = !!value && !isValidPhoneNumber(value);
       return (
         <div className="cv-form-group">
           {labelEl}
-          <input className="cv-input" type="tel" placeholder={f.placeholder || "(123) 123-1234"} value={value || ""} onChange={(e) => onChange(e.target.value)} />
+          <input
+            className="cv-input"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            maxLength={25}
+            placeholder={f.placeholder || "(123) 123-1234"}
+            value={value || ""}
+            onChange={(e) => onChange(sanitizePhoneInput(e.target.value))}
+            aria-invalid={phoneInvalid || undefined}
+          />
+          <span className="cv-minmax-hint">{PHONE_FORMAT_HINT}</span>
         </div>
       );
+    }
     case "time":
       return <CVTimeInput f={f} value={value} onChange={onChange} labelEl={labelEl} />;
     case "checkbox": {
