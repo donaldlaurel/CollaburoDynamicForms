@@ -4159,13 +4159,10 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
                     </div>
                     <div>
                       <label className="lbl">
-                        Visibility condition <Ic.Branch size={11} style={{ verticalAlign: "middle", marginLeft: 2 }} />
+                        Conditions &amp; dependencies <Ic.Branch size={11} style={{ verticalAlign: "middle", marginLeft: 2 }} />
+                        <span className="hint">show, hide, disable or require this field based on other answers</span>
                       </label>
-                      <VisibilityRule
-                        rule={field.visibility}
-                        allFields={allFields.filter((f) => f.id !== field.id)}
-                        onChange={(visibility) => set({ visibility })}
-                      />
+                      <FieldRulesEditor field={field} allFields={allFields} onChange={set} />
                     </div>
                   </div>
                 )}
@@ -4381,13 +4378,10 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
 
                 <div>
                   <label className="lbl">
-                    Visibility condition <Ic.Branch size={11} style={{ verticalAlign: "middle", marginLeft: 2 }} />
+                    Conditions &amp; dependencies <Ic.Branch size={11} style={{ verticalAlign: "middle", marginLeft: 2 }} />
+                    <span className="hint">show, hide, disable or require this field based on other answers</span>
                   </label>
-                  <VisibilityRule
-                    rule={field.visibility}
-                    allFields={allFields.filter((f) => f.id !== field.id)}
-                    onChange={(visibility) => set({ visibility })}
-                  />
+                  <FieldRulesEditor field={field} allFields={allFields} onChange={set} />
                 </div>
 
                 {field.type === "number" && (
@@ -4455,98 +4449,299 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
   );
 }
 
-// ---------------- Visibility rule ----------------
-function VisibilityRule({ rule, allFields, onChange }) {
-  const Ic = window.Icons;
-  if (!rule) {
-    return (
-      <button
-        className="btn sm ghost"
-        style={{ border: "1px dashed var(--line-strong)", color: "var(--ink-3)" }}
-        onClick={() =>
-          onChange({ field: allFields[0]?.label || "", op: "has_value", value: "" })
-        }
-      >
-        <Ic.Plus size={12} /> Add visibility condition
-      </button>
-    );
+// ---------------- Field rules (conditional logic) ----------------
+// A field's `rules` is a list of { id, action, match: "all" | "any", clearValue, conditions: [{ fieldId, op, value }] }.
+// The legacy single `visibility` condition is read as one "show" rule until the field is edited.
+const WorkflowStepsContext = React.createContext([]);
+
+const FIELD_RULE_ACTIONS = [
+  { value: "show", label: "Show this field", clearLabel: "Clear the answer while hidden" },
+  { value: "hide", label: "Hide this field", clearLabel: "Clear the answer while hidden" },
+  { value: "enable", label: "Enable this field", clearLabel: "Clear the answer while disabled" },
+  { value: "disable", label: "Disable this field", clearLabel: "Clear the answer while disabled" },
+  { value: "require", label: "Make this field required" },
+  { value: "optional", label: "Make this field optional" },
+];
+
+const FIELD_RULE_OPERATORS = [
+  { value: "has_value", label: "has a value" },
+  { value: "is_empty", label: "is empty" },
+  { value: "is_true", label: "is checked" },
+  { value: "is_false", label: "is unchecked" },
+  { value: "equals", label: "equals", needsValue: true },
+  { value: "not_equals", label: "does not equal", needsValue: true },
+  { value: "contains", label: "includes", needsValue: true },
+  { value: "not_contains", label: "does not include", needsValue: true },
+  { value: "in_group", label: "belongs to category", needsValue: true, groupedOnly: true },
+];
+
+const FIELD_RULE_SOURCE_EXCLUDED_TYPES = new Set(["separator", "instructional"]);
+
+function fieldRulesOf(field) {
+  if (Array.isArray(field?.rules)) return field.rules;
+  if (field?.visibility) {
+    const { fieldId, field: fieldLabel, op, value } = field.visibility;
+    return [{ id: "legacy_visibility", action: "show", match: "all", conditions: [{ fieldId, field: fieldLabel, op: op || "has_value", value }] }];
   }
-  const selectedField = allFields.find((f) => f.id === rule.fieldId) || allFields.find((f) => f.label === rule.field) || allFields[0];
-  const selectedFieldGroups = selectedField?.groupOptions ? normalizeSimpleOptionGroups(selectedField.options || []) : [];
-  const hasGroupedSource = selectedFieldGroups.length > 0;
-  const needsValue = ["equals", "not_equals", "contains", "in_group"].includes(rule.op);
-  const valueControl = rule.op === "in_group" && hasGroupedSource ? (
-    <select
-      className="select"
-      value={rule.value || selectedFieldGroups[0]?.label || ""}
-      onChange={(e) => onChange({ ...rule, value: e.target.value })}
-    >
-      {selectedFieldGroups.map((group) => (
-        <option key={group.id || group.label} value={group.label}>{group.label}</option>
-      ))}
+  return [];
+}
+
+function fieldRuleOptionLabels(field) {
+  if (!field || !(field.options || []).length) return [];
+  if (field.groupOptions) {
+    return normalizeSimpleOptionGroups(field.options).flatMap((group) => (group.options || []).map((option) => option.label)).filter(Boolean);
+  }
+  return field.options.flatMap((option) => {
+    if (typeof option === "string") return option.startsWith("@") ? [] : [option];
+    if (option?.type === "group") return (option.options || []).map(optionLabel);
+    return [optionLabel(option)];
+  }).filter(Boolean);
+}
+
+function fieldRuleAnswerValues(sourceField, raw) {
+  if (raw == null || raw === "" || raw === false) return [];
+  if (raw === true) return ["true"];
+  if (Array.isArray(raw)) return raw.flatMap((item) => fieldRuleAnswerValues(sourceField, item));
+  if (typeof raw === "object") {
+    if (sourceField?.type === "rental_group") {
+      return raw.groupSelected || Object.keys(raw.selectedItems || {}).length ? ["true"] : [];
+    }
+    if (raw.__selected !== undefined) return fieldRuleAnswerValues(sourceField, raw.__selected);
+    if (raw.main !== undefined) return fieldRuleAnswerValues(sourceField, raw.main);
+    if (raw.label !== undefined) return fieldRuleAnswerValues(sourceField, raw.label);
+    return Object.entries(raw).filter(([key, val]) => !key.startsWith("__") && val != null && val !== false).map(([key]) => key);
+  }
+  return [String(raw)];
+}
+
+function evaluateFieldCondition(condition, sourceField, raw) {
+  const values = fieldRuleAnswerValues(sourceField, raw).map((value) => String(value).trim()).filter(Boolean);
+  const normalize = (value) => String(value ?? "").trim().toLowerCase();
+  const target = normalize(condition.value);
+  const matchesTarget = (value) => normalize(value) === target || normalize(String(value).split("|")[0]) === target;
+  const includesTarget = values.some(matchesTarget) || normalize(values.join(", ")).includes(target);
+  const equalsTarget = values.length === 1 && matchesTarget(values[0]);
+  switch (condition.op) {
+    case "has_value":
+    case "is_true":
+      return values.length > 0;
+    case "is_empty":
+    case "is_false":
+      return values.length === 0;
+    case "equals": return equalsTarget;
+    case "not_equals": return !equalsTarget;
+    case "contains": return includesTarget;
+    case "not_contains": return !includesTarget;
+    case "in_group": return normalize(groupedOptionCategoryForValue(sourceField, raw)) === target;
+    default: return true;
+  }
+}
+
+// resolveSource(condition) returns { field, value } for the referenced field, or null when it no longer exists.
+function evaluateFieldRules(field, resolveSource) {
+  const state = { visible: true, disabled: false, required: !!field?.required, clearValue: false };
+  const rules = fieldRulesOf(field)
+    .map((rule) => ({
+      ...rule,
+      resolved: (rule?.conditions || []).map((condition) => ({ condition, source: resolveSource(condition) })).filter((item) => item.source),
+    }))
+    .filter((rule) => rule.resolved.length > 0);
+  if (!rules.length) return state;
+  const ruleMatches = (rule) => {
+    const results = rule.resolved.map(({ condition, source }) => evaluateFieldCondition(condition, source.field, source.value));
+    return rule.match === "any" ? results.some(Boolean) : results.every(Boolean);
+  };
+  const matched = rules.filter(ruleMatches);
+  const unmatched = rules.filter((rule) => !matched.includes(rule));
+  const of = (list, action) => list.filter((rule) => rule.action === action);
+  const clears = (list) => list.some((rule) => rule.clearValue === true);
+
+  const showRules = of(rules, "show");
+  if (showRules.length && !of(matched, "show").length) {
+    state.visible = false;
+    if (clears(of(unmatched, "show"))) state.clearValue = true;
+  }
+  if (of(matched, "hide").length) {
+    state.visible = false;
+    if (clears(of(matched, "hide"))) state.clearValue = true;
+  }
+  const enableRules = of(rules, "enable");
+  if (enableRules.length && !of(matched, "enable").length) {
+    state.disabled = true;
+    if (clears(of(unmatched, "enable"))) state.clearValue = true;
+  }
+  if (of(matched, "disable").length) {
+    state.disabled = true;
+    if (clears(of(matched, "disable"))) state.clearValue = true;
+  }
+  if (of(matched, "require").length) state.required = true;
+  if (of(matched, "optional").length) state.required = false;
+  return state;
+}
+
+function FieldRuleCondition({ condition, sourceGroups, sourceFields, onChange, onRemove }) {
+  const Ic = window.Icons;
+  const selected = sourceFields.find((f) => f.id === condition.fieldId)
+    || (!condition.fieldId ? sourceFields.find((f) => f.label === condition.field) : null)
+    || sourceFields[0];
+  const categories = selected?.groupOptions && (selected.options || []).length
+    ? normalizeSimpleOptionGroups(selected.options).map((group) => group.label).filter(Boolean)
+    : [];
+  const operators = FIELD_RULE_OPERATORS.filter((op) => !op.groupedOnly || categories.length > 0);
+  const opMeta = operators.find((op) => op.value === condition.op) || operators[0];
+  const choices = opMeta.value === "in_group" ? categories : fieldRuleOptionLabels(selected);
+  const valueControl = !opMeta.needsValue ? null : choices.length > 0 ? (
+    <select className="select" value={condition.value || ""} onChange={(e) => onChange({ ...condition, value: e.target.value })}>
+      <option value="">Choose…</option>
+      {condition.value && !choices.includes(condition.value) && <option value={condition.value}>{condition.value}</option>}
+      {choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
     </select>
   ) : (
-    <input
-      className="input"
-      value={rule.value || ""}
-      placeholder={rule.op === "in_group" ? "category" : "value"}
-      onChange={(e) => onChange({ ...rule, value: e.target.value })}
-    />
+    <input className="input" value={condition.value || ""} placeholder="value" onChange={(e) => onChange({ ...condition, value: e.target.value })} />
   );
   return (
     <div className="vis-row">
-      <span className="word">Show this field if</span>
       <select
         className="select"
-        value={selectedField?.id || ""}
+        value={selected?.id || ""}
         onChange={(e) => {
-          const nextField = allFields.find((f) => f.id === e.target.value);
-          const nextGroups = nextField?.groupOptions ? normalizeSimpleOptionGroups(nextField.options || []) : [];
-          onChange({
-            ...rule,
-            fieldId: nextField?.id || "",
-            field: nextField?.label || "",
-            ...(rule.op === "in_group" ? { value: nextGroups[0]?.label || "" } : {}),
-          });
+          const next = sourceFields.find((f) => f.id === e.target.value);
+          onChange({ ...condition, fieldId: next?.id || "", field: next?.label || "", value: "" });
         }}
       >
-        {allFields.map((f) => (
-          <option key={f.id} value={f.id}>{f.label}</option>
+        {sourceGroups.map((group) => (
+          <optgroup key={group.id} label={group.label}>
+            {group.fields.map((f) => <option key={f.id} value={f.id}>{f.label || "Untitled field"}</option>)}
+          </optgroup>
         ))}
       </select>
       <select
         className="select"
-        value={rule.op}
-        onChange={(e) => onChange({
-          ...rule,
-          op: e.target.value,
-          ...(e.target.value === "in_group" ? { value: selectedFieldGroups[0]?.label || "" } : {}),
-        })}
+        value={opMeta.value}
+        onChange={(e) => {
+          const nextOp = FIELD_RULE_OPERATORS.find((op) => op.value === e.target.value);
+          const nextChoices = nextOp?.value === "in_group" ? categories : fieldRuleOptionLabels(selected);
+          const keepValue = nextOp?.needsValue && (!nextChoices.length || nextChoices.includes(condition.value));
+          onChange({ ...condition, op: e.target.value, value: keepValue ? condition.value : (nextOp?.needsValue ? nextChoices[0] || "" : "") });
+        }}
       >
-        <option value="has_value">has a value</option>
-        <option value="is_empty">is empty</option>
-        <option value="equals">equals</option>
-        <option value="not_equals">does not equal</option>
-        <option value="contains">contains</option>
-        {hasGroupedSource && <option value="in_group">belongs to category</option>}
-        <option value="is_true">is checked</option>
-        <option value="is_false">is unchecked</option>
+        {operators.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
       </select>
-      {needsValue && valueControl}
-      <button
-        className="btn icon sm danger-ghost"
-        title="Remove condition"
-        onClick={() => requestDeleteConfirmation({
-          action: "remove",
-          itemType: "condition",
-          itemName: "this condition",
-          confirmLabel: "Remove",
-          onConfirm: () => onChange(null),
-        })}
-      >
+      {valueControl}
+      <button className="btn icon sm danger-ghost" title="Remove condition" onClick={onRemove}>
         <Ic.Close size={12} />
       </button>
     </div>
+  );
+}
+
+function FieldRulesEditor({ field, allFields = [], onChange }) {
+  const Ic = window.Icons;
+  const steps = React.useContext(WorkflowStepsContext);
+  const sourceGroups = React.useMemo(() => {
+    const groups = steps && steps.length
+      ? steps.map((s, index) => ({ id: s.id || "step_" + index, label: s.name || `Step ${index + 1}`, fields: s.fields || [] }))
+      : [{ id: "current", label: "This step", fields: allFields }];
+    return groups
+      .map((group) => ({ ...group, fields: group.fields.filter((f) => f.id !== field.id && !FIELD_RULE_SOURCE_EXCLUDED_TYPES.has(f.type)) }))
+      .filter((group) => group.fields.length > 0);
+  }, [steps, allFields, field.id]);
+  const sourceFields = sourceGroups.flatMap((group) => group.fields);
+  const rules = fieldRulesOf(field);
+  const commit = (next) => onChange({ rules: next, visibility: null });
+  const newCondition = () => ({ fieldId: sourceFields[0]?.id || "", op: "has_value", value: "" });
+  const patchRule = (index, patch) => commit(rules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)));
+  const addRule = () => commit([
+    ...rules,
+    { id: "rule_" + Date.now().toString(36), action: "disable", match: "all", clearValue: true, conditions: [newCondition()] },
+  ]);
+  const removeRule = (index) => requestDeleteConfirmation({
+    action: "remove",
+    itemType: "rule",
+    itemName: "this rule",
+    confirmLabel: "Remove",
+    onConfirm: () => commit(rules.filter((_, i) => i !== index)),
+  });
+
+  if (!sourceFields.length) {
+    return <div style={{ fontSize: 12, color: "var(--ink-3)" }}>Add another field to the workflow to create a rule based on its answer.</div>;
+  }
+
+  return (
+    <div className="field-rules">
+      {rules.map((rule, index) => {
+        const conditions = rule.conditions || [];
+        const actionMeta = FIELD_RULE_ACTIONS.find((action) => action.value === rule.action) || FIELD_RULE_ACTIONS[0];
+        return (
+          <div key={rule.id || index} className="field-rule">
+            <div className="vis-row">
+              <select
+                className="select"
+                value={actionMeta.value}
+                onChange={(e) => {
+                  const nextAction = FIELD_RULE_ACTIONS.find((action) => action.value === e.target.value);
+                  patchRule(index, { action: e.target.value, clearValue: nextAction?.clearLabel ? (e.target.value !== "show") : undefined });
+                }}
+              >
+                {FIELD_RULE_ACTIONS.map((action) => <option key={action.value} value={action.value}>{action.label}</option>)}
+              </select>
+              <span className="word">when</span>
+              {conditions.length > 1 ? (
+                <select className="select" value={rule.match === "any" ? "any" : "all"} onChange={(e) => patchRule(index, { match: e.target.value })}>
+                  <option value="all">all of these are true</option>
+                  <option value="any">any of these is true</option>
+                </select>
+              ) : (
+                <span className="word">this is true</span>
+              )}
+              <button className="btn icon sm danger-ghost" style={{ marginLeft: "auto" }} title="Remove rule" onClick={() => removeRule(index)}>
+                <Ic.Trash size={12} />
+              </button>
+            </div>
+            {conditions.map((condition, conditionIndex) => (
+              <FieldRuleCondition
+                key={conditionIndex}
+                condition={condition}
+                sourceGroups={sourceGroups}
+                sourceFields={sourceFields}
+                onChange={(nextCondition) => patchRule(index, { conditions: conditions.map((c, i) => (i === conditionIndex ? nextCondition : c)) })}
+                onRemove={() => {
+                  const nextConditions = conditions.filter((_, i) => i !== conditionIndex);
+                  if (nextConditions.length) patchRule(index, { conditions: nextConditions });
+                  else removeRule(index);
+                }}
+              />
+            ))}
+            <div className="vis-row">
+              <button className="btn sm ghost" onClick={() => patchRule(index, { conditions: [...conditions, newCondition()] })}>
+                <Ic.Plus size={12} /> Add condition
+              </button>
+              {actionMeta.clearLabel && (
+                <label className="chk" style={{ marginLeft: "auto" }}>
+                  <input type="checkbox" checked={rule.clearValue === true} onChange={(e) => patchRule(index, { clearValue: e.target.checked })} />
+                  {actionMeta.clearLabel}
+                </label>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <button
+        className="btn sm ghost"
+        style={{ border: "1px dashed var(--line-strong)", color: "var(--ink-3)", alignSelf: "flex-start" }}
+        onClick={addRule}
+      >
+        <Ic.Plus size={12} /> Add rule
+      </button>
+    </div>
+  );
+}
+
+function FieldRuleFieldset({ disabled, children }) {
+  return (
+    <fieldset className={"cv-rule-fieldset" + (disabled ? " is-disabled" : "")} disabled={!!disabled}>
+      {children}
+    </fieldset>
   );
 }
 
@@ -7644,7 +7839,25 @@ function RichTextDisplay({ value = "", listFallback = false, className = "" }) {
   return <div className={className || "rich-text-display"} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-function VenueCard({ venue, onUpdate, onDelete }) {
+// Venue exclusions are mutual: a pair is blocked if either venue lists the other in `excludedVenueIds`.
+function venuesExcludeEachOther(a, b) {
+  if (!a || !b || a.id === b.id) return false;
+  return (a.excludedVenueIds || []).includes(b.id) || (b.excludedVenueIds || []).includes(a.id);
+}
+
+// Keeps selection order and drops any venue that conflicts with one selected before it.
+function dropConflictingVenueIds(ids, venues) {
+  const byId = new Map((venues || []).map((venue) => [venue.id, venue]));
+  const kept = [];
+  (ids || []).forEach((id) => {
+    const venue = byId.get(id);
+    if (venue && kept.some((keptId) => venuesExcludeEachOther(venue, byId.get(keptId)))) return;
+    kept.push(id);
+  });
+  return kept;
+}
+
+function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDelete }) {
   const Ic = window.Icons;
   const [open, setOpen] = React.useState(false);
   const [advOpen, setAdvOpen] = React.useState(false);
@@ -7738,6 +7951,25 @@ function VenueCard({ venue, onUpdate, onDelete }) {
                   <option value="admin_only">Admin only</option>
                 </select>
               </div>
+              {otherVenues.length > 0 && (
+                <div>
+                  <label className="lbl">
+                    Can't be booked together with <span className="hint">selecting one disables the other</span>
+                  </label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+                    {otherVenues.map((other) => (
+                      <label key={other.id} className="chk">
+                        <input
+                          type="checkbox"
+                          checked={venuesExcludeEachOther(venue, other)}
+                          onChange={(e) => onToggleExclusion && onToggleExclusion(other.id, e.target.checked)}
+                        />
+                        {other.name || "Untitled Venue"}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="lbl">Venue Gallery</label>
                 <button className="btn sm" onClick={() => setGalleryOpen(true)}>
@@ -8079,12 +8311,20 @@ function VenueEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDe
     subSpace: { enabled: false, title: "", description: "", options: [] },
   }]);
   const updateVenue = (id, next) => setVenues(venues.map((v) => v.id === id ? next : v));
+  const setVenueExclusion = (venueId, otherId, excluded) => setVenues(venues.map((v) => {
+    const partnerId = v.id === venueId ? otherId : v.id === otherId ? venueId : null;
+    if (!partnerId) return v;
+    const current = (v.excludedVenueIds || []).filter((id) => id !== partnerId);
+    return { ...v, excludedVenueIds: excluded ? [...current, partnerId] : current };
+  }));
   const deleteVenue = (id) => {
     const venue = venues.find((v) => v.id === id);
     requestDeleteConfirmation({
       itemType: "venue",
       itemName: venue?.name || "Untitled venue",
-      onConfirm: () => setVenues(venues.filter((v) => v.id !== id)),
+      onConfirm: () => setVenues(venues
+        .filter((v) => v.id !== id)
+        .map((v) => ((v.excludedVenueIds || []).includes(id) ? { ...v, excludedVenueIds: v.excludedVenueIds.filter((x) => x !== id) } : v))),
     });
   };
   const confirmDeleteField = (field) => requestDeleteConfirmation({
@@ -8176,6 +8416,8 @@ function VenueEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDe
             <VenueCard
               key={v.id}
               venue={v}
+              otherVenues={venues.filter((other) => other.id !== v.id)}
+              onToggleExclusion={(otherId, excluded) => setVenueExclusion(v.id, otherId, excluded)}
               onUpdate={(next) => updateVenue(v.id, next)}
               onDelete={() => deleteVenue(v.id)}
             />
@@ -9498,17 +9740,32 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
     : answers._selectedVenueId
     ? [answers._selectedVenueId]
     : [];
-  const [selectedIds, _setSelectedIds] = React.useState(initialSelectedVenueIds);
+  const [selectedIds, _setSelectedIds] = React.useState(() => dropConflictingVenueIds(initialSelectedVenueIds, step.venues));
   const setSelectedIds = (ids) => {
-    const nextIds = Array.from(new Set((ids || []).filter(Boolean)));
+    const nextIds = dropConflictingVenueIds(Array.from(new Set((ids || []).filter(Boolean))), step.venues);
     _setSelectedIds(nextIds);
     if (onAnswer) {
       onAnswer("_selectedVenueIds", nextIds);
       onAnswer("_selectedVenueId", nextIds[0] || "");
     }
   };
+  React.useEffect(() => {
+    if (selectedIds.length !== initialSelectedVenueIds.length) setSelectedIds(selectedIds);
+  }, []);
+  const venueBlockers = (venue) => (step.venues || []).filter((other) => selectedIds.includes(other.id) && venuesExcludeEachOther(venue, other));
   const toggleVenue = (id) => {
-    setSelectedIds(selectedIds.includes(id) ? selectedIds.filter((venueId) => venueId !== id) : [...selectedIds, id]);
+    if (selectedIds.includes(id)) {
+      setSelectedIds(selectedIds.filter((venueId) => venueId !== id));
+      return;
+    }
+    const venue = (step.venues || []).find((v) => v.id === id);
+    if (venue && venueBlockers(venue).length) return;
+    setSelectedIds([...selectedIds, id]);
+  };
+  const selectVenueReplacingConflicts = (id) => {
+    if (selectedIds.includes(id)) return;
+    const venue = (step.venues || []).find((v) => v.id === id);
+    setSelectedIds([...selectedIds.filter((venueId) => !venuesExcludeEachOther(venue, (step.venues || []).find((v) => v.id === venueId))), id]);
   };
   const [bookingByVenue, setBookingByVenue] = React.useState(() => answers._venueBookings || {});
   const [subSpaceByVenue, setSubSpaceByVenue] = React.useState(() => answers._venueSubSpaces || {});
@@ -9806,7 +10063,7 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
     <div className="cv-venue-preview">
       {/* Recommendation banner */}
       {rec && (
-        <div className="cv-recommend" onClick={() => { setSelectedIds(selectedIds.includes(rec.venue.id) ? selectedIds : [...selectedIds, rec.venue.id]); }}>
+        <div className="cv-recommend" onClick={() => selectVenueReplacingConflicts(rec.venue.id)}>
           <div className="cv-recommend-icon">✦</div>
           <div>
             <div className="cv-recommend-label">{rec.reason}</div>
@@ -9818,15 +10075,21 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
 
       {/* Venue selector grid */}
       <div className="cv-venue-select-grid">
-        {venues.map((v) => (
+        {venues.map((v) => {
+          const blockers = selectedIds.includes(v.id) ? [] : venueBlockers(v);
+          const blocked = blockers.length > 0;
+          return (
           <div
             key={v.id}
-            className={"cv-venue-select-item" + (selectedIds.includes(v.id) ? " active" : "")}
+            className={"cv-venue-select-item" + (selectedIds.includes(v.id) ? " active" : "") + (blocked ? " blocked" : "")}
             onClick={() => { toggleVenue(v.id); }}
+            aria-disabled={blocked || undefined}
+            title={blocked ? `Not available with ${blockers.map((b) => b.name).join(", ")}` : undefined}
           >
             <input
               type="checkbox"
               checked={selectedIds.includes(v.id)}
+              disabled={blocked}
               onChange={() => {}}
               aria-label={`Select ${v.name}`}
               className="cv-venue-select-check"
@@ -9844,8 +10107,12 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                 from {fmt(v.pricing[0].basePrice)}
               </div>
             )}
+            {blocked && (
+              <div className="cv-venue-select-blocked">Not available with {blockers.map((b) => b.name).join(", ")}</div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Gallery modal (venue or sub-space) */}
@@ -11401,41 +11668,47 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     return null;
   };
 
-  // Evaluate field visibility based on current answers (simple rule engine)
-  const isFieldVisible = (f, ownerStep = step) => {
+  // Evaluate field rules (show/hide/enable/disable/require/optional) against current answers
+  const workflowFieldEntries = list.flatMap((s) => (s.fields || []).map((field) => ({ field, step: s })));
+  const fieldRuleState = (f) => evaluateFieldRules(f, (condition) => {
+    const entry = condition.fieldId
+      ? workflowFieldEntries.find((x) => x.field.id === condition.fieldId)
+      : workflowFieldEntries.find((x) => x.field.label === condition.field);
+    if (!entry) return null;
+    const ref = entry.field;
+    const value = ref.type === "rental_group" ? answers.__rentalGroups?.[entry.step.id]?.[ref.id] : answers[ref.id];
+    return { field: ref, value };
+  });
+  const isFieldVisible = (f) => {
     const adminOverride = adminEditMode ? ADMIN_BOOKING_FORM_OVERRIDES.fieldIds[f.id] : null;
     if (adminOverride?.visible === true) return true;
     if (adminOverride?.visible === false) return false;
     if (f.visibleToClient === false) return false;
-    if (!f.visibility) return true;
-    const r = f.visibility;
-    // find field by ID or by label
-    const allFields = list.flatMap((s) => s.fields || []);
-    const ref = r.fieldId ? allFields.find((x) => x.id === r.fieldId) : allFields.find((x) => x.label === r.field);
-    if (!ref) return true;
-    let v = ref.type === "rental_group"
-      ? answers.__rentalGroups?.[ownerStep?.id]?.[ref.id]
-      : answers[ref.id];
-    // Handle rich value objects (4-level tree). Backward-compat: old shape was { main, subs }.
-    if (v && typeof v === "object") {
-      if (ref.type === "rental_group") {
-        v = !!(v.groupSelected || Object.keys(v.selectedItems || {}).length);
-      } else if (v.__selected !== undefined) v = v.__selected;
-      else if (v.main !== undefined) v = v.main;
-      else v = Object.keys(v).join(" "); // new shape: keys are selected option labels
-    }
-    switch (r.op) {
-      case "has_value": return v != null && v !== "" && v !== false;
-      case "is_empty":  return v == null || v === "" || v === false;
-      case "equals":    return String(v) === String(r.value);
-      case "not_equals":return String(v) !== String(r.value);
-      case "contains":  return String(v || "").toLowerCase().includes(String(r.value || "").toLowerCase());
-      case "in_group":  return String(groupedOptionCategoryForValue(ref, v)).toLowerCase() === String(r.value || "").toLowerCase();
-      case "is_true":   return !!v;
-      case "is_false":  return !v;
-      default: return true;
-    }
+    return fieldRuleState(f).visible;
   };
+  const ruleAwareField = (f) => {
+    const { required } = fieldRuleState(f);
+    return required === !!f.required ? f : { ...f, required };
+  };
+  React.useEffect(() => {
+    const idsToClear = workflowFieldEntries
+      .filter(({ field }) => field.type !== "rental_group" && answerHasValue(answers[field.id]) && fieldRuleState(field).clearValue)
+      .map(({ field }) => field.id);
+    if (!idsToClear.length) return;
+    setAnswers((current) => {
+      const next = { ...current };
+      idsToClear.forEach((id) => { delete next[id]; });
+      return next;
+    });
+  }, [answers, steps]);
+  React.useEffect(() => {
+    const venueStep = list.find((s) => s.stepType === "venue");
+    const ids = answers._selectedVenueIds;
+    if (!venueStep || !Array.isArray(ids)) return;
+    const kept = dropConflictingVenueIds(ids, venueStep.venues);
+    if (kept.length === ids.length) return;
+    setAnswers((current) => ({ ...current, _selectedVenueIds: kept, _selectedVenueId: kept[0] || "" }));
+  }, [answers._selectedVenueIds, steps]);
 
   const visibleFields = step ? step.fields.filter((f) => isFieldVisible(f, step)) : [];
   const rentalGroupFields = visibleFields.filter((f) => f.type === "rental_group");
@@ -11454,8 +11727,10 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     return (targetStep.fields || [])
       .filter((f) => isFieldVisible(f, targetStep))
       .filter((f) => {
+        const rules = fieldRuleState(f);
+        if (rules.disabled) return false;
         const rawValue = f.type === "rental_group" ? answers.__rentalGroups?.[targetStep.id]?.[f.id] : answers[f.id];
-        return (!!f.required && !answerHasValue(rawValue)) || fieldMissingRequiredSubOption(f, rawValue);
+        return (rules.required && !answerHasValue(rawValue)) || fieldMissingRequiredSubOption(f, rawValue);
       });
   };
   const validationMessageForField = (field, targetStep) => {
@@ -12522,7 +12797,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                               className={fieldError ? "cv-field-has-error" : ""}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
-                              <CVField f={f} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
+                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
+                                <CVField f={ruleAwareField(f)} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
+                              </FieldRuleFieldset>
                               {renderFieldError(f.id)}
                             </div>
                           );
@@ -12558,7 +12835,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                               className={fieldError ? "cv-field-has-error" : ""}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
-                              <CVField f={f} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
+                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
+                                <CVField f={ruleAwareField(f)} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
+                              </FieldRuleFieldset>
                               {renderFieldError(f.id)}
                             </div>
                           );
@@ -12594,7 +12873,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                               className={fieldError ? "cv-field-has-error" : ""}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
-                              <CVField f={f} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
+                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
+                                <CVField f={ruleAwareField(f)} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
+                              </FieldRuleFieldset>
                               {renderFieldError(f.id)}
                             </div>
                           );
@@ -12635,17 +12916,19 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 	                                  className={fieldError ? "cv-field-has-error" : ""}
 	                                  style={wide ? { gridColumn: "1 / -1" } : {}}
 	                                >
-	                                  <CVField
-	                                    f={f}
-	                                    value={answers[f.id]}
-	                                    onChange={(v) => setAnswer(f.id, v)}
-	                                    fullWidth={wide}
-                                    stepType={step.stepType}
-                                    guestCount={guestCount}
-	                                    autoDeliveryLines={checkoutCostData.deliveryLines}
-	                                    emailVerification={emailVerificationPropsFor(f)}
-	                                    adminEditMode={adminEditMode}
-	                                  />
+	                                  <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
+	                                    <CVField
+	                                      f={ruleAwareField(f)}
+	                                      value={answers[f.id]}
+	                                      onChange={(v) => setAnswer(f.id, v)}
+	                                      fullWidth={wide}
+	                                      stepType={step.stepType}
+	                                      guestCount={guestCount}
+	                                      autoDeliveryLines={checkoutCostData.deliveryLines}
+	                                      emailVerification={emailVerificationPropsFor(f)}
+	                                      adminEditMode={adminEditMode}
+	                                    />
+	                                  </FieldRuleFieldset>
 	                                  {fieldError && (
 	                                    <div className="cv-field-error" key={`${f.id}-${validationPulseKey}`}>
 	                                      {fieldError}
@@ -18734,6 +19017,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       return stub ? <StubView {...stub} /> : null;
     }
     return (
+      <WorkflowStepsContext.Provider value={steps}>
       <div className="workspace">
         <StepList
           steps={steps}
@@ -18793,6 +19077,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           />
         )}
       </div>
+      </WorkflowStepsContext.Provider>
     );
   };
 
