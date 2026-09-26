@@ -1108,6 +1108,80 @@ function rentalAvailableForVenue(item = {}, venueId = "") {
   return ids.includes(venueId);
 }
 
+function normalizeRentalVenuePrices(prices) {
+  if (!prices || typeof prices !== "object" || Array.isArray(prices)) return {};
+  return Object.entries(prices).reduce((acc, [venueId, raw]) => {
+    if (!venueId || raw === "" || raw === null || raw === undefined) return acc;
+    const price = Number(raw);
+    if (Number.isFinite(price) && price >= 0) acc[venueId] = price;
+    return acc;
+  }, {});
+}
+
+function rentalVenuePriceOverride(entity = {}, venueId = "") {
+  if (!venueId) return null;
+  const prices = normalizeRentalVenuePrices(entity.venuePrices);
+  return Object.prototype.hasOwnProperty.call(prices, venueId) ? prices[venueId] : null;
+}
+
+// Overrides only apply to entities that are actually priced; an "included" or
+// "quote" entity must not be turned into a charge by a leftover venue price.
+function withRentalVenuePrice(entity, venueId, priceEnabled) {
+  const override = priceEnabled ? rentalVenuePriceOverride(entity, venueId) : null;
+  if (override === null) return entity;
+  return { ...entity, unitPrice: override, priceText: "$" + override };
+}
+
+function rentalChoiceValueHiddenForVenue(group = {}, current) {
+  const hidden = group.venueHiddenOptionIds || [];
+  if (!hidden.length || current === undefined || current === null || current === "") return false;
+  const selectedId = typeof current === "object" ? current.value : current;
+  return selectedId !== undefined && hidden.includes(String(selectedId));
+}
+
+// Choices inherit the parent item's venues; admins opt a choice out per venue.
+function rentalChoiceAvailableForVenue(option = {}, venueId = "") {
+  if (!venueId) return true;
+  if ((option.excludedVenueIds || []).includes(venueId)) return false;
+  return rentalAvailableForVenue(option, venueId);
+}
+
+function rentalItemForVenue(item, venueId = "") {
+  if (!item || !venueId) return item;
+  const itemPriceEnabled = item.pricingModel !== "quote" && (item.priceEnabled ?? item.pricingModel !== "included");
+  const droppedGroupIds = new Set();
+  let groups = (item.optionGroups || []).map((group) => {
+    const options = (group.options || []).map(normalizeRentalChoiceOption);
+    const groupPriced = withRentalVenuePrice(group, venueId, !!group.priceEnabled && group.pricingModel !== "quote");
+    const touched = options.some((option) => !rentalChoiceAvailableForVenue(option, venueId) || rentalVenuePriceOverride(option, venueId) !== null);
+    if (!touched) return groupPriced;
+    const available = options
+      .filter((option) => rentalChoiceAvailableForVenue(option, venueId))
+      .map((option) => withRentalVenuePrice(option, venueId, option.priceEnabled && option.pricingModel !== "quote"));
+    // A question with no answers left for this venue is dropped so a required
+    // choice cannot block the client.
+    if (available.length === 0) {
+      if (group.id) droppedGroupIds.add(group.id);
+      return null;
+    }
+    const venueHiddenOptionIds = options.filter((option) => !rentalChoiceAvailableForVenue(option, venueId)).map((option) => String(option.id || option.label));
+    return { ...groupPriced, options: available, venueHiddenOptionIds };
+  });
+  let changed = droppedGroupIds.size > 0;
+  while (changed) {
+    changed = false;
+    groups = groups.map((group) => {
+      if (group && group.visibility?.mode === "conditional" && droppedGroupIds.has(group.visibility.sourceGroupId)) {
+        if (group.id) droppedGroupIds.add(group.id);
+        changed = true;
+        return null;
+      }
+      return group;
+    });
+  }
+  return { ...withRentalVenuePrice(item, venueId, itemPriceEnabled), optionGroups: groups.filter(Boolean) };
+}
+
 function computeRentalQuoteLine(item, quantity, context = {}) {
   const model = rentalPricingModel(item);
   const unitPrice = rentalUnitPrice(item);
@@ -1599,6 +1673,9 @@ function normalizeRentalChoiceOption(option, index) {
     pricingModel: option?.pricingModel || (optionPrice > 0 ? "flat_per_item" : "included"),
     priceKey: option?.priceKey || option?.legacyKey || "",
     quantitySource: option?.quantitySource || "parent",
+    venueIds: rentalAvailableVenueIds(option || {}),
+    excludedVenueIds: Array.isArray(option?.excludedVenueIds) ? option.excludedVenueIds.filter(Boolean) : [],
+    venuePrices: normalizeRentalVenuePrices(option?.venuePrices),
   };
 }
 
@@ -2079,7 +2156,79 @@ function RentalTooltipFields({ value, onChange, accordion = true }) {
   );
 }
 
-function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], parentItem = null, dragHandlers = {}, dropHandlers = {}, isDragging = false, overPosition = null }) {
+function RentalVenueAvailabilityChecks({ venues = [], venueIds = [], onChange }) {
+  const allIds = venues.map((venue) => venue.id);
+  const selected = venueIds.length === 0 ? allIds : venueIds.filter((id) => allIds.includes(id));
+  const toggleVenue = (venueId) => {
+    const next = selected.includes(venueId) ? selected.filter((id) => id !== venueId) : [...selected, venueId];
+    if (next.length === 0) return;
+    onChange(next.length === allIds.length ? [] : next);
+  };
+  return (
+    <div className="rental-venue-checks">
+      <label className="chk">
+        <input type="checkbox" checked={selected.length === allIds.length} onChange={() => onChange([])} />
+        All venues
+      </label>
+      {venues.map((venue) => (
+        <label className="chk" key={venue.id}>
+          <input type="checkbox" checked={selected.includes(venue.id)} onChange={() => toggleVenue(venue.id)} />
+          {venue.name || "Untitled venue"}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function RentalChoiceVenueChecks({ venues = [], option = {}, onChange }) {
+  const availableIds = venues.filter((venue) => rentalChoiceAvailableForVenue(option, venue.id)).map((venue) => venue.id);
+  const toggleVenue = (venueId) => {
+    const nextAvailable = availableIds.includes(venueId) ? availableIds.filter((id) => id !== venueId) : [...availableIds, venueId];
+    if (nextAvailable.length === 0) return;
+    // Exclusions for venues no longer on the parent item are kept so re-adding
+    // that venue to the item does not silently re-enable this choice.
+    const otherExcluded = (option.excludedVenueIds || []).filter((id) => !venues.some((venue) => venue.id === id));
+    const excludedVenueIds = [...otherExcluded, ...venues.map((venue) => venue.id).filter((id) => !nextAvailable.includes(id))];
+    onChange({ venueIds: [], excludedVenueIds });
+  };
+  return (
+    <div className="rental-venue-checks">
+      {venues.map((venue) => (
+        <label className="chk" key={venue.id}>
+          <input type="checkbox" checked={availableIds.includes(venue.id)} onChange={() => toggleVenue(venue.id)} />
+          {venue.name || "Untitled venue"}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function RentalVenuePriceFields({ venues = [], basePrice = 0, venuePrices = {}, onChange, label = "Price by venue" }) {
+  if (!venues.length) return null;
+  const prices = normalizeRentalVenuePrices(venuePrices);
+  const setPrice = (venueId, raw) => {
+    const next = { ...prices };
+    if (raw === "") delete next[venueId];
+    else next[venueId] = Math.max(0, Number(raw) || 0);
+    onChange(next);
+  };
+  return (
+    <div className="full">
+      <label className="lbl">{label}</label>
+      <div className="rental-muted" style={{ marginBottom: 6 }}>Leave blank to use the standard price (${Number(basePrice || 0).toFixed(2)}).</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 }}>
+        {venues.map((venue) => (
+          <label key={venue.id} style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--ink-2)" }}>
+            <span>{venue.name || "Untitled venue"}</span>
+            <input className="input" type="number" min="0" step="0.01" value={prices[venue.id] ?? ""} placeholder={Number(basePrice || 0).toFixed(2)} onChange={(e) => setPrice(venue.id, e.target.value)} />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], parentItem = null, venues = [], dragHandlers = {}, dropHandlers = {}, isDragging = false, overPosition = null }) {
   const Ic = window.Icons;
   const type = group.type || "radio";
   const options = (group.options || []).map(normalizeRentalChoiceOption);
@@ -2199,6 +2348,9 @@ function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], p
             <input className="input" type="number" min="0" step="0.01" value={group.unitPrice || ""} onChange={(e) => onChange({ ...group, unitPrice: Number(e.target.value || 0), pricingModel: Number(e.target.value || 0) > 0 ? "flat_per_item" : "included", priceEnabled: true })} />
           </div>
         )}
+        {!!group.priceEnabled && group.pricingModel !== "quote" && venues.length > 1 && (
+          <RentalVenuePriceFields venues={venues} basePrice={group.unitPrice} venuePrices={group.venuePrices} onChange={(venuePrices) => onChange({ ...group, venuePrices })} />
+        )}
         <div>
           <label className="lbl">Required</label>
           <div className="rental-inline-checks">
@@ -2253,7 +2405,19 @@ function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], p
                   <Ic.Grip size={13} />
                 </span>
                 <span>{option.label || "Untitled option"}</span>
-                <span className="rental-choice-option-price">{option.pricingModel === "quote" ? "Quote" : option.priceEnabled && Number(option.unitPrice || 0) > 0 ? "$" + Number(option.unitPrice || 0).toFixed(2) : "No price"}</span>
+                {(() => {
+                  const optionVenues = venues.filter((venue) => rentalChoiceAvailableForVenue(option, venue.id));
+                  if (venues.length < 2 || optionVenues.length === venues.length) return null;
+                  return (
+                    <span className="rental-muted" style={{ fontSize: 11 }} title={"Available at: " + optionVenues.map((venue) => venue.name).join(", ")}>
+                      {optionVenues.length} of {venues.length} venues
+                    </span>
+                  );
+                })()}
+                <span className="rental-choice-option-price">
+                  {option.pricingModel === "quote" ? "Quote" : option.priceEnabled && Number(option.unitPrice || 0) > 0 ? "$" + Number(option.unitPrice || 0).toFixed(2) : "No price"}
+                  {option.priceEnabled && option.pricingModel !== "quote" && Object.keys(option.venuePrices || {}).length > 0 ? " · varies" : ""}
+                </span>
                 <span className="rental-edit-indicator" title="Open to edit this option"><Ic.Edit size={12} /></span>
                 <button className="btn icon sm danger-ghost" title="Remove option" onClick={(e) => { e.stopPropagation(); deleteOption(index); }}><Ic.Trash size={12} /></button>
               </div>
@@ -2301,6 +2465,21 @@ function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], p
                   )}
                 </div>
               </div>
+              {venues.length > 1 && (
+                <div className="full">
+                  <label className="lbl">Available at</label>
+                  <div className="rental-muted" style={{ marginBottom: 6 }}>Defaults to the venues this rental item is offered at. Uncheck a venue to hide this option there.</div>
+                  <RentalChoiceVenueChecks venues={venues} option={option} onChange={(patch) => updateOption(index, patch)} />
+                </div>
+              )}
+              {!!option.priceEnabled && option.pricingModel !== "quote" && venues.length > 1 && (
+                <RentalVenuePriceFields
+                  venues={venues.filter((venue) => rentalChoiceAvailableForVenue(option, venue.id))}
+                  basePrice={option.unitPrice}
+                  venuePrices={option.venuePrices}
+                  onChange={(venuePrices) => updateOption(index, { venuePrices })}
+                />
+              )}
               <div className="full">
                 <RentalTooltipFields value={option} onChange={(next) => updateOption(index, { infoText: next.infoText, infoImageUrl: next.infoImageUrl, infoImageUrls: next.infoImageUrls || [] })} />
               </div>
@@ -2813,11 +2992,7 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
     onPatch(patch);
   };
   const setDeliveryRequired = (checked) => onPatch({ deliveryRequired: checked, deliveryOptionId: checked ? (item.deliveryOptionId || activeDeliveryOptions[0]?.id || "") : "" });
-  const toggleVenue = (venueId) => {
-    const next = venueIds.includes(venueId) ? venueIds.filter((id) => id !== venueId) : [...venueIds, venueId];
-    onPatch({ venueIds: next });
-  };
-  const selectAllVenues = () => onPatch({ venueIds: [] });
+  const itemVenues = venues.filter((venue) => venue?.id && rentalAvailableForVenue(item, venue.id));
   return (
     <div className="editor-col">
       <div className="editor-inner">
@@ -2929,6 +3104,9 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
                     <div className="rental-muted" style={{ marginTop: 4 }}>Top-level rentals cannot inherit a parent quantity. This will behave as “Ask for this item.”</div>
                   )}
                 </div>
+                {basePriceEnabled && item.pricingModel !== "quote" && itemVenues.length > 1 && (
+                  <RentalVenuePriceFields venues={itemVenues} basePrice={item.unitPrice} venuePrices={item.venuePrices} onChange={(venuePrices) => onPatch({ venuePrices })} />
+                )}
               </div>
             </div>
 
@@ -2968,22 +3146,7 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
               <h4>Venue availability</h4>
               <div className="rental-muted" style={{ marginBottom: 8 }}>Choose where this rental item can be offered. Leave all venues selected to make it available everywhere.</div>
               {venues.length > 0 ? (
-                <div className="rental-venue-checks">
-                  <label className="chk">
-                    <input type="checkbox" checked={venueIds.length === 0} onChange={selectAllVenues} />
-                    All venues
-                  </label>
-                  {venues.map((venue) => (
-                    <label className="chk" key={venue.id}>
-                      <input
-                        type="checkbox"
-                        checked={venueIds.length === 0 || venueIds.includes(venue.id)}
-                        onChange={() => toggleVenue(venue.id)}
-                      />
-                      {venue.name || "Untitled venue"}
-                    </label>
-                  ))}
-                </div>
+                <RentalVenueAvailabilityChecks venues={venues.filter((venue) => venue?.id)} venueIds={venueIds} onChange={(next) => onPatch({ venueIds: next })} />
               ) : (
                 <div className="rental-muted">Add venues in the Venue step to restrict rentals by space.</div>
               )}
@@ -3031,6 +3194,7 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
                   group={group}
                   allGroups={optionGroups}
                   parentItem={item}
+                  venues={itemVenues}
                   dragHandlers={choiceDnd.sourceHandlers(group)}
                   dropHandlers={choiceDnd.targetHandlers(group)}
                   isDragging={choiceDnd.isDragging(group._reorderId)}
@@ -3969,7 +4133,9 @@ function isRichWorkflowOption(option) {
 function workflowRentalCatalogItems(groupName, venueId = "") {
   const source = window.CURRENT_RENTAL_CATALOG || window.SAMPLE_RENTAL_CATALOG || [];
   const catalog = window.normalizeRentalCatalog ? window.normalizeRentalCatalog(source) : source;
-  return catalog.filter((item) => item.category === groupName && item.active !== false && rentalAvailableForVenue(item, venueId));
+  return catalog
+    .filter((item) => item.category === groupName && item.active !== false && rentalAvailableForVenue(item, venueId))
+    .map((item) => rentalItemForVenue(item, venueId));
 }
 
 function workflowRentalPriceLabel(item) {
@@ -11142,6 +11308,7 @@ function rentalOptionGroupsCost(item, itemValue = {}, parentQty = 1) {
       const charge = rentalOptionCharge({ ...group, label: group.label || item.name, quantitySource: group.quantitySource || "own" }, Number(current || 0), parentQty);
       if (charge) lines.push({ ...charge, parentLabel: item.name || "" });
     } else if (["radio", "select"].includes(group.type)) {
+      if (rentalChoiceValueHiddenForVenue(group, current)) return;
       // A priced client-choice group is an additional charge of its own. It
       // must be included alongside (not replaced by) the selected option's
       // price, matching the admin preview calculation.
@@ -11321,7 +11488,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
     const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
     if (mode === "separate_items") {
       items.forEach((item) => allTiles.push({ type: "item", field, item, key: field.id + ":" + item.id }));
-    } else {
+    } else if (items.length > 0) {
       allTiles.push({ type: "group", field, items, key: field.id + ":group" });
     }
   });
@@ -12592,6 +12759,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
             const checked = typeof current === "object" ? current.checked !== false : !!current;
             details.push(`${group.label || "Option"}: ${checked ? "Selected" : "Not selected"}${typeof current === "object" && current.quantity ? ` (${current.quantity})` : ""}`);
           } else {
+            if (rentalChoiceValueHiddenForVenue(group, current)) return;
             const selectedId = typeof current === "object" ? current.value : current;
             const selectedLabel = typeof current === "object" && current.label ? current.label : options.find((candidate) => String(candidate.id || candidate.label) === String(selectedId))?.label || selectedId;
             details.push(`${group.label || "Option"}: ${selectedLabel}`);
@@ -17609,7 +17777,7 @@ function BookingReadOnlyRentalDetail({ item, value = {} }) {
       const current = groupValues[group.id];
       const options = (group.options || []).map(normalizeRentalChoiceOption);
       if (["quantity", "number", "select"].includes(group.type)) {
-        const valueText = current && typeof current === "object" ? current.label || current.value || "" : current ?? "";
+        const valueText = rentalChoiceValueHiddenForVenue(group, current) ? "" : current && typeof current === "object" ? current.label || current.value || "" : current ?? "";
         return <div className="booking-rental-control" key={group.id}><label>{group.label || item.name}</label><div className="booking-rental-select">{valueText}</div></div>;
       }
       if (group.type === "multi_quantity") {
