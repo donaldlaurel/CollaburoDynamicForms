@@ -2624,7 +2624,7 @@ function RentalClientChoicePreview({ group, values, onValueChange }) {
       </div>
       {group.description && <small>{group.description}</small>}
       {type === "quantity" && <input {...inputProps} min={group.settings?.min ?? 0} max={group.settings?.max || undefined} step={group.settings?.step ?? 1} type="number" value={value ?? group.settings?.defaultValue ?? 2} onChange={(e) => setValue(Number(e.target.value || 0))} />}
-      {type === "number" && <input {...inputProps} min={group.settings?.min ?? 0} max={group.settings?.max || undefined} step={group.settings?.step ?? 1} type="number" value={value ?? group.settings?.defaultValue ?? 1} onChange={(e) => setValue(Number(e.target.value || 0))} />}
+      {type === "number" && <ClampedNumberInput {...inputProps} min={group.settings?.min ?? 0} max={group.settings?.max || undefined} step={group.settings?.step ?? 1} value={value ?? group.settings?.defaultValue ?? 1} onChange={(raw) => setValue(Number(raw || 0))} />}
       {type === "checkbox_row" && (
         <div className="rental-client-options">
           <button type="button" className={"rental-client-option" + (checkboxRowValue.checked ? " active" : "")} onClick={() => setCheckboxRow({ checked: !checkboxRowValue.checked })}>
@@ -3793,6 +3793,38 @@ const PHONE_INVALID_MESSAGE = `Enter a valid phone number (${PHONE_MIN_DIGITS}�
 
 // Saved form configs still contain phone fields typed as "number", which render
 // an <input type="number"> that rejects dashes, spaces and parentheses.
+function numericBound(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+// Rejects keystrokes that would exceed `max`, and snaps values below `min` up on blur.
+// `onChange` receives the raw input string.
+function ClampedNumberInput({ min, max, value, onChange, onBlur, ...rest }) {
+  const lo = numericBound(min);
+  const hi = numericBound(max);
+  return (
+    <input
+      {...rest}
+      type="number"
+      min={lo ?? undefined}
+      max={hi ?? undefined}
+      value={value}
+      onChange={(e) => {
+        const raw = e.target.value;
+        if (raw !== "" && hi !== null && Number(raw) > hi) return;
+        onChange(raw);
+      }}
+      onBlur={(e) => {
+        const raw = e.target.value;
+        if (raw !== "" && lo !== null && Number(raw) < lo) onChange(String(lo));
+        if (onBlur) onBlur(e);
+      }}
+    />
+  );
+}
+
 function isPhoneLikeField(f) {
   if (!f) return false;
   if (f.type === "phone") return true;
@@ -8118,6 +8150,15 @@ function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDel
                 </label>
               </div>
               <div>
+                <label className="lbl">
+                  Booking Date &amp; Time <span className="hint">when another venue is selected before this one</span>
+                </label>
+                <label className="chk" style={{ marginTop: 4 }}>
+                  <input type="checkbox" checked={venue.allowCopyBookingAbove !== false} onChange={(e) => set({ allowCopyBookingAbove: e.target.checked })} />
+                  Show "Copy date and time above" button
+                </label>
+              </div>
+              <div>
                 <label className="lbl">Visible to User</label>
                 <select className="select" value={venue.visibility} onChange={(e) => set({ visibility: e.target.value })}>
                   <option value="admin_and_user">Admin and User</option>
@@ -10437,14 +10478,19 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
             const quote = buildVenueQuote(selected);
             const price = quote.price;
             const previousVenue = selectedVenues[selectedIndex - 1];
+            const previousBooking = previousVenue ? (bookingByVenue[previousVenue.id] || {}) : {};
+            const previousBookingComplete = !!(previousBooking.startDate && previousBooking.startTime && previousBooking.endDate && previousBooking.endTime);
             return (
               <div className="cv-booking-calc" style={{ margin: "0 24px 24px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
                   <h4 style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>Booking Date & Time</h4>
-                  {selectedIndex > 0 && previousVenue && (
+                  {selectedIndex > 0 && previousVenue && selected.allowCopyBookingAbove !== false && (
                     <button
                       type="button"
                       className="btn sm"
+                      disabled={!previousBookingComplete}
+                      style={!previousBookingComplete ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+                      title={!previousBookingComplete ? `Enter the start and end date and time for ${previousVenue.name} first.` : undefined}
                       onClick={() => copyBookingFromVenueAbove(selected, previousVenue)}
                     >
                       Copy date and time above
@@ -10871,6 +10917,8 @@ function rentalOptionGroupVisibilityValues(optionGroups = [], itemValue = {}, pa
 
 function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemValue }) {
   const pricesVisible = useClientPricingVisible();
+  // The same item can render once per selected venue; a shared radio name would link them.
+  const radioName = `${item.id}_${group.id}_${React.useId()}`;
   const groupValues = itemValue.optionGroups || {};
   const current = groupValues[group.id];
   const visibilityGroups = [rentalParentVisibilitySource(item), ...(allGroups || item.optionGroups || [])];
@@ -10905,15 +10953,14 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
     return (
       <div>
         {groupLabel(item.name)}
-        <input
+        <ClampedNumberInput
           className="cv-input"
-          type="number"
           min={group.min ?? group.minCount ?? 0}
           max={group.max ?? group.maxCount ?? undefined}
           step={group.step ?? group.stepCount ?? 1}
           value={current ?? ""}
           placeholder={group.placeholder || ""}
-          onChange={(e) => setGroup(e.target.value === "" ? "" : Number(e.target.value))}
+          onChange={(raw) => setGroup(raw === "" ? "" : Number(raw))}
         />
       </div>
     );
@@ -10970,7 +11017,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
         const selected = (typeof current === "object" ? current?.value : current) === optId;
         return (
           <label className="cv-rental-option-row" key={optId}>
-            <input type="radio" name={item.id + "_" + group.id} checked={selected} onChange={() => setGroup({ value: optId, label: opt.label })} />
+            <input type="radio" name={radioName} checked={selected} onChange={() => setGroup({ value: optId, label: opt.label })} />
             <span>
               {opt.label}
               <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} />
@@ -11641,6 +11688,8 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const [progressScrollState, setProgressScrollState] = React.useState({ left: false, right: false });
   const progressBarRef = React.useRef(null);
   const lastActivityPingRef = React.useRef(0);
+  const loadedAnswersRef = React.useRef(answers);
+  const ruleClearBaselineRef = React.useRef(null);
 
   const updateProgressScrollState = React.useCallback(() => {
     const el = progressBarRef.current;
@@ -11654,8 +11703,11 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 
   React.useEffect(() => {
     if ((!publicMode && !adminEditMode) || !initialDraft) return;
+    const loadedAnswers = initialDraft.answers || {};
+    loadedAnswersRef.current = loadedAnswers;
+    ruleClearBaselineRef.current = null;
     setStepIdx(Math.min(initialDraft.stepIdx || 0, Math.max(0, list.length - 1)));
-    setAnswers(initialDraft.answers || {});
+    setAnswers(loadedAnswers);
     setVenueCost(initialDraft.venueCost || null);
     setLayoutRecommendations(initialDraft.layoutRecommendations || {});
     setDraftRecordId(initialDraft.recordId || "");
@@ -11875,9 +11927,22 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     return required === !!f.required ? f : { ...f, required };
   };
   React.useEffect(() => {
-    const idsToClear = workflowFieldEntries
+    const clearable = workflowFieldEntries
       .filter(({ field }) => field.type !== "rental_group" && answerHasValue(answers[field.id]) && fieldRuleState(field).clearValue)
       .map(({ field }) => field.id);
+    let idsToClear = clearable;
+    if (adminEditMode) {
+      // Saved bookings can fail rules that changed after submission; only clear
+      // answers whose rule state flips while the admin is editing.
+      if (ruleClearBaselineRef.current === null) {
+        if (answers !== loadedAnswersRef.current) return;
+        ruleClearBaselineRef.current = new Set(clearable);
+        return;
+      }
+      const baseline = ruleClearBaselineRef.current;
+      Array.from(baseline).forEach((id) => { if (!clearable.includes(id)) baseline.delete(id); });
+      idsToClear = clearable.filter((id) => !baseline.has(id));
+    }
     if (!idsToClear.length) return;
     setAnswers((current) => {
       const next = { ...current };
@@ -12606,8 +12671,21 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     stepProgress: { completedStepIds: savedStepIds },
   });
   const stepHasSavedData = (targetStep) => savedStepIds.includes(targetStep?.id);
+  const confirmAdminAnswerRemovals = () => {
+    if (!adminEditMode) return true;
+    const beforeAnswers = initialDraft?.auditBefore?.answers || {};
+    const fieldLabels = new Map(workflowFieldEntries.map(({ field }) => [field.id, field.label || field.id]));
+    const removed = Object.keys(beforeAnswers)
+      .filter((key) => answerHasValue(beforeAnswers[key]) && !answerHasValue(answers[key]))
+      .map((key) => fieldLabels.get(key) || key.replace(/^_+/, ""));
+    if (!removed.length) return true;
+    const preview = removed.slice(0, 12).map((label) => `• ${label}`).join("\n");
+    const more = removed.length > 12 ? `\n…and ${removed.length - 12} more` : "";
+    return window.confirm(`Saving will remove ${removed.length} saved answer${removed.length === 1 ? "" : "s"} from this booking:\n\n${preview}${more}\n\nSave anyway?`);
+  };
   const saveCurrentStep = async ({ finalSubmit = false } = {}) => {
     if ((!publicMode && !adminEditMode) || !onSubmitRequest) return null;
+    if (!confirmAdminAnswerRemovals()) throw new Error("Save cancelled.");
     const stepId = step?.id;
     const nextSavedIds = stepId ? Array.from(new Set([...savedStepIds, stepId])) : savedStepIds;
     const submittedAt = draftSubmittedAt || initialDraft?.submittedAt || new Date().toISOString();
@@ -12652,6 +12730,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   };
   const saveEditChanges = async () => {
     if (!isEditMode || !onSubmitRequest) return;
+    if (!confirmAdminAnswerRemovals()) return;
     try {
       setSubmitState({ status: "submitting", message: "" });
       await onSubmitRequest(editSubmitPayload());
@@ -14297,7 +14376,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       return (
         <div className="cv-form-group">
           {labelEl}
-          <input className="cv-input" type="number" placeholder={f.placeholder || ""} value={value || ""} onChange={(e) => onChange(e.target.value)} min={f.min} max={f.max} step={f.step || 1} />
+          <ClampedNumberInput className="cv-input" placeholder={f.placeholder || ""} value={value ?? ""} onChange={onChange} min={f.min} max={f.max} step={f.step || 1} />
           {(f.min != null || f.max != null) && (
             <span className="cv-minmax-hint">
               {f.min != null && f.max != null ? `Between ${f.min} and ${f.max}` : f.min != null ? `Minimum: ${f.min}` : `Maximum: ${f.max}`}
