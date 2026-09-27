@@ -18590,20 +18590,22 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
                     >
                       Send
                     </button>
-                    <a
-                      className="btn-gray sm"
-                      href={`/book?record=${encodeURIComponent(bookingCodeForRecord(record))}&action=sign`}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
-                      onClick={(e) => {
-                        if (!onOpenContract) return;
-                        e.preventDefault();
-                        onOpenContract(record);
-                      }}
-                    >
-                      Open link
-                    </a>
+                    {(record.progress?.contract || "Not Generated") !== "Not Generated" && (
+                      <a
+                        className="btn-gray sm"
+                        href={`/book?record=${encodeURIComponent(bookingCodeForRecord(record))}&action=sign`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+                        onClick={(e) => {
+                          if (!onOpenContract) return;
+                          e.preventDefault();
+                          onOpenContract(record);
+                        }}
+                      >
+                        Open link
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
@@ -19294,11 +19296,37 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       pushToast({ kind: "danger", title: "Contract save failed", desc: `${error.message || "Unknown error."} The contract link will not work until the save succeeds.`, duration: 8000 });
       throw error;
     });
+  // The tab is opened synchronously to dodge popup blockers, but stays on
+  // about:blank until the save resolves, so fill it with a loading screen.
+  const writeContractPendingPage = (tab) => {
+    try {
+      tab.document.open();
+      tab.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Preparing contract…</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f6f6f4;color:#1a1a1a}
+  .wrap{min-height:100%;display:grid;place-items:center;padding:24px;box-sizing:border-box}
+  .card{background:#fff;border:1px solid #e4e4e0;border-radius:12px;padding:32px 36px;text-align:center;max-width:360px;box-shadow:0 8px 24px rgba(0,0,0,.06)}
+  .spin{width:36px;height:36px;margin:0 auto 16px;border:3px solid #e4e4e0;border-top-color:#1a1a1a;border-radius:50%;animation:s .8s linear infinite}
+  h2{margin:0 0 6px;font-size:18px}
+  p{margin:0;font-size:13px;color:#666;line-height:1.5}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style></head><body><div class="wrap" role="status" aria-busy="true"><div class="card">
+<div class="spin"></div><h2>Preparing your contract…</h2><p>Saving the latest booking details. This page will open automatically in a moment.</p>
+</div></div></body></html>`);
+      tab.document.close();
+    } catch {
+      // Cross-origin or closed tab: fall back to the blank tab.
+    }
+  };
   const openProgressContract = (record) => {
     if (!record?.id) return;
     const url = contractLinkForRecord(record);
     const tab = window.open("", "_blank");
-    if (tab) tab.opener = null;
+    if (tab) {
+      writeContractPendingPage(tab);
+      tab.opener = null;
+    }
     const latest = progressRecordsRef.current.find((item) => item.id === record.id) || record;
     const status = latest.progress?.contract || "Not Generated";
     const ready = status === "Not Generated" || (status === "Generated" && !latest.progress?.contractSnapshot)
