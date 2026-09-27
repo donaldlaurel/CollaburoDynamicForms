@@ -11526,6 +11526,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
     setFieldState(tile.field.id, { ...fieldState, selectedItems, itemValues });
   };
   const heading = title || fields[0]?.rentalPreviewHeading || "Rental Groups";
+  if (allTiles.length === 0) return null;
   return (
     <div className="rental-client-preview cv-rental-groups">
       <div className="rental-client-preview-head">
