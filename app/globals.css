@@ -2898,6 +2898,8 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 /* Nav buttons */
 .cv-nav{position:fixed;left:0;right:0;bottom:0;z-index:325;display:flex;justify-content:center;align-items:center;gap:12px;margin:0;padding:16px 48px calc(16px + env(safe-area-inset-bottom));border-top:1px solid #e5e5e5;background:rgba(255,255,255,.96);box-shadow:0 -10px 28px rgba(40,31,20,.08);backdrop-filter:blur(10px);flex-wrap:wrap}
 .cv-nav>div{flex:0 0 min(720px,100%);text-align:left}
+.cv-nav>.cv-nav-notices{flex:0 0 100%;display:flex;flex-direction:column;align-items:center;gap:8px}
+.cv-nav-notice{width:min(720px,100%);box-sizing:border-box;color:var(--danger);background:var(--danger-soft);border:1px solid #f0c9c0;border-radius:6px;padding:10px 12px;font-size:12px;font-weight:650;text-align:center}
 .cv-client-toast{position:fixed;right:24px;bottom:calc(82px + env(safe-area-inset-bottom));z-index:340;display:flex;align-items:flex-start;gap:10px;max-width:min(360px,calc(100vw - 32px));padding:12px 14px;border-radius:8px;background:#201914;color:#fff;box-shadow:0 16px 40px rgba(40,31,20,.22);font-size:12px;line-height:1.35;animation:cvClientToastIn .22s ease-out}
 .cv-client-toast-dot{width:8px;height:8px;border-radius:999px;background:var(--accent);margin-top:4px;flex:0 0 auto}
 .cv-client-toast-success .cv-client-toast-dot{background:#45b36b}
