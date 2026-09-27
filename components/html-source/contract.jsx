@@ -524,11 +524,14 @@ export function SignaturePad({ value, onChange, height = 160, disabled = false }
     return true;
   }, []);
 
+  const drawnValue = React.useRef(null);
+
   const emit = React.useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !onChange) return;
-    if (syncEmpty()) onChange("");
-    else onChange(canvas.toDataURL("image/png"));
+    const next = syncEmpty() ? "" : canvas.toDataURL("image/png");
+    drawnValue.current = next;
+    onChange(next);
   }, [onChange, syncEmpty]);
 
   const clear = () => {
@@ -536,8 +539,27 @@ export function SignaturePad({ value, onChange, height = 160, disabled = false }
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawnValue.current = "";
     onChange && onChange("");
   };
+
+  const paintValue = React.useCallback((nextValue) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const width = canvas.clientWidth || 450;
+    drawnValue.current = nextValue || "";
+    ctx.clearRect(0, 0, width, height);
+    if (nextValue && nextValue.startsWith("data:")) {
+      const img = new Image();
+      img.onload = () => {
+        if (drawnValue.current !== nextValue) return;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+      };
+      img.src = nextValue;
+    }
+  }, [height]);
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
@@ -551,15 +573,12 @@ export function SignaturePad({ value, onChange, height = 160, disabled = false }
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
     ctx.strokeStyle = "#111";
-    if (value && value.startsWith("data:")) {
-      const img = new Image();
-      img.onload = () => {
-        ctx.clearRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
-      };
-      img.src = value;
-    }
-  }, [height]); // eslint-disable-line react-hooks/exhaustive-deps -- redraw on mount/size only
+    paintValue(value);
+  }, [height]); // eslint-disable-line react-hooks/exhaustive-deps -- resize on mount/size only
+
+  React.useEffect(() => {
+    if ((value || "") !== drawnValue.current) paintValue(value);
+  }, [value, paintValue]);
 
   const pointFromEvent = (event) => {
     const canvas = canvasRef.current;
@@ -1000,6 +1019,31 @@ function buildSignedContractHtml(settings, tokenMap, signatures) {
     }
   });
   return `<!doctype html><html><head><meta charset="utf-8"/><style>${tableStyles}</style></head><body style="font-family:Georgia,serif;padding:24px;color:#111;line-height:1.55">${parts.join("")}</body></html>`;
+}
+
+export function ContractLoadingView({ steps = [] }) {
+  const total = steps.length || 1;
+  const done = steps.filter((step) => step.done).length;
+  const percent = Math.max(8, Math.round((done / total) * 100));
+  return (
+    <div className="contract-loading" role="status" aria-live="polite" aria-busy="true">
+      <div className="contract-loading-card">
+        <div className="contract-loading-spinner" aria-hidden="true" />
+        <h2>Preparing your contract…</h2>
+        <div className="contract-loading-bar" aria-hidden="true">
+          <div className="contract-loading-bar-fill" style={{ width: `${percent}%` }} />
+        </div>
+        <ul className="contract-loading-steps">
+          {steps.map((step) => (
+            <li key={step.label} className={step.done ? "done" : ""}>
+              <span className="contract-loading-dot" aria-hidden="true">{step.done ? "✓" : ""}</span>
+              {step.label}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
 }
 
 export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap = {}, onSigned, onError }) {
