@@ -88,6 +88,18 @@ export function normalizeContractSettings(settings = {}) {
   };
 }
 
+export function buildContractSnapshot(settings, tokenMap = {}, generatedAt = new Date().toISOString()) {
+  const tokens = {};
+  Object.entries(tokenMap || {}).forEach(([token, value]) => {
+    tokens[token] = value == null ? "" : String(value);
+  });
+  return {
+    generatedAt,
+    settings: normalizeContractSettings(settings),
+    tokenMap: tokens,
+  };
+}
+
 function normalizeContractBlock(block = {}) {
   const type = CONTRACT_BLOCK_TYPES.some((item) => item.id === block.type) ? block.type : "paragraph";
   const id = block.id || contractUid("blk");
@@ -990,8 +1002,10 @@ function buildSignedContractHtml(settings, tokenMap, signatures) {
   return `<!doctype html><html><head><meta charset="utf-8"/><style>${tableStyles}</style></head><body style="font-family:Georgia,serif;padding:24px;color:#111;line-height:1.55">${parts.join("")}</body></html>`;
 }
 
-export function ContractSignView({ record, siteSettings, tokenMap, onSigned, onError }) {
-  const contract = normalizeContractSettings(siteSettings?.contractSettings);
+export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap = {}, onSigned, onError }) {
+  const snapshot = record?.progress?.contractSnapshot;
+  const contract = normalizeContractSettings(snapshot?.settings || siteSettings?.contractSettings);
+  const tokenMap = snapshot?.tokenMap ? { ...liveTokenMap, ...snapshot.tokenMap } : liveTokenMap;
   const [signatures, setSignatures] = React.useState({});
   const [submitting, setSubmitting] = React.useState(false);
   const [message, setMessage] = React.useState("");
