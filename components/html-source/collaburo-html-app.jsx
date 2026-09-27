@@ -4893,6 +4893,76 @@ const FIELD_RULE_OPERATORS = [
 
 const FIELD_RULE_SOURCE_EXCLUDED_TYPES = new Set(["separator", "instructional"]);
 
+// Venue, layout and checkout steps keep client answers in system answer keys rather than in
+// step.fields, so rules reference them through synthetic sources: { field, read(answers) }.
+// field.options hold the labels rules compare against; read() returns the answer in those labels.
+const SYSTEM_RULE_SOURCE_PREFIX = "__sys:";
+
+function answerSelectedVenueIds(answers) {
+  if (Array.isArray(answers?._selectedVenueIds)) return answers._selectedVenueIds;
+  return answers?._selectedVenueId ? [answers._selectedVenueId] : [];
+}
+
+function layoutAreaName(areaId, step, venueStep) {
+  const venues = venueStep?.venues || [];
+  const venue = venues.find((v) => v.id === areaId);
+  if (venue) return venue.name || "Venue";
+  for (const v of venues) {
+    const sub = (v.subSpace?.options || []).find((option) => option.id === areaId);
+    if (sub) return `${sub.name} (${v.name})`;
+  }
+  const space = (step.layoutSpaces || []).find((s) => s.id === areaId);
+  if (space) {
+    const parent = venues.find((v) => v.id === space.venueId);
+    return parent ? `${space.name} (${parent.name})` : space.name;
+  }
+  return "Area";
+}
+
+function stepSystemRuleSources(step, steps = []) {
+  const sources = [];
+  const add = (key, label, type, options, read) => sources.push({
+    field: { id: SYSTEM_RULE_SOURCE_PREFIX + key, label, type, options: options || [] },
+    read,
+  });
+  if (step?.stepType === "venue") {
+    const venues = (step.venues || []).filter((v) => v && v.name);
+    if (venues.length) {
+      add("venue", "Selected venue", "checkbox", venues.map((v) => v.name), (answers) =>
+        answerSelectedVenueIds(answers).map((id) => venues.find((v) => v.id === id)?.name).filter(Boolean));
+    }
+    venues.forEach((venue) => {
+      const subs = (venue.subSpace?.enabled ? venue.subSpace.options || [] : []).filter((sub) => sub && sub.name);
+      if (subs.length) {
+        add(`subspace:${venue.id}`, `${venue.name} — ${venue.subSpace.title || "Sub-space"}`, "select", subs.map((sub) => sub.name), (answers) =>
+          subs.find((sub) => sub.id === answers._venueSubSpaces?.[venue.id])?.name || "");
+      }
+      [["startDate", "Start date", "date"], ["startTime", "Start time", "time"], ["endDate", "End date", "date"], ["endTime", "End time", "time"]]
+        .forEach(([key, label, type]) => add(`booking:${venue.id}:${key}`, `${venue.name} — ${label}`, type, [], (answers) =>
+          answers._venueBookings?.[venue.id]?.[key] || ""));
+    });
+  }
+  if (step?.stepType === "layout") {
+    const venueStep = steps.find((s) => s.stepType === "venue");
+    Object.entries(step.floorLayouts || {}).forEach(([areaId, plan]) => {
+      const layouts = (plan?.layouts || []).filter((layout) => layout && layout.name);
+      if (plan?.hasFloorLayoutPlan === false || !layouts.length) return;
+      const name = layoutAreaName(areaId, step, venueStep);
+      add(`layout:${areaId}`, `${name} — Floor layout`, "select", [...layouts.map((layout) => layout.name), "Other"], (answers) => {
+        const id = answers._selectedLayouts?.[areaId];
+        if (!id) return "";
+        return layouts.find((layout) => String(layout.id) === String(id))?.name || (id === `_other_${areaId}` ? "Other" : "");
+      });
+      add(`layoutNotes:${areaId}`, `${name} — Layout notes`, "textarea", [], (answers) => answers._layoutOtherPlans?.[areaId]?.notes || "");
+    });
+  }
+  if (step?.stepType === "checkout") {
+    (step.checkout?.agreements || []).forEach((agreement) => add(`agreement:${step.id}:${agreement.id}`, agreement.label || "Agreement", "toggle", [], (answers) =>
+      !!answers.__checkoutAgreements?.[step.id]?.[agreement.id]));
+  }
+  return sources;
+}
+
 function fieldRulesOf(field) {
   if (Array.isArray(field?.rules)) return field.rules;
   if (field?.visibility) {
@@ -5132,7 +5202,11 @@ function FieldRulesEditor({ field, allFields = [], onChange, actions = FIELD_RUL
   const steps = React.useContext(WorkflowStepsContext);
   const sourceGroups = React.useMemo(() => {
     const groups = steps && steps.length
-      ? steps.map((s, index) => ({ id: s.id || "step_" + index, label: s.name || `Step ${index + 1}`, fields: s.fields || [] }))
+      ? steps.map((s, index) => ({
+        id: s.id || "step_" + index,
+        label: s.name || `Step ${index + 1}`,
+        fields: [...stepSystemRuleSources(s, steps).map((source) => source.field), ...(s.fields || [])],
+      }))
       : [{ id: "current", label: "This step", fields: allFields }];
     return groups
       .map((group) => ({ ...group, fields: group.fields.filter((f) => f.id !== field.id && !FIELD_RULE_SOURCE_EXCLUDED_TYPES.has(f.type)) }))
@@ -12207,7 +12281,12 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 
   // Evaluate field rules (show/hide/enable/disable/require/optional) against current answers
   const workflowFieldEntries = list.flatMap((s) => (s.fields || []).map((field) => ({ field, step: s })));
+  const systemRuleSources = steps.flatMap((s) => stepSystemRuleSources(s, steps));
   const resolveRuleSource = (condition) => {
+    if (String(condition.fieldId || "").startsWith(SYSTEM_RULE_SOURCE_PREFIX)) {
+      const source = systemRuleSources.find((x) => x.field.id === condition.fieldId);
+      return source ? { field: source.field, value: source.read(answers) } : null;
+    }
     const entry = condition.fieldId
       ? workflowFieldEntries.find((x) => x.field.id === condition.fieldId)
       : workflowFieldEntries.find((x) => x.field.label === condition.field);
