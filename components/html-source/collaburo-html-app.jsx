@@ -9,7 +9,7 @@ import "./icons";
 import "./runtime-widgets";
 import { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT } from "./navigation";
 import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-data";
-import { ContractSettingsView, ContractSignView, normalizeContractSettings, createDefaultContractSettings, buildContractSnapshot } from "./contract";
+import { ContractSettingsView, ContractSignView, ContractLoadingView, normalizeContractSettings, createDefaultContractSettings, buildContractSnapshot } from "./contract";
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 
@@ -18756,6 +18756,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const [adminAccounts, setAdminAccounts] = React.useState([]);
   const [currentAdminUsername, setCurrentAdminUsername] = React.useState("");
   const [initialDataLoaded, setInitialDataLoaded] = React.useState(publicMode);
+  const [databaseStateLoaded, setDatabaseStateLoaded] = React.useState(false);
   const [lastSavedAt, setLastSavedAt] = React.useState(() => {
     const v = parseInt(localStorage.getItem(SAVED_KEY) || "0", 10);
     return v || Date.now();
@@ -18892,7 +18893,10 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         });
       })
       .finally(() => {
-        if (!cancelled) setInitialDataLoaded(true);
+        if (!cancelled) {
+          setInitialDataLoaded(true);
+          setDatabaseStateLoaded(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -19879,8 +19883,17 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   if (publicMode) {
     const publicAction = new URLSearchParams(window.location.search).get("action");
     if (publicAction === "sign") {
-      if (!publicRecordLookupDone && clientRecordId) {
-        return <div className="booking-answers-loading" style={{ minHeight: "100vh", display: "grid", placeItems: "center", fontWeight: 700 }}>Loading contract…</div>;
+      const recordLoaded = publicRecordLookupDone || !clientRecordId;
+      if (!recordLoaded || !databaseStateLoaded) {
+        return (
+          <ContractLoadingView
+            steps={[
+              { label: "Opening secure contract page", done: true },
+              { label: "Loading contract template", done: databaseStateLoaded },
+              { label: "Loading booking details", done: recordLoaded },
+            ]}
+          />
+        );
       }
       return (
         <ContractSignView
