@@ -1048,6 +1048,7 @@ function withRentalArchitecture(item) {
     infoImageUrl: item.infoImageUrl || legacy.infoImageUrl || "",
     infoImageUrls: item.infoImageUrls || legacy.infoImageUrls || (item.infoImageUrl || legacy.infoImageUrl ? [item.infoImageUrl || legacy.infoImageUrl] : []),
     layoutRecommendationEnabled: item.layoutRecommendationEnabled ?? legacy.layoutRecommendationEnabled ?? ["Tables", "Chairs"].includes(item.category),
+    notes: /^Old site spaces:/.test(String(item.notes || "")) ? "" : item.notes ?? legacy.notes,
     optionGroups,
     migrationNotes: item.migrationNotes ?? legacy.migrationNotes ?? [],
     packageBehavior: item.packageBehavior ?? legacy.packageBehavior,
@@ -1806,7 +1807,7 @@ function oldSiteRentalToCatalogRow(item, rows, venues = []) {
     venueIds: oldSiteRentalVenueIds(item, venues),
     layoutRecommendationEnabled: false,
     source: "Old site inventory",
-    notes: (item.oldSiteSpaces || []).length ? "Old site spaces: " + item.oldSiteSpaces.join(", ") : "",
+    notes: "",
     infoText: "",
     infoImageUrl: "",
     infoImageUrls: [],
@@ -3414,7 +3415,7 @@ function RentalOldSiteModal({ group, rows, venues = [], onClose, onAddSelected }
               const exists = oldSiteRentalExists(item, rows);
               const styles = (item.optionGroups || []).flatMap((g) => (g.options || []).map((o) => o.label));
               const range = item.minUnits != null && item.maxUnits != null ? `${item.minUnits}–${item.maxUnits} units` : "";
-              const detail = [groupFilter === "all" ? item.category : "", styles.join(" / "), range, (item.oldSiteSpaces || []).join(", ")].filter(Boolean).join(" · ");
+              const detail = [groupFilter === "all" ? item.category : "", styles.join(" / "), range].filter(Boolean).join(" · ");
               return (
                 <label className="rental-recommend-row" key={item.id}>
                   <input type="checkbox" checked={exists || selectedIds.includes(item.id)} disabled={exists} onChange={() => toggle(item.id)} />
@@ -4679,6 +4680,7 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
           </div>
 
           {hasOptionsResolved && supportsOptions && (
+            <OptionRulesContext.Provider value={{ field, allFields }}>
             <div style={{ paddingBottom: 14 }}>
               {["multiselect", "checkbox"].includes(field.type) && (
                 <div className="rental-help" style={{ marginBottom: 12 }}>
@@ -4733,6 +4735,7 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
                 </>
               )}
             </div>
+            </OptionRulesContext.Provider>
           )}
 
           {/* Advanced disclosure */}
@@ -4992,6 +4995,82 @@ function evaluateFieldRules(field, resolveSource) {
   return state;
 }
 
+// Options (and options inside groups) can carry their own `rules`, limited to show/hide.
+const OPTION_RULE_ACTIONS = [
+  { value: "show", label: "Show this option" },
+  { value: "hide", label: "Hide this option" },
+];
+
+const OptionRulesContext = React.createContext(null);
+
+function visibleFieldOptions(options, isOptionVisible) {
+  if (!Array.isArray(options)) return options;
+  let changed = false;
+  const next = [];
+  options.forEach((option) => {
+    if (!option || typeof option !== "object") { next.push(option); return; }
+    if (!isOptionVisible(option)) { changed = true; return; }
+    if (option.type === "group" && Array.isArray(option.options)) {
+      const inner = visibleFieldOptions(option.options, isOptionVisible);
+      if (inner !== option.options) { changed = true; next.push({ ...option, options: inner }); return; }
+    }
+    next.push(option);
+  });
+  return changed ? next : options;
+}
+
+function hiddenFieldOptionLabels(options, isOptionVisible, into = new Set()) {
+  (options || []).forEach((option) => {
+    if (!option || typeof option !== "object") return;
+    if (!isOptionVisible(option)) {
+      if (option.label) into.add(String(option.label));
+      return;
+    }
+    if (option.type === "group") hiddenFieldOptionLabels(option.options, isOptionVisible, into);
+  });
+  return into;
+}
+
+function stripHiddenOptionAnswer(value, hidden) {
+  if (!hidden.size || value == null) return value;
+  if (typeof value === "string") return hidden.has(value) ? undefined : value;
+  if (Array.isArray(value)) {
+    const next = value.filter((item) => !hidden.has(String(item)));
+    return next.length === value.length ? value : next;
+  }
+  if (typeof value === "object") {
+    if (value.__selected !== undefined) return hidden.has(String(value.__selected)) ? undefined : value;
+    if (value.main !== undefined) return hidden.has(String(value.main)) ? undefined : value;
+    const hiddenKeys = Object.keys(value).filter((key) => hidden.has(key));
+    if (!hiddenKeys.length) return value;
+    const next = { ...value };
+    hiddenKeys.forEach((key) => { delete next[key]; });
+    return next;
+  }
+  return value;
+}
+
+function OptionRulesEditor({ option, onChange }) {
+  const Ic = window.Icons;
+  const ctx = React.useContext(OptionRulesContext);
+  if (!ctx?.field) return null;
+  return (
+    <div>
+      <label className="lbl">
+        Conditions &amp; dependencies <Ic.Branch size={11} style={{ verticalAlign: "middle", marginLeft: 2 }} />
+        <span className="hint">show or hide this option based on other answers</span>
+      </label>
+      <FieldRulesEditor
+        field={{ id: ctx.field.id, rules: Array.isArray(option?.rules) ? option.rules : [] }}
+        allFields={ctx.allFields}
+        onChange={(patch) => onChange({ rules: patch.rules })}
+        actions={OPTION_RULE_ACTIONS}
+        defaultAction="show"
+      />
+    </div>
+  );
+}
+
 function FieldRuleCondition({ condition, sourceGroups, sourceFields, onChange, onRemove }) {
   const Ic = window.Icons;
   const selected = sourceFields.find((f) => f.id === condition.fieldId)
@@ -5048,7 +5127,7 @@ function FieldRuleCondition({ condition, sourceGroups, sourceFields, onChange, o
   );
 }
 
-function FieldRulesEditor({ field, allFields = [], onChange }) {
+function FieldRulesEditor({ field, allFields = [], onChange, actions = FIELD_RULE_ACTIONS, defaultAction = "disable" }) {
   const Ic = window.Icons;
   const steps = React.useContext(WorkflowStepsContext);
   const sourceGroups = React.useMemo(() => {
@@ -5066,7 +5145,7 @@ function FieldRulesEditor({ field, allFields = [], onChange }) {
   const patchRule = (index, patch) => commit(rules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)));
   const addRule = () => commit([
     ...rules,
-    { id: "rule_" + Date.now().toString(36), action: "disable", match: "all", clearValue: true, conditions: [newCondition()] },
+    { id: "rule_" + Date.now().toString(36), action: defaultAction, match: "all", clearValue: defaultAction !== "show", conditions: [newCondition()] },
   ]);
   const removeRule = (index) => requestDeleteConfirmation({
     action: "remove",
@@ -5084,7 +5163,7 @@ function FieldRulesEditor({ field, allFields = [], onChange }) {
     <div className="field-rules">
       {rules.map((rule, index) => {
         const conditions = rule.conditions || [];
-        const actionMeta = FIELD_RULE_ACTIONS.find((action) => action.value === rule.action) || FIELD_RULE_ACTIONS[0];
+        const actionMeta = actions.find((action) => action.value === rule.action) || actions[0];
         return (
           <div key={rule.id || index} className="field-rule">
             <div className="vis-row">
@@ -5092,11 +5171,11 @@ function FieldRulesEditor({ field, allFields = [], onChange }) {
                 className="select"
                 value={actionMeta.value}
                 onChange={(e) => {
-                  const nextAction = FIELD_RULE_ACTIONS.find((action) => action.value === e.target.value);
+                  const nextAction = actions.find((action) => action.value === e.target.value);
                   patchRule(index, { action: e.target.value, clearValue: nextAction?.clearLabel ? (e.target.value !== "show") : undefined });
                 }}
               >
-                {FIELD_RULE_ACTIONS.map((action) => <option key={action.value} value={action.value}>{action.label}</option>)}
+                {actions.map((action) => <option key={action.value} value={action.value}>{action.label}</option>)}
               </select>
               <span className="word">when</span>
               {conditions.length > 1 ? (
@@ -5271,7 +5350,7 @@ function NestedOptionRow({ item, level, depth, onChange, onRemove, levelDisplays
     });
   };
 
-  const hasInfo = !!(item.infoText || (item.infoImages && item.infoImages.length));
+  const hasInfo = !!(item.infoText || (item.infoImages && item.infoImages.length) || (level === "option" && (item.rules || []).length));
 
   return (
     <div
@@ -5397,6 +5476,11 @@ function NestedOptionRow({ item, level, depth, onChange, onRemove, levelDisplays
                   >×</span>
                 </div>
               ))}
+            </div>
+          )}
+          {level === "option" && (
+            <div style={{ marginTop: 10 }}>
+              <OptionRulesEditor option={item} onChange={update} />
             </div>
           )}
         </div>
@@ -5622,6 +5706,12 @@ function ServiceOptionCard({ item, level, depth, onChange, onRemove, levelDispla
           placeholder="Describe this service…"
         />
       </div>
+
+      {level === "option" && (
+        <div style={{ marginBottom: 10 }}>
+          <OptionRulesEditor option={item} onChange={update} />
+        </div>
+      )}
 
       {/* Pricing plan panel */}
       <div style={{ background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 6, padding: 10, marginBottom: 10 }}>
@@ -6328,7 +6418,7 @@ function SimpleChoiceOptionList({ rows, level, path, openKeys, onToggleOpen, onC
                   <Ic.Plus size={12} /> Sub
                 </button>
               )}
-              <button className="btn icon sm ghost" title={open ? "Close editor" : "Edit option"} onClick={() => onToggleOpen(key)}>
+              <button className={"btn icon sm " + (!isSub && (option.rules || []).length ? "primary" : "ghost")} title={open ? "Close editor" : (!isSub && (option.rules || []).length ? "Edit option (has conditions)" : "Edit option")} onClick={() => onToggleOpen(key)}>
                 <Ic.Edit size={12} />
               </button>
               <button className="btn icon sm danger-ghost" title={`Delete ${isSub ? "sub-option" : "option"}`} onClick={() => requestDeleteConfirmation({
@@ -6376,6 +6466,7 @@ function SimpleChoiceOptionList({ rows, level, path, openKeys, onToggleOpen, onC
                     )}
                   </div>
                 </div>
+                {!isSub && <OptionRulesEditor option={option} onChange={(patch) => update(index, patch)} />}
               </div>
             )}
             {!isSub && subOptions.length > 0 && (
@@ -12116,7 +12207,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 
   // Evaluate field rules (show/hide/enable/disable/require/optional) against current answers
   const workflowFieldEntries = list.flatMap((s) => (s.fields || []).map((field) => ({ field, step: s })));
-  const fieldRuleState = (f) => evaluateFieldRules(f, (condition) => {
+  const resolveRuleSource = (condition) => {
     const entry = condition.fieldId
       ? workflowFieldEntries.find((x) => x.field.id === condition.fieldId)
       : workflowFieldEntries.find((x) => x.field.label === condition.field);
@@ -12124,7 +12215,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const ref = entry.field;
     const value = ref.type === "rental_group" ? answers.__rentalGroups?.[entry.step.id]?.[ref.id] : answers[ref.id];
     return { field: ref, value };
-  });
+  };
+  const fieldRuleState = (f) => evaluateFieldRules(f, resolveRuleSource);
+  const isOptionVisible = (option) => !Array.isArray(option?.rules) || !option.rules.length || evaluateFieldRules(option, resolveRuleSource).visible;
   const isFieldVisible = (f) => {
     const adminOverride = adminEditMode ? ADMIN_BOOKING_FORM_OVERRIDES.fieldIds[f.id] : null;
     if (adminOverride?.visible === true) return true;
@@ -12134,8 +12227,29 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   };
   const ruleAwareField = (f) => {
     const { required } = fieldRuleState(f);
-    return required === !!f.required ? f : { ...f, required };
+    const options = visibleFieldOptions(f.options, isOptionVisible);
+    return required === !!f.required && options === f.options ? f : { ...f, required, options };
   };
+  React.useEffect(() => {
+    if (adminEditMode) return;
+    const updates = [];
+    workflowFieldEntries.forEach(({ field }) => {
+      if (field.type === "rental_group" || !answerHasValue(answers[field.id])) return;
+      const hidden = hiddenFieldOptionLabels(field.options, isOptionVisible);
+      if (!hidden.size) return;
+      const stripped = stripHiddenOptionAnswer(answers[field.id], hidden);
+      if (stripped !== answers[field.id]) updates.push([field.id, stripped]);
+    });
+    if (!updates.length) return;
+    setAnswers((current) => {
+      const next = { ...current };
+      updates.forEach(([id, value]) => {
+        if (value === undefined || (Array.isArray(value) && !value.length)) delete next[id];
+        else next[id] = value;
+      });
+      return next;
+    });
+  }, [answers, steps]);
   React.useEffect(() => {
     const clearable = workflowFieldEntries
       .filter(({ field }) => field.type !== "rental_group" && answerHasValue(answers[field.id]) && fieldRuleState(field).clearValue)
