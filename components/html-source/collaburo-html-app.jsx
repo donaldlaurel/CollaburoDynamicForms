@@ -9,7 +9,7 @@ import "./icons";
 import "./runtime-widgets";
 import { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT } from "./navigation";
 import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-data";
-import { ContractSettingsView, ContractSignView, normalizeContractSettings, createDefaultContractSettings } from "./contract";
+import { ContractSettingsView, ContractSignView, normalizeContractSettings, createDefaultContractSettings, buildContractSnapshot } from "./contract";
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 
@@ -18377,7 +18377,7 @@ function BookingAuditModal({ audit, steps = [], onClose }) {
   );
 }
 
-function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookingAnswers, onViewSubmittedAnswers, onEditClient, onSave, onEmail }) {
+function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookingAnswers, onViewSubmittedAnswers, onEditClient, onSave, onEmail, onGenerateContract, onOpenContract }) {
   const Ic = window.Icons;
   const [costBreakdown, setCostBreakdown] = React.useState(null);
   const [selectedAudit, setSelectedAudit] = React.useState(null);
@@ -18573,10 +18573,8 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
                     <button
                       type="button"
                       className="btn dark sm"
-                      onClick={() => patchProgress({
-                        contract: "Generated",
-                        contractGeneratedAt: new Date().toISOString(),
-                      })}
+                      onClick={() => onGenerateContract?.(record.id)?.catch(() => {})}
+                      title="Generate the contract from the Contract template using this booking's details"
                     >
                       Generate
                     </button>
@@ -18598,6 +18596,11 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
                       target="_blank"
                       rel="noreferrer"
                       style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+                      onClick={(e) => {
+                        if (!onOpenContract) return;
+                        e.preventDefault();
+                        onOpenContract(record);
+                      }}
                     >
                       Open link
                     </a>
@@ -19246,6 +19249,59 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       }
     });
   };
+  const contractLinkForRecord = (record = {}) => `${window.location.origin}/book?record=${encodeURIComponent(bookingCodeForRecord(record))}&action=sign`;
+  const generateProgressContract = (recordId) => {
+    const current = progressRecordsRef.current.find((item) => item.id === recordId);
+    if (!current) return Promise.reject(new Error("Booking record not found."));
+    const generatedAt = new Date().toISOString();
+    const withStatus = {
+      ...current,
+      progress: { ...(current.progress || {}), contract: "Generated", contractGeneratedAt: generatedAt },
+    };
+    const snapshot = buildContractSnapshot(siteSettingsRef.current?.contractSettings, emailTokenMap(withStatus), generatedAt);
+    const nextRecord = normalizeProgressRecord({
+      ...withStatus,
+      progress: { ...withStatus.progress, contractSnapshot: snapshot },
+    });
+    const nextRecords = progressRecordsRef.current.map((item) => item.id === recordId ? nextRecord : item);
+    progressRecordsRef.current = nextRecords;
+    setProgressRecords(nextRecords);
+    markDirty();
+    return persistProgressRecordsToDatabase(nextRecords).then(
+      () => {
+        pushToast({ kind: "success", title: "Contract generated", desc: "The contract link now shows this booking's details." });
+        return nextRecord;
+      },
+      (error) => {
+        if (shouldShowDatabaseError(error)) {
+          pushToast({ kind: "danger", title: "Contract save failed", desc: `${error.message || "Unknown error."} The contract link will not work until the database save succeeds.`, duration: 8000 });
+        }
+        throw error;
+      }
+    );
+  };
+  const openProgressContract = (record) => {
+    if (!record?.id) return;
+    const url = contractLinkForRecord(record);
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    const status = record.progress?.contract || "Not Generated";
+    const ready = status === "Not Generated" || (status === "Generated" && !record.progress?.contractSnapshot)
+      ? generateProgressContract(record.id)
+      : persistProgressRecordsToDatabase(progressRecordsRef.current).catch((error) => {
+          if (shouldShowDatabaseError(error)) {
+            pushToast({ kind: "danger", title: "Contract save failed", desc: error.message || "Unknown error.", duration: 8000 });
+          }
+          throw error;
+        });
+    ready.then(
+      () => {
+        if (tab) tab.location.href = url;
+        else window.open(url, "_blank", "noopener,noreferrer");
+      },
+      () => tab?.close()
+    );
+  };
   const openClientProgress = (record = {}) => {
     if (record?.id) setAdminEditRecordId(record.id);
     else startAdminBooking();
@@ -19692,6 +19748,8 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
             onEditClient={openClientProgress}
             onSave={save}
             onEmail={(record, typeId) => setEmailDraft({ recordId: record.id, typeId })}
+            onGenerateContract={generateProgressContract}
+            onOpenContract={openProgressContract}
           />
         ) : (
           <RentalsProgressListView

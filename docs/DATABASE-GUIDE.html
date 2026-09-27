@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Collaburo Database Guide</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --card: #ffffff; --text: #1f2328; --muted: #59636e;
+    --border: #e1e4e8; --accent: #2f6feb; --code-bg: #f1f3f5;
+    --danger: #c62828; --warn: #b26a00; --ok: #2e7d32;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .layout { display: grid; grid-template-columns: 260px 1fr; max-width: 1200px; margin: 0 auto; }
+  nav { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 32px 20px; border-right: 1px solid var(--border); font-size: 14px; }
+  nav h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  nav a { display: block; color: var(--text); text-decoration: none; padding: 4px 8px; border-radius: 6px; }
+  nav a:hover { background: #eaeef2; }
+  nav a.sub { padding-left: 20px; color: var(--muted); }
+  main { padding: 40px 48px 80px; min-width: 0; }
+  h1 { font-size: 32px; margin: 0 0 8px; }
+  h2 { font-size: 24px; margin-top: 48px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 18px; margin-top: 32px; }
+  p.lead { color: var(--muted); font-size: 17px; margin-top: 0; }
+  code { font-family: Consolas, "SFMono-Regular", Menlo, monospace; font-size: 0.9em; background: var(--code-bg); padding: 2px 5px; border-radius: 4px; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  pre code { background: none; padding: 0; color: inherit; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; background: var(--card); font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f0f2f4; }
+  td.c { text-align: center; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; margin: 16px 0; }
+  .callout { border-left: 4px solid var(--accent); background: #eef4ff; padding: 12px 16px; border-radius: 6px; margin: 16px 0; }
+  .issue { background: var(--card); border: 1px solid var(--border); border-left: 5px solid var(--warn); border-radius: 8px; padding: 4px 22px 14px; margin: 20px 0; }
+  .issue.high { border-left-color: var(--danger); }
+  .issue.low { border-left-color: var(--muted); }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .tag.high { background: #fdecea; color: var(--danger); }
+  .tag.med { background: #fff4e0; color: var(--warn); }
+  .tag.low { background: #eceff1; color: var(--muted); }
+  .fix { background: #edf7ee; border-radius: 6px; padding: 8px 12px; }
+  .fix strong { color: var(--ok); }
+  .bad { color: var(--danger); font-weight: 600; }
+  .mermaid { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } nav { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); } main { padding: 24px; } }
+</style>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral" });
+</script>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <h2>Contents</h2>
+  <a href="#overview">1. The big picture</a>
+  <a href="#tables">2. The tables</a>
+  <a class="sub" href="#t-config">collaburo_app_config</a>
+  <a class="sub" href="#t-subs">collaburo_submissions</a>
+  <a href="#flow">3. How a booking is saved</a>
+  <a class="sub" href="#write-matrix">Where each action writes</a>
+  <a href="#attention">4. What needs attention</a>
+  <a class="sub" href="#i1">4.1 Public edits</a>
+  <a class="sub" href="#i2">4.2 Guessable reads</a>
+  <a class="sub" href="#i3">4.3 Two copies drift</a>
+  <a class="sub" href="#i4">4.4 Lost writes</a>
+  <a class="sub" href="#i5">4.5 Blob growth</a>
+  <a class="sub" href="#i6">4.6 False duplicates</a>
+  <a class="sub" href="#i7">4.7 Other</a>
+  <a href="#files">5. Files to read</a>
+</nav>
+
+<main>
+<h1>Collaburo Database Guide</h1>
+<p class="lead">How the database looks once the booking form is public, how data is written, and what a developer needs to watch for.</p>
+
+<h2 id="overview">1. The big picture</h2>
+<p>Everything lives in <strong>two Postgres tables</strong> (Neon).</p>
+<div class="callout">
+  The two things to remember: <strong>each booking is stored in two places</strong>, and <strong>some public API actions can change data without proper checks</strong>.
+</div>
+
+<div class="mermaid">
+flowchart LR
+  Visitor["Public visitor at /book"] -->|"GET /api/admin-state (progressRecords removed)"| Config
+  Visitor -->|"POST /api/submissions"| Subs
+  Visitor -->|"POST /api/submissions"| Config
+  Visitor -->|"POST /api/contracts/sign"| Config
+  Admin["Admin dashboard"] -->|"PUT /api/admin-state (whole blob)"| Config
+  Config[("collaburo_app_config: key 'default' holds config and progressRecords")]
+  Subs[("collaburo_submissions: one row per booking")]
+</div>
+
+<h2 id="tables">2. The tables</h2>
+<p>Schema source: <code>db/schema.sql</code> (applied manually, no migration tool).</p>
+
+<h3 id="t-config">Table 1: <code>collaburo_app_config</code></h3>
+<p>A key/value table. Each row holds <strong>one large JSON object</strong> (a JSONB "blob").</p>
+<table>
+  <tr><th>Column</th><th>Type</th><th>Meaning</th></tr>
+  <tr><td><code>key</code></td><td>text (PK)</td><td>Which blob this is</td></tr>
+  <tr><td><code>payload</code></td><td>jsonb</td><td>The entire JSON object</td></tr>
+  <tr><td><code>updated_at</code></td><td>timestamptz</td><td>Last write time (used for conflict detection)</td></tr>
+</table>
+<p>It has two rows:</p>
+<ul>
+  <li><strong><code>key = 'default'</code></strong> holds the entire app state:
+    <ul>
+      <li><strong>Form setup:</strong> steps, fields, rooms, rentals catalog, pricing, site/email settings.</li>
+      <li><strong><code>progressRecords</code>:</strong> an array of every booking, <strong>capped at 500</strong>. Each booking includes client details, answers, costs, progress status, contract signatures, signed contract HTML, an admin audit trail, and an activity log.</li>
+    </ul>
+  </li>
+  <li><strong>Admin accounts</strong> are stored under a second key (<code>ACCOUNTS_KEY</code> in <code>lib/admin-accounts.js</code>).</li>
+</ul>
+<p>Rough shape of the <code>default</code> payload:</p>
+<pre><code>{
+  "savedAt": "2026-09-27T15:00:00.000Z",
+  "steps": [ ... ],
+  "fields": [ ... ],
+  "rentalsCatalog": [ ... ],
+  "pricing": { ... },
+  "siteSettings": { "emailSettings": { ... } },
+  "progressRecords": [
+    {
+      "id": "…",
+      "bookingCode": "B1A2B3",
+      "submittedAt": "…",
+      "client":  { "name": "…", "email": "…" },
+      "request": { "space": "…", "bookingDateTime": "…" },
+      "answers": { ... },
+      "costs":   { "total": 0, "totalWithDeposit": 0 },
+      "progress": {
+        "status": "New inquiry",
+        "contract": "Generated",
+        "agreement": "Signed",
+        "contractSignatures": { ... },
+        "contractSignedHtml": "…",
+        "lastActivityAt": "…"
+      },
+      "adminAudit": [ ... ],
+      "log": [ ... ]
+    }
+  ]
+}</code></pre>
+
+<h3 id="t-subs">Table 2: <code>collaburo_submissions</code></h3>
+<p>One row per booking. A few real columns for listing and filtering, plus a full copy of the booking in <code>payload</code>.</p>
+<table>
+  <tr><th>Column</th><th>Type</th><th>Meaning</th></tr>
+  <tr><td><code>id</code></td><td>uuid (PK)</td><td>Row id</td></tr>
+  <tr><td><code>client_name</code></td><td>text</td><td>Copied from <code>payload.client.name</code></td></tr>
+  <tr><td><code>client_email</code></td><td>text</td><td>Copied from <code>payload.client.email</code></td></tr>
+  <tr><td><code>event_space</code></td><td>text</td><td>Copied from <code>payload.request.space</code></td></tr>
+  <tr><td><code>status</code></td><td>text</td><td>Copied from <code>payload.progress.status</code></td></tr>
+  <tr><td><code>total</code></td><td>numeric</td><td><code>costs.totalWithDeposit</code> or <code>costs.total</code></td></tr>
+  <tr><td><code>payload</code></td><td>jsonb</td><td>Full booking record (same shape as above)</td></tr>
+  <tr><td><code>fingerprint</code></td><td>text (unique)</td><td>SHA-256 of email + space + date + total, used to block duplicate submits</td></tr>
+  <tr><td><code>created_at</code></td><td>timestamptz</td><td>Insert time</td></tr>
+</table>
+
+<h2 id="flow">3. How a public booking gets saved</h2>
+<ol>
+  <li><strong>Loading the form.</strong> The page calls <code>GET /api/admin-state</code>. The server strips <code>progressRecords</code> before responding, so visitors never see other clients' data.</li>
+  <li><strong>Submitting.</strong> <code>POST /api/submissions</code> does two writes:
+    <ul>
+      <li>Inserts a row into <code>collaburo_submissions</code>, deduplicated by the fingerprint. A repeat submit returns <code>{ duplicate: true }</code>.</li>
+      <li>Reads the whole <code>default</code> blob, adds the booking to the front of <code>progressRecords</code>, and writes the whole blob back.</li>
+    </ul>
+  </li>
+  <li><strong>Later actions</strong> use the same <code>/api/submissions</code> route (via an <code>action</code> field) or <code>/api/contracts/sign</code>:
+    <ul>
+      <li><code>touch-progress-record</code> – updates last-activity time</li>
+      <li><code>get-progress-record</code> – fetch a booking by ID or booking code</li>
+      <li><code>get-progress-record-by-email</code> – fetch by email (requires a verified email session)</li>
+      <li><code>update-progress-record</code> – client edits a booking</li>
+      <li><code>admin-update-booking</code> – admin edits a booking (admin only)</li>
+      <li><code>/api/contracts/sign</code> – client signs the contract</li>
+    </ul>
+  </li>
+  <li><strong>Admin saves.</strong> The dashboard sends the whole blob with <code>PUT /api/admin-state</code>, including <code>baseUpdatedAt</code>. If the database changed since the page loaded, the server returns <strong>409 Conflict</strong> instead of overwriting.</li>
+</ol>
+
+<h3 id="write-matrix">Where each action writes</h3>
+<table>
+  <tr><th>Action</th><th>Writes blob (<code>progressRecords</code>)</th><th>Writes <code>collaburo_submissions</code></th><th>Auth required</th></tr>
+  <tr><td>New submission</td><td class="c">yes</td><td class="c">yes</td><td>none</td></tr>
+  <tr><td><code>touch-progress-record</code></td><td class="c">yes</td><td class="c">yes (<code>lastActivityAt</code> only)</td><td>none</td></tr>
+  <tr><td><code>update-progress-record</code></td><td class="c">yes</td><td class="c">yes</td><td class="bad">none</td></tr>
+  <tr><td><code>admin-update-booking</code></td><td class="c">yes</td><td class="c">yes</td><td>admin</td></tr>
+  <tr><td><code>/api/contracts/sign</code></td><td class="c">yes</td><td class="c bad">no</td><td>none (rate-limited)</td></tr>
+  <tr><td><code>PUT /api/admin-state</code></td><td class="c">yes (whole blob)</td><td class="c bad">no</td><td>admin</td></tr>
+</table>
+
+<h2 id="attention">4. What needs attention (most urgent first)</h2>
+
+<div class="issue high" id="i1">
+  <h3>4.1 Public requests can change any booking <span class="tag high">High</span></h3>
+  <p>In the public flow the client sends <code>action: "update-progress-record"</code> with a full record, and the server accepts it with no check:</p>
+<pre><code>// app/api/submissions/route.js
+if (body?.action === "update-progress-record") {
+  const record = body.record;
+  if (!record?.id) return /* 400 */;
+  // ... no auth, no email-session check ...
+  await replaceProgressRecordInAdminState(sql, record);
+  await replaceSubmissionPayload(sql, record);
+}</code></pre>
+  <p>Anyone who knows or guesses a booking ID can replace that whole booking: <code>progress.status</code>, <code>costs</code>, <code>agreement: "Signed"</code>, and the audit log.</p>
+  <p class="fix"><strong>Fix direction:</strong> require the email-session token (like <code>get-progress-record-by-email</code> already does), only accept client-editable fields, and keep the server's existing values for status, costs, and contract fields.</p>
+</div>
+
+<div class="issue high" id="i2">
+  <h3>4.2 Bookings can be read by guessing booking codes <span class="tag high">High</span></h3>
+  <p><code>get-progress-record</code> returns the full booking, including personal details, to anyone who supplies an ID or booking code. Booking codes are <code>B</code> + 5 characters, and <code>/api/submissions</code> isn't in the middleware rate-limit list.</p>
+  <p class="fix"><strong>Fix direction:</strong> require email verification here too, or add a rate limit plus a Cloudflare WAF rule.</p>
+</div>
+
+<div class="issue" id="i3">
+  <h3>4.3 Bookings are stored twice and the copies drift apart <span class="tag med">Medium</span></h3>
+  <p>Each booking lives in <code>progressRecords</code> <strong>and</strong> in <code>collaburo_submissions</code>. Most paths update both, but not all:</p>
+  <ul>
+    <li>Contract signing only updates the blob, so the table still shows the booking as unsigned.</li>
+    <li>Admin blob saves (<code>PUT /api/admin-state</code>) don't touch the table.</li>
+    <li>Once <code>progressRecords</code> passes 500, the oldest bookings are silently dropped from the blob but remain in the table.</li>
+  </ul>
+  <p class="fix"><strong>Fix direction:</strong> pick one source of truth. Recommended: <code>collaburo_submissions</code>, with <code>progressRecords</code> treated as a cache or removed.</p>
+</div>
+
+<div class="issue" id="i4">
+  <h3>4.4 Simultaneous writes can lose bookings <span class="tag med">Medium</span></h3>
+  <p>Every server-side blob write is <em>read the whole row → change it → write it back</em>, with no lock or version check (submit, touch, edit, contract sign). Two visitors submitting at the same moment can make one booking vanish from the blob. It survives in the table — another reason to make the table the source of truth. Only the admin <code>PUT</code> is protected by the 409 check.</p>
+</div>
+
+<div class="issue" id="i5">
+  <h3>4.5 The blob keeps growing <span class="tag med">Medium</span></h3>
+  <p>Every write resends everything: signatures, signed contract HTML, logs, audits, and up to 500 bookings. That gets slow, risks request-size limits on Workers and Neon, and increases the chance of conflicts from 4.4.</p>
+  <p class="fix"><strong>Fix direction:</strong> store images and signed documents in Cloudinary and keep only URLs in the database.</p>
+</div>
+
+<div class="issue low" id="i6">
+  <h3>4.6 Legitimate bookings can be treated as duplicates <span class="tag low">Low</span></h3>
+  <p>Two real bookings with the same email, space, date, and total are counted as one. The edit path also re-runs the fingerprint check when a row can't be found, which can overwrite an unrelated row.</p>
+</div>
+
+<div class="issue low" id="i7">
+  <h3>4.7 Other things to watch <span class="tag low">Low</span></h3>
+  <ul>
+    <li><strong>Missing <code>DATABASE_URL</code>:</strong> routes silently fall back to in-memory storage, and every booking is lost when the worker restarts. Consider failing loudly in production.</li>
+    <li><strong>Inconsistent default status:</strong> new submissions start as <code>"New inquiry"</code>, updates default to <code>"In Discussion"</code>.</li>
+    <li><strong>Open image uploads:</strong> <code>/api/uploads/images</code> accepts uploads from anyone (120 per 5 minutes per worker instance), which could run up Cloudinary usage.</li>
+    <li><strong>Backups and schema changes:</strong> enable Neon point-in-time restore; keep <code>db/schema.sql</code> up to date since changes are applied by hand.</li>
+    <li><strong>Outdated docs:</strong> <code>AGENTS.md</code> says only two API routes are public. Now public: <code>admin-login</code>, <code>admin-logout</code>, <code>GET admin-state</code>, <code>POST submissions</code> (all actions), <code>contracts/sign</code>, <code>email-verification</code>, <code>uploads/images</code>.</li>
+  </ul>
+</div>
+
+<h2 id="files">5. Quick reference: files to read</h2>
+<table>
+  <tr><th>File</th><th>What it does</th></tr>
+  <tr><td><code>db/schema.sql</code></td><td>Table definitions</td></tr>
+  <tr><td><code>app/api/admin-state/route.js</code></td><td>Load/save the whole blob; strips personal data for public; returns 409 on stale saves</td></tr>
+  <tr><td><code>app/api/submissions/route.js</code></td><td>New bookings plus all the <code>action</code> variants</td></tr>
+  <tr><td><code>app/api/contracts/sign/route.js</code></td><td>Contract signing (writes the blob only)</td></tr>
+  <tr><td><code>lib/admin-accounts.js</code></td><td>Admin accounts stored under a separate config key</td></tr>
+  <tr><td><code>middleware.js</code></td><td>Which API routes are public, admin auth, rate limits</td></tr>
+</table>
+</main>
+</div>
+</body>
+</html>
