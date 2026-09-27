@@ -19268,7 +19268,13 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     setProgressRecords(nextRecords);
     markDirty();
     return syncContractRecord(nextRecord).then(() => {
-      pushToast({ kind: "success", title: "Contract generated", desc: "The contract link now shows this booking's details." });
+      try {
+        saveLocalSnapshot("Generated contract");
+        setRecommendedRentalCatalogSnapshot(rentalCatalogRef.current);
+      } catch (error) {
+        pushToast({ kind: "danger", title: "Save failed", desc: error.message });
+      }
+      pushToast({ kind: "success", title: "Contract generated", desc: "Changes saved. The contract link now shows this booking's details." });
       return nextRecord;
     });
   };
@@ -19464,15 +19470,23 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   };
 
   // ----- save / publish -----
+  const saveLocalSnapshot = React.useCallback((historyLabel) => {
+    const workflowStats = saveJsonSafely(STORAGE_KEY, stepsRef.current);
+    const rentalStats = saveJsonSafely(RENTALS_STORAGE_KEY, rentalCatalogRef.current);
+    const pricingStats = saveJsonSafely(PRICING_STORAGE_KEY, pricingRulesRef.current);
+    const siteStats = saveJsonSafely(SITE_SETTINGS_STORAGE_KEY, siteSettingsRef.current);
+    const progressStats = saveJsonSafely(PROGRESS_STORAGE_KEY, progressRecordsRef.current);
+    const now = Date.now();
+    localStorage.setItem(SAVED_KEY, String(now));
+    pushHistoryEntry(historyLabel, stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
+    setLastSavedAt(now);
+    setIsDirty(false);
+    return (workflowStats.removedImages || 0) + (rentalStats.removedImages || 0) + (pricingStats.removedImages || 0) + (siteStats.removedImages || 0) + (progressStats.removedImages || 0);
+  }, [pushHistoryEntry]);
+
   const save = React.useCallback(() => {
     try {
-      const workflowStats = saveJsonSafely(STORAGE_KEY, stepsRef.current);
-      const rentalStats = saveJsonSafely(RENTALS_STORAGE_KEY, rentalCatalogRef.current);
-      const pricingStats = saveJsonSafely(PRICING_STORAGE_KEY, pricingRulesRef.current);
-      const siteStats = saveJsonSafely(SITE_SETTINGS_STORAGE_KEY, siteSettingsRef.current);
-      const progressStats = saveJsonSafely(PROGRESS_STORAGE_KEY, progressRecordsRef.current);
-      const now = Date.now();
-      localStorage.setItem(SAVED_KEY, String(now));
+      const removedImages = saveLocalSnapshot("Saved changes");
       buildDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current, currentPublishedState())
         .then((databaseState) => putAdminStateToDatabase(databaseState))
         .then(() => {
@@ -19487,10 +19501,6 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
             duration: 8000,
           });
         });
-      pushHistoryEntry("Saved changes", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
-      setLastSavedAt(now);
-      setIsDirty(false);
-      const removedImages = (workflowStats.removedImages || 0) + (rentalStats.removedImages || 0) + (pricingStats.removedImages || 0) + (siteStats.removedImages || 0) + (progressStats.removedImages || 0);
       pushToast({
         kind: "success",
         title: "Changes saved",
@@ -19499,7 +19509,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     } catch (e) {
       pushToast({ kind: "danger", title: "Save failed", desc: e.message });
     }
-  }, [pushToast, pushHistoryEntry]);
+  }, [pushToast, saveLocalSnapshot]);
 
   const publish = () => {
     const liveState = buildPublicStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
