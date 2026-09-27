@@ -4931,6 +4931,8 @@ function stepSystemRuleSources(step, steps = []) {
       add("venue", "Selected venue", "checkbox", venues.map((v) => v.name), (answers) =>
         answerSelectedVenueIds(answers).map((id) => venues.find((v) => v.id === id)?.name).filter(Boolean));
     }
+    venues.forEach((venue) => add(`venueSelected:${venue.id}`, `${venue.name} — Selected`, "toggle", [], (answers) =>
+      answerSelectedVenueIds(answers).includes(venue.id)));
     venues.forEach((venue) => {
       const subs = (venue.subSpace?.enabled ? venue.subSpace.options || [] : []).filter((sub) => sub && sub.name);
       if (subs.length) {
@@ -5084,6 +5086,10 @@ function visibleFieldOptions(options, isOptionVisible) {
       const inner = visibleFieldOptions(option.options, isOptionVisible);
       if (inner !== option.options) { changed = true; next.push({ ...option, options: inner }); return; }
     }
+    if (Array.isArray(option.subOptions)) {
+      const subs = visibleFieldOptions(option.subOptions, isOptionVisible);
+      if (subs !== option.subOptions) { changed = true; next.push({ ...option, subOptions: subs, hasSubOptions: subs.length > 0 }); return; }
+    }
     next.push(option);
   });
   return changed ? next : options;
@@ -5097,6 +5103,7 @@ function hiddenFieldOptionLabels(options, isOptionVisible, into = new Set()) {
       return;
     }
     if (option.type === "group") hiddenFieldOptionLabels(option.options, isOptionVisible, into);
+    if (Array.isArray(option.subOptions)) hiddenFieldOptionLabels(option.subOptions, isOptionVisible, into);
   });
   return into;
 }
@@ -5109,13 +5116,18 @@ function stripHiddenOptionAnswer(value, hidden) {
     return next.length === value.length ? value : next;
   }
   if (typeof value === "object") {
-    if (value.__selected !== undefined) return hidden.has(String(value.__selected)) ? undefined : value;
-    if (value.main !== undefined) return hidden.has(String(value.main)) ? undefined : value;
-    const hiddenKeys = Object.keys(value).filter((key) => hidden.has(key));
-    if (!hiddenKeys.length) return value;
-    const next = { ...value };
-    hiddenKeys.forEach((key) => { delete next[key]; });
-    return next;
+    if (value.__selected !== undefined && hidden.has(String(value.__selected))) return undefined;
+    if (value.main !== undefined && hidden.has(String(value.main))) return undefined;
+    let changed = false;
+    const next = {};
+    Object.entries(value).forEach(([key, child]) => {
+      if (hidden.has(key)) { changed = true; return; }
+      const holdsSubAnswers = key === "__sub" || !key.startsWith("__");
+      const nested = holdsSubAnswers ? stripHiddenOptionAnswer(child, hidden) : child;
+      if (nested !== child) changed = true;
+      if (nested !== undefined) next[key] = nested;
+    });
+    return changed ? next : value;
   }
   return value;
 }
@@ -6492,7 +6504,7 @@ function SimpleChoiceOptionList({ rows, level, path, openKeys, onToggleOpen, onC
                   <Ic.Plus size={12} /> Sub
                 </button>
               )}
-              <button className={"btn icon sm " + (!isSub && (option.rules || []).length ? "primary" : "ghost")} title={open ? "Close editor" : (!isSub && (option.rules || []).length ? "Edit option (has conditions)" : "Edit option")} onClick={() => onToggleOpen(key)}>
+              <button className={"btn icon sm " + ((option.rules || []).length ? "primary" : "ghost")} title={open ? "Close editor" : ((option.rules || []).length ? "Edit option (has conditions)" : "Edit option")} onClick={() => onToggleOpen(key)}>
                 <Ic.Edit size={12} />
               </button>
               <button className="btn icon sm danger-ghost" title={`Delete ${isSub ? "sub-option" : "option"}`} onClick={() => requestDeleteConfirmation({
@@ -6540,7 +6552,7 @@ function SimpleChoiceOptionList({ rows, level, path, openKeys, onToggleOpen, onC
                     )}
                   </div>
                 </div>
-                {!isSub && <OptionRulesEditor option={option} onChange={(patch) => update(index, patch)} />}
+                <OptionRulesEditor option={option} onChange={(patch) => update(index, patch)} />
               </div>
             )}
             {!isSub && subOptions.length > 0 && (
