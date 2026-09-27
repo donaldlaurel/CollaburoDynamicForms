@@ -1920,6 +1920,7 @@ function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, on
                 <div className="step-card-actions" onClick={(e) => e.stopPropagation()}>
                   <button className="btn icon sm ghost" title="Move up" disabled={groupIndex <= 0} onClick={() => moveItem(item, -1)}><Ic.ArrUp size={12} /></button>
                   <button className="btn icon sm ghost" title="Move down" disabled={groupIndex < 0 || groupIndex >= groupItems.length - 1} onClick={() => moveItem(item, 1)}><Ic.ArrDn size={12} /></button>
+                  <button className="btn icon sm ghost" title="Duplicate rental" onClick={() => onDuplicate(item)}><Ic.Copy size={12} /></button>
                   <button className="btn icon sm danger-ghost" title="Delete rental" onClick={() => onDelete(item.id)}><Ic.Trash size={12} /></button>
                 </div>
               </div>
@@ -3448,7 +3449,11 @@ function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAM
   const patchItem = (id, patch) => onChange(rows.map((r) => r.id === id ? { ...r, ...patch } : r));
   const duplicateItem = (item) => {
     const id = "rental_" + Date.now();
-    onChange([...rows, { ...item, id, name: item.name + " (copy)" }]);
+    const copy = { ...cloneData(item), id, name: (item.name || "Untitled rental item") + " (copy)" };
+    const index = rows.findIndex((r) => r.id === item.id);
+    const next = [...rows];
+    next.splice(index < 0 ? next.length : index + 1, 0, copy);
+    onChange(next);
     setActiveGroup(item.category || activeGroup);
     setActiveId(id);
   };
@@ -3703,6 +3708,7 @@ window.Sidebar = Sidebar;
 function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onSave, onPublish, onUndo, onRedo, canUndo = false, canRedo = false }) {
   const Ic = window.Icons;
   const isWorkflow = section === "workflow";
+  const canPublish = ["workflow", "rentals", "pricing", "email-settings", "contract"].includes(section);
   const hasUndoRedo = section === "workflow" || section === "rentals";
   const undoLabel = section === "rentals" ? "Undo rental catalog change" : "Undo workflow change";
   const redoLabel = section === "rentals" ? "Redo rental catalog change" : "Redo workflow change";
@@ -3745,7 +3751,7 @@ function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onS
           <Ic.Save size={14} /> Save changes
           <span className="kbd" style={{ marginLeft: 4 }}>⌘S</span>
         </button>
-        {isWorkflow && (
+        {canPublish && (
           <button className="btn primary" onClick={onPublish}>
             <Ic.Publish size={14} /> Publish
           </button>
