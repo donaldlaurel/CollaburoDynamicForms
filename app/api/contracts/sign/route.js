@@ -1,6 +1,12 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 
+// Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
+// bookings; every database route must opt out.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 const APP_STATE_KEY = "default";
 let memoryState = null;
 
@@ -23,6 +29,35 @@ function recordMatchesBookingId(record = {}, id = "") {
   return String(record?.id || "") === value
     || String(record?.bookingCode || "") === value
     || bookingCodeFromId(record?.id || record?.progressNo || "") === value;
+}
+
+async function loadSubmissionRecord(sql, id) {
+  const value = String(id || "");
+  if (!sql || !value) return null;
+  const rows = await sql`
+    select payload
+    from collaburo_submissions
+    where payload->>'id' = ${value} or payload->>'bookingCode' = ${value}
+    order by created_at desc
+    limit 1
+  `;
+  return rows[0]?.payload || null;
+}
+
+function progressRecordActivityMs(record) {
+  const progress = record?.progress || {};
+  return Math.max(0, ...[
+    progress.contractSignedAt,
+    progress.contractSentAt,
+    progress.contractGeneratedAt,
+    progress.lastActivityAt,
+  ].map((value) => new Date(value || 0).getTime() || 0));
+}
+
+function freshestProgressRecord(fromState, fromSubmissions) {
+  if (!fromState) return fromSubmissions || null;
+  if (!fromSubmissions) return fromState;
+  return progressRecordActivityMs(fromSubmissions) > progressRecordActivityMs(fromState) ? fromSubmissions : fromState;
 }
 
 async function loadState(sql) {
@@ -145,9 +180,11 @@ export async function POST(request) {
   const sql = database();
   const state = await loadState(sql);
   const progressRecords = Array.isArray(state.progressRecords) ? state.progressRecords : [];
-  const existingFromState = progressRecords.find((item) => recordMatchesBookingId(item, recordId));
+  const existingFromState = progressRecords.find((item) => recordMatchesBookingId(item, recordId)) || null;
+  const existingFromSubmissions = sql ? await loadSubmissionRecord(sql, existingFromState?.id || recordId) : null;
   const baseRecord = body.baseRecord && typeof body.baseRecord === "object" ? body.baseRecord : null;
-  const existing = existingFromState || (baseRecord && recordMatchesBookingId(baseRecord, recordId) ? baseRecord : null);
+  const existing = freshestProgressRecord(existingFromState, existingFromSubmissions)
+    || (baseRecord && recordMatchesBookingId(baseRecord, recordId) ? baseRecord : null);
   if (!existing) {
     return NextResponse.json({ ok: false, error: "Booking record not found." }, { status: 404 });
   }

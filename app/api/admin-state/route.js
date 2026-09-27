@@ -1,6 +1,12 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 
+// Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
+// bookings; every database route must opt out.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 const APP_STATE_KEY = "default";
 // Allow for timestamp serialization rounding between Postgres and ISO strings.
 const STALE_WRITE_TOLERANCE_MS = 2000;

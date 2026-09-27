@@ -1097,7 +1097,7 @@ export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap 
           <p style={{ color: "var(--ink-3)" }}>
             {alreadySigned
               ? "This booking agreement has already been signed."
-              : "This contract link is not ready yet. Ask the venue to generate and send the contract first."}
+              : `This contract link is not ready yet (contract status: ${status}). Ask the venue to generate and send the contract first.`}
           </p>
         </div>
       </div>

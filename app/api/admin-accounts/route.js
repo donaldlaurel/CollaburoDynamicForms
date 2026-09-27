@@ -6,6 +6,10 @@ import {
   updateAdminAccount,
 } from "@/lib/admin-accounts";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 function isAdminRequest(request) {
   return request.headers.get("x-collaburo-admin") === "1";
 }

@@ -1,6 +1,12 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 
+// Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
+// bookings; every database route must opt out.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 let memorySubmissions = [];
 let memoryState = null;
 let memoryUpdatedAt = null;
@@ -82,6 +88,24 @@ function recordMatchesBookingId(record = {}, id = "") {
   return String(record?.id || "") === value
     || String(record?.bookingCode || "") === value
     || bookingCodeFromId(record?.id || record?.progressNo || "") === value;
+}
+
+function progressRecordActivityMs(record) {
+  const progress = record?.progress || {};
+  return Math.max(0, ...[
+    progress.contractSignedAt,
+    progress.contractSentAt,
+    progress.contractGeneratedAt,
+    progress.lastActivityAt,
+  ].map((value) => new Date(value || 0).getTime() || 0));
+}
+
+// A booking lives in both the app-state blob and collaburo_submissions, and the
+// copies can drift; prefer whichever was touched most recently.
+function freshestProgressRecord(fromState, fromSubmissions) {
+  if (!fromState) return fromSubmissions || null;
+  if (!fromSubmissions) return fromState;
+  return progressRecordActivityMs(fromSubmissions) > progressRecordActivityMs(fromState) ? fromSubmissions : fromState;
 }
 
 function recordMatchesEmail(record = {}, email = "") {
@@ -388,11 +412,37 @@ export async function POST(request) {
       where key = ${APP_STATE_KEY}
       limit 1
     `)[0]?.payload : memoryState;
-    const record = (source?.progressRecords || []).find((item) => recordMatchesBookingId(item, id));
-    if (!record || record.progress?.accessibleByRecordLink === false) {
-      return NextResponse.json({ ok: false, error: "Record not found or not available." }, { status: 404 });
+    const fromState = (source?.progressRecords || []).find((item) => recordMatchesBookingId(item, id)) || null;
+    let fromSubmissions = null;
+    if (sql) {
+      const rows = await sql`
+        select payload
+        from collaburo_submissions
+        where payload->>'id' = ${id} or payload->>'bookingCode' = ${id}
+        order by created_at desc
+        limit 1
+      `;
+      fromSubmissions = rows[0]?.payload || null;
+      if (!fromSubmissions && fromState?.id) {
+        const byId = await sql`
+          select payload
+          from collaburo_submissions
+          where payload->>'id' = ${String(fromState.id)}
+          limit 1
+        `;
+        fromSubmissions = byId[0]?.payload || null;
+      }
+    } else {
+      fromSubmissions = memorySubmissions.find((item) => recordMatchesBookingId(item.payload, id))?.payload || null;
     }
-    return NextResponse.json({ ok: true, record, source: sql ? "database" : "memory" });
+    const record = freshestProgressRecord(fromState, fromSubmissions);
+    if (!record || record.progress?.accessibleByRecordLink === false) {
+      return NextResponse.json(
+        { ok: false, error: record ? "This booking link has been turned off by the venue." : "Record not found or not available." },
+        { status: 404, headers: { "cache-control": "no-store" } }
+      );
+    }
+    return NextResponse.json({ ok: true, record, source: sql ? "database" : "memory" }, { headers: { "cache-control": "no-store" } });
   }
   if (body?.action === "get-progress-record-by-email") {
     const email = String(body.email || "").trim().toLowerCase();

@@ -19267,33 +19267,33 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     progressRecordsRef.current = nextRecords;
     setProgressRecords(nextRecords);
     markDirty();
-    return persistProgressRecordsToDatabase(nextRecords).then(
-      () => {
-        pushToast({ kind: "success", title: "Contract generated", desc: "The contract link now shows this booking's details." });
-        return nextRecord;
-      },
-      (error) => {
-        if (shouldShowDatabaseError(error)) {
-          pushToast({ kind: "danger", title: "Contract save failed", desc: `${error.message || "Unknown error."} The contract link will not work until the database save succeeds.`, duration: 8000 });
-        }
-        throw error;
-      }
-    );
+    return syncContractRecord(nextRecord).then(() => {
+      pushToast({ kind: "success", title: "Contract generated", desc: "The contract link now shows this booking's details." });
+      return nextRecord;
+    });
   };
+  // The sign link reads through /api/submissions, which keeps its own in-memory
+  // store when DATABASE_URL is unset, so the record must be pushed there too.
+  const syncContractRecord = (record) => persistProgressRecordsToDatabase(progressRecordsRef.current)
+    .then(() => buildDatabaseSubmissionRecord(record))
+    .then((databaseRecord) => collaburoApi("/api/submissions", {
+      method: "POST",
+      body: JSON.stringify({ action: "update-progress-record", record: databaseRecord }),
+    }))
+    .catch((error) => {
+      pushToast({ kind: "danger", title: "Contract save failed", desc: `${error.message || "Unknown error."} The contract link will not work until the save succeeds.`, duration: 8000 });
+      throw error;
+    });
   const openProgressContract = (record) => {
     if (!record?.id) return;
     const url = contractLinkForRecord(record);
     const tab = window.open("", "_blank");
     if (tab) tab.opener = null;
-    const status = record.progress?.contract || "Not Generated";
-    const ready = status === "Not Generated" || (status === "Generated" && !record.progress?.contractSnapshot)
+    const latest = progressRecordsRef.current.find((item) => item.id === record.id) || record;
+    const status = latest.progress?.contract || "Not Generated";
+    const ready = status === "Not Generated" || (status === "Generated" && !latest.progress?.contractSnapshot)
       ? generateProgressContract(record.id)
-      : persistProgressRecordsToDatabase(progressRecordsRef.current).catch((error) => {
-          if (shouldShowDatabaseError(error)) {
-            pushToast({ kind: "danger", title: "Contract save failed", desc: error.message || "Unknown error.", duration: 8000 });
-          }
-          throw error;
-        });
+      : syncContractRecord(latest);
     ready.then(
       () => {
         if (tab) tab.location.href = url;
@@ -19874,9 +19874,9 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       }
       return (
         <ContractSignView
-          record={clientEditRecord}
+          record={publicEditRecord}
           siteSettings={siteSettings}
-          tokenMap={emailTokenMap(clientEditRecord || {})}
+          tokenMap={emailTokenMap(publicEditRecord || {})}
           onSigned={(signedRecord) => {
             if (signedRecord) {
               setPublicEditRecord(normalizeProgressRecord(signedRecord));

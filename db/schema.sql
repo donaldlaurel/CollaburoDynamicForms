@@ -30,3 +30,10 @@ create index if not exists collaburo_submissions_status_idx
 create unique index if not exists collaburo_submissions_fingerprint_idx
   on collaburo_submissions (fingerprint)
   where fingerprint is not null;
+
+-- Booking and contract links look records up by id or booking code inside payload.
+create index if not exists collaburo_submissions_payload_id_idx
+  on collaburo_submissions ((payload->>'id'));
+
+create index if not exists collaburo_submissions_payload_booking_code_idx
+  on collaburo_submissions ((payload->>'bookingCode'));
