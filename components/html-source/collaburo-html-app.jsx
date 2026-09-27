@@ -13635,14 +13635,14 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 	                )}
 
 		                <div className="cv-nav">
-	                  {step?.stepType === "checkout" && costSummaryLocked && (
-                    <div style={{ gridColumn: "1 / -1", width: "100%", color: "var(--danger)", background: "var(--danger-soft)", border: "1px solid #f0c9c0", borderRadius: 6, padding: "10px 12px", fontSize: 12, fontWeight: 650 }}>
-                      {costSummaryLockedMessage}
-                    </div>
-                  )}
-                  {step?.stepType === "checkout" && missingCheckoutAgreements.length > 0 && (
-                    <div style={{ gridColumn: "1 / -1", width: "100%", color: "var(--danger)", background: "var(--danger-soft)", border: "1px solid #f0c9c0", borderRadius: 6, padding: "10px 12px", fontSize: 12, fontWeight: 650 }}>
-                      Check all required agreement boxes before submitting.
+	                  {step?.stepType === "checkout" && (costSummaryLocked || missingCheckoutAgreements.length > 0) && (
+                    <div className="cv-nav-notices">
+                      {costSummaryLocked && (
+                        <div className="cv-nav-notice">{costSummaryLockedMessage}</div>
+                      )}
+                      {missingCheckoutAgreements.length > 0 && (
+                        <div className="cv-nav-notice">Check all required agreement boxes before submitting.</div>
+                      )}
                     </div>
                   )}
                   {stepIdx > 0 && (
