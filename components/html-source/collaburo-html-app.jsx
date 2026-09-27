@@ -1811,8 +1811,36 @@ function oldSiteRentalToCatalogRow(item, rows, venues = []) {
     infoImageUrl: "",
     infoImageUrls: [],
     groupSelectionRule: groupSelectionRuleFor(rows, category),
+    groupItemSort: groupItemSortFor(rows, category),
     ...(peer?.groupOrder != null ? { groupOrder: peer.groupOrder } : {}),
   };
+}
+
+const RENTAL_ITEM_SORT_MODES = [
+  { value: "custom", label: "Custom" },
+  { value: "az", label: "A-Z" },
+  { value: "za", label: "Z-A" },
+];
+
+function groupItemSortFor(rows, category) {
+  return rows.find((r) => r.category === category && r.groupItemSort)?.groupItemSort || "custom";
+}
+
+function applyRentalGroupItemSort(rows) {
+  const next = [...(rows || [])];
+  const categories = Array.from(new Set(next.map((r) => r.category)));
+  categories.forEach((category) => {
+    const mode = groupItemSortFor(next, category);
+    if (mode === "custom") return;
+    const positions = [];
+    next.forEach((r, index) => { if (r.category === category) positions.push(index); });
+    const direction = mode === "za" ? -1 : 1;
+    const sorted = positions
+      .map((index) => next[index])
+      .sort((a, b) => direction * String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base", numeric: true }));
+    positions.forEach((index, k) => { next[index] = sorted[k]; });
+  });
+  return next;
 }
 
 function groupSelectionRuleLabel(value) {
@@ -1838,13 +1866,14 @@ function RentalGroupSelectionRule({ value, onChange }) {
   );
 }
 
-function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, onGroupSelectionRuleChange, onSelectGroup, onSelect, onAdd, onDuplicate, onDelete, onMoveItem, onManageGroups, onOpenRecommended, onOpenOldSite }) {
+function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, onGroupSelectionRuleChange, itemSort = "custom", onItemSortChange, onSelectGroup, onSelect, onAdd, onDuplicate, onDelete, onMoveItem, onManageGroups, onOpenRecommended, onOpenOldSite }) {
   const Ic = window.Icons;
   const [query, setQuery] = React.useState("");
   const [movingItem, setMovingItem] = React.useState(null);
   const categories = orderedRentalCategories([...rows, ...recommendedRentalCatalogRows()]);
   const recommendedTotal = recommendedRentalsForGroup(activeGroup).length;
   const groupItems = rows.filter((r) => r.category === activeGroup);
+  const isCustomSort = itemSort === "custom";
   const filtered = rows.filter((r) => {
     const q = query.trim().toLowerCase();
     const matchQuery = !q || [r.name, r.category, r.legacyKey, r.priceKey].some((v) => String(v || "").toLowerCase().includes(q));
@@ -1895,11 +1924,14 @@ function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, on
           </div>
         </div>
         <RentalGroupSelectionRule value={groupSelectionRule} onChange={onGroupSelectionRuleChange} />
-        <div className="col-search">
+        <div className="col-search rental-item-toolbar">
           <div className="col-search-wrap">
             <span className="ic"><Ic.Search size={13} /></span>
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={"Search " + activeGroup + "..."} />
           </div>
+          <select className="select rental-item-sort" title="Arrange rental items" value={itemSort} onChange={(e) => onItemSortChange(e.target.value)}>
+            {RENTAL_ITEM_SORT_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+          </select>
         </div>
         <div className="steps-body">
           {filtered.map((item, index) => {
@@ -1918,8 +1950,8 @@ function RentalCatalogList({ rows, activeId, activeGroup, groupSelectionRule, on
                   </span>
                 </div>
                 <div className="step-card-actions" onClick={(e) => e.stopPropagation()}>
-                  <button className="btn icon sm ghost" title="Move up" disabled={groupIndex <= 0} onClick={() => moveItem(item, -1)}><Ic.ArrUp size={12} /></button>
-                  <button className="btn icon sm ghost" title="Move down" disabled={groupIndex < 0 || groupIndex >= groupItems.length - 1} onClick={() => moveItem(item, 1)}><Ic.ArrDn size={12} /></button>
+                  <button className="btn icon sm ghost" title={isCustomSort ? "Move up" : "Switch to Custom order to move items"} disabled={!isCustomSort || groupIndex <= 0} onClick={() => moveItem(item, -1)}><Ic.ArrUp size={12} /></button>
+                  <button className="btn icon sm ghost" title={isCustomSort ? "Move down" : "Switch to Custom order to move items"} disabled={!isCustomSort || groupIndex < 0 || groupIndex >= groupItems.length - 1} onClick={() => moveItem(item, 1)}><Ic.ArrDn size={12} /></button>
                   <button className="btn icon sm ghost" title="Duplicate rental" onClick={() => onDuplicate(item)}><Ic.Copy size={12} /></button>
                   <button className="btn icon sm danger-ghost" title="Delete rental" onClick={() => onDelete(item.id)}><Ic.Trash size={12} /></button>
                 </div>
@@ -3429,8 +3461,9 @@ function RentalEmptySelection({ activeGroup, onAddBlank, onOpenRecommended }) {
   );
 }
 
-function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAMPLE_SITE_SETTINGS }) {
+function RentalsCatalogView({ catalog, onChange: commitCatalog, venues = [], siteSettings = SAMPLE_SITE_SETTINGS }) {
   const rows = normalizeRentalCatalog(catalog || []);
+  const onChange = (next) => commitCatalog(applyRentalGroupItemSort(next));
   const deliveryOptions = normalizeSiteSettings(siteSettings).fulfillment?.deliveryOptions || DEFAULT_DELIVERY_OPTIONS;
   const [activeId, setActiveId] = React.useState(() => rows[0]?.id || null);
   const [activeGroup, setActiveGroup] = React.useState(() => rows[0]?.category || RENTAL_CATEGORIES[0]);
@@ -3473,7 +3506,7 @@ function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAM
   };
   const addItem = (category = "Tables") => {
     const id = "rental_" + Date.now();
-    const item = { id, schemaVersion: 1, name: "New Rental Item", category, imageUrl: "", groupImageUrl: rentalGroupImageForRows(rows, category), priceText: "$0", unit: "each", priceKey: "", legacyKey: "", pricingModel: "flat_per_item", priceEnabled: false, unitPrice: 0, quantitySource: "own", optionGroups: [], deliveryClass: "none", procurementType: "internal", fulfillmentType: "internal", deliveryRequired: false, deliveryOptionId: "", noStockInventory: false, stock: "", minUnits: 0, maxUnits: "", increment: 1, required: false, adminRequired: false, clientVisible: true, active: true, venueIds: [], layoutRecommendationEnabled: ["Tables", "Chairs"].includes(category), notes: "", infoText: "", infoImageUrl: "", infoImageUrls: [], groupSelectionRule: groupSelectionRuleFor(rows, category), groupOrder: orderedRentalCategories(rows).indexOf(category) };
+    const item = { id, schemaVersion: 1, name: "New Rental Item", category, imageUrl: "", groupImageUrl: rentalGroupImageForRows(rows, category), priceText: "$0", unit: "each", priceKey: "", legacyKey: "", pricingModel: "flat_per_item", priceEnabled: false, unitPrice: 0, quantitySource: "own", optionGroups: [], deliveryClass: "none", procurementType: "internal", fulfillmentType: "internal", deliveryRequired: false, deliveryOptionId: "", noStockInventory: false, stock: "", minUnits: 0, maxUnits: "", increment: 1, required: false, adminRequired: false, clientVisible: true, active: true, venueIds: [], layoutRecommendationEnabled: ["Tables", "Chairs"].includes(category), notes: "", infoText: "", infoImageUrl: "", infoImageUrls: [], groupSelectionRule: groupSelectionRuleFor(rows, category), groupItemSort: groupItemSortFor(rows, category), groupOrder: orderedRentalCategories(rows).indexOf(category) };
     onChange([...rows, item]);
     setActiveGroup(category);
     setActiveId(id);
@@ -3549,6 +3582,9 @@ function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAM
   const updateGroupSelectionRule = (category, rule) => {
     onChange(rows.map((r) => r.category === category ? { ...r, groupSelectionRule: rule } : r));
   };
+  const updateGroupItemSort = (category, mode) => {
+    onChange(rows.map((r) => r.category === category ? { ...r, groupItemSort: mode } : r));
+  };
 
   const addOptionGroup = () => {
     if (!selected) return;
@@ -3580,7 +3616,7 @@ function RentalsCatalogView({ catalog, onChange, venues = [], siteSettings = SAM
 
   return (
     <div className="workspace rental-workspace">
-      <RentalCatalogList rows={rows} activeId={selected?.id} activeGroup={activeGroup} groupSelectionRule={groupSelectionRuleFor(rows, activeGroup)} onGroupSelectionRuleChange={(rule) => updateGroupSelectionRule(activeGroup, rule)} onSelectGroup={selectGroup} onSelect={setActiveId} onAdd={() => addItem(activeGroup)} onDuplicate={duplicateItem} onDelete={deleteItem} onMoveItem={moveItem} onManageGroups={() => setGroupManagerOpen(true)} onOpenRecommended={setRecommendedGroup} onOpenOldSite={setOldSiteGroup} />
+      <RentalCatalogList rows={rows} activeId={selected?.id} activeGroup={activeGroup} groupSelectionRule={groupSelectionRuleFor(rows, activeGroup)} onGroupSelectionRuleChange={(rule) => updateGroupSelectionRule(activeGroup, rule)} itemSort={groupItemSortFor(rows, activeGroup)} onItemSortChange={(mode) => updateGroupItemSort(activeGroup, mode)} onSelectGroup={selectGroup} onSelect={setActiveId} onAdd={() => addItem(activeGroup)} onDuplicate={duplicateItem} onDelete={deleteItem} onMoveItem={moveItem} onManageGroups={() => setGroupManagerOpen(true)} onOpenRecommended={setRecommendedGroup} onOpenOldSite={setOldSiteGroup} />
       {selected ? (
         <RentalSelectedEditor
           item={selected}
