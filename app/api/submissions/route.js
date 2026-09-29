@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
+import memory from "../../../lib/memory-store";
 
 // Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
 // bookings; every database route must opt out.
@@ -7,9 +8,6 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-let memorySubmissions = [];
-let memoryState = null;
-let memoryUpdatedAt = null;
 const APP_STATE_KEY = "default";
 
 function database() {
@@ -229,7 +227,7 @@ async function appendProgressRecordToAdminState(sql, record) {
 
 export async function GET() {
   const sql = database();
-  if (!sql) return NextResponse.json({ ok: true, submissions: memorySubmissions, source: "memory" });
+  if (!sql) return NextResponse.json({ ok: true, submissions: memory.submissions, source: "memory" });
 
   const rows = await sql`
     select id, client_name, client_email, event_space, status, total, created_at, payload
@@ -262,13 +260,14 @@ async function replaceProgressRecordInAdminState(sql, record, loadedState = null
     savedAt: new Date().toISOString(),
     progressRecords: nextRecords.slice(0, 500),
   };
-  await sql`
+  const rows = await sql`
     insert into collaburo_app_config (key, payload, updated_at)
     values (${APP_STATE_KEY}, ${JSON.stringify(nextState)}, now())
     on conflict (key)
     do update set payload = excluded.payload, updated_at = now()
+    returning updated_at
   `;
-  return record;
+  return rows[0]?.updated_at || null;
 }
 
 async function replaceSubmissionPayload(sql, record) {
@@ -328,13 +327,13 @@ export async function POST(request) {
     const sql = database();
     const state = sql ? (await sql`
       select payload from collaburo_app_config where key = ${APP_STATE_KEY} limit 1
-    `)[0]?.payload : memoryState;
+    `)[0]?.payload : memory.state;
     let existing = (state?.progressRecords || []).find((item) => recordMatchesBookingId(item, proposed.id));
     if (!existing && sql) {
       const rows = await sql`select payload from collaburo_submissions where payload->>'id' = ${String(proposed.id)} limit 1`;
       existing = rows[0]?.payload || null;
     } else if (!existing) {
-      existing = memorySubmissions.find((item) => recordMatchesBookingId(item.payload, proposed.id))?.payload || null;
+      existing = memory.submissions.find((item) => recordMatchesBookingId(item.payload, proposed.id))?.payload || null;
     }
     if (!existing) {
       // Allow creation of a new admin booking record when the edit flow begins
@@ -342,22 +341,23 @@ export async function POST(request) {
       existing = proposed;
     }
     const result = applyAdminBookingEdit(existing, proposed, request.headers.get("x-collaburo-admin-user") || "admin", body.auditBefore, body.auditDisplayChanges);
+    let updatedAt = null;
     if (!sql) {
-      await replaceProgressRecordInAdminState(null, result.record);
-      const current = memoryState && typeof memoryState === "object" ? memoryState : {};
+      const current = memory.state && typeof memory.state === "object" ? memory.state : {};
       const records = Array.isArray(current.progressRecords) ? current.progressRecords : [];
       const nextRecords = records.map((item) => recordMatchesBookingId(item, result.record.id) ? result.record : item);
       if (!nextRecords.some((item) => recordMatchesBookingId(item, result.record.id))) nextRecords.unshift(result.record);
-      memoryState = { ...current, savedAt: result.editedAt, progressRecords: nextRecords.slice(0, 500) };
-      memoryUpdatedAt = result.editedAt;
-      memorySubmissions = memorySubmissions.map((item) => recordMatchesBookingId(item.payload, result.record.id) ? { ...item, payload: result.record } : item);
+      memory.state = { ...current, savedAt: result.editedAt, progressRecords: nextRecords.slice(0, 500) };
+      memory.updatedAt = result.editedAt;
+      memory.submissions = memory.submissions.map((item) => recordMatchesBookingId(item.payload, result.record.id) ? { ...item, payload: result.record } : item);
+      updatedAt = memory.updatedAt;
     } else {
-      await Promise.all([
+      [updatedAt] = await Promise.all([
         replaceProgressRecordInAdminState(sql, result.record, state),
         replaceSubmissionPayload(sql, result.record),
       ]);
     }
-    return NextResponse.json({ ok: true, ...result, source: sql ? "database" : "memory" });
+    return NextResponse.json({ ok: true, ...result, updatedAt, source: sql ? "database" : "memory" });
   }
   if (body?.action === "touch-progress-record") {
     const id = String(body.recordId || "");
@@ -365,35 +365,40 @@ export async function POST(request) {
     const touchedAt = new Date().toISOString();
     const sql = database();
     if (!sql) {
-      const current = memoryState && typeof memoryState === "object" ? memoryState : {};
+      const current = memory.state && typeof memory.state === "object" ? memory.state : {};
       const progressRecords = Array.isArray(current.progressRecords) ? current.progressRecords : [];
       const nextRecords = progressRecords.map((item) => String(item?.id || "") === id
         ? { ...item, progress: { ...(item.progress || {}), lastActivityAt: touchedAt } }
         : item);
-      memoryState = { ...current, savedAt: touchedAt, progressRecords: nextRecords.slice(0, 500) };
-      memoryUpdatedAt = touchedAt;
-      memorySubmissions = memorySubmissions.map((item) => item.payload?.id === id
+      memory.state = { ...current, savedAt: touchedAt, progressRecords: nextRecords.slice(0, 500) };
+      memory.updatedAt = touchedAt;
+      memory.submissions = memory.submissions.map((item) => item.payload?.id === id
         ? { ...item, payload: { ...item.payload, progress: { ...(item.payload.progress || {}), lastActivityAt: touchedAt } } }
         : item);
       return NextResponse.json({ ok: true, touchedAt, source: "memory" });
     }
-    const rows = await sql`
-      select payload
-      from collaburo_app_config
-      where key = ${APP_STATE_KEY}
-      limit 1
-    `;
-    const current = rows[0]?.payload && typeof rows[0].payload === "object" ? rows[0].payload : {};
-    const progressRecords = Array.isArray(current.progressRecords) ? current.progressRecords : [];
-    const nextRecords = progressRecords.map((item) => String(item?.id || "") === id
-      ? { ...item, progress: { ...(item.progress || {}), lastActivityAt: touchedAt } }
-      : item);
-    const nextState = { ...current, savedAt: touchedAt, progressRecords: nextRecords.slice(0, 500) };
+    // Touches fire on the same click as "Save & Next", so this must be a single
+    // atomic statement: a read-then-write of the whole blob would race the save
+    // and write the pre-save record back over it.
     await sql`
-      insert into collaburo_app_config (key, payload, updated_at)
-      values (${APP_STATE_KEY}, ${JSON.stringify(nextState)}, now())
-      on conflict (key)
-      do update set payload = excluded.payload, updated_at = now()
+      update collaburo_app_config
+      set payload = jsonb_set(
+            payload || jsonb_build_object('savedAt', ${touchedAt}::text),
+            '{progressRecords}',
+            (
+              select coalesce(jsonb_agg(
+                case when elem->>'id' = ${id}
+                  then jsonb_set(elem, '{progress}', coalesce(elem->'progress', '{}'::jsonb) || jsonb_build_object('lastActivityAt', ${touchedAt}::text))
+                  else elem
+                end
+                order by ord
+              ), '[]'::jsonb)
+              from jsonb_array_elements(payload->'progressRecords') with ordinality as t(elem, ord)
+            )
+          ),
+          updated_at = now()
+      where key = ${APP_STATE_KEY}
+        and jsonb_typeof(payload->'progressRecords') = 'array'
     `;
     await sql`
       update collaburo_submissions
@@ -411,7 +416,7 @@ export async function POST(request) {
       from collaburo_app_config
       where key = ${APP_STATE_KEY}
       limit 1
-    `)[0]?.payload : memoryState;
+    `)[0]?.payload : memory.state;
     const fromState = (source?.progressRecords || []).find((item) => recordMatchesBookingId(item, id)) || null;
     let fromSubmissions = null;
     if (sql) {
@@ -433,7 +438,7 @@ export async function POST(request) {
         fromSubmissions = byId[0]?.payload || null;
       }
     } else {
-      fromSubmissions = memorySubmissions.find((item) => recordMatchesBookingId(item.payload, id))?.payload || null;
+      fromSubmissions = memory.submissions.find((item) => recordMatchesBookingId(item.payload, id))?.payload || null;
     }
     const record = freshestProgressRecord(fromState, fromSubmissions);
     if (!record || record.progress?.accessibleByRecordLink === false) {
@@ -458,7 +463,7 @@ export async function POST(request) {
       from collaburo_app_config
       where key = ${APP_STATE_KEY}
       limit 1
-    `)[0]?.payload : memoryState;
+    `)[0]?.payload : memory.state;
     let record = latestRecordForEmail(source?.progressRecords || [], email);
     if (!record && sql) {
       const rows = await sql`
@@ -470,7 +475,7 @@ export async function POST(request) {
       `;
       record = rows[0]?.payload || null;
     } else if (!record) {
-      record = latestRecordForEmail(memorySubmissions.map((item) => item.payload).filter(Boolean), email);
+      record = latestRecordForEmail(memory.submissions.map((item) => item.payload).filter(Boolean), email);
     }
     if (!record || record.progress?.accessibleByRecordLink === false) {
       return NextResponse.json({ ok: false, error: "No saved booking found for this verified email." }, { status: 404 });
@@ -482,13 +487,13 @@ export async function POST(request) {
     if (!record?.id) return NextResponse.json({ ok: false, error: "Missing progress record." }, { status: 400 });
     const sql = database();
     if (!sql) {
-      const current = memoryState && typeof memoryState === "object" ? memoryState : {};
+      const current = memory.state && typeof memory.state === "object" ? memory.state : {};
       const progressRecords = Array.isArray(current.progressRecords) ? current.progressRecords : [];
       const nextRecords = progressRecords.map((item) => String(item?.id || "") === String(record.id) ? record : item);
       if (!nextRecords.some((item) => String(item?.id || "") === String(record.id))) nextRecords.unshift(record);
-      memoryState = { ...current, savedAt: new Date().toISOString(), progressRecords: nextRecords.slice(0, 500) };
-      memoryUpdatedAt = new Date().toISOString();
-      memorySubmissions = memorySubmissions.map((item) => item.payload?.id === record.id ? { ...item, payload: record, client_name: record.client?.name || "New Client", client_email: record.client?.email || "", event_space: record.request?.space || "", status: record.progress?.status || "In Discussion", total: Number(record.costs?.totalWithDeposit || record.costs?.total || 0) } : item);
+      memory.state = { ...current, savedAt: new Date().toISOString(), progressRecords: nextRecords.slice(0, 500) };
+      memory.updatedAt = new Date().toISOString();
+      memory.submissions = memory.submissions.map((item) => item.payload?.id === record.id ? { ...item, payload: record, client_name: record.client?.name || "New Client", client_email: record.client?.email || "", event_space: record.request?.space || "", status: record.progress?.status || "In Discussion", total: Number(record.costs?.totalWithDeposit || record.costs?.total || 0) } : item);
       return NextResponse.json({ ok: true, record, source: "memory" });
     }
     await replaceProgressRecordInAdminState(sql, record);
@@ -509,7 +514,7 @@ export async function POST(request) {
   const fingerprint = await submissionFingerprint(client, requestInfo, total);
 
   if (!sql) {
-    const existing = fingerprint ? memorySubmissions.find((item) => item.fingerprint === fingerprint) : null;
+    const existing = fingerprint ? memory.submissions.find((item) => item.fingerprint === fingerprint) : null;
     if (existing) {
       return NextResponse.json({ ok: true, submission: existing, duplicate: true, source: "memory" });
     }
@@ -524,15 +529,15 @@ export async function POST(request) {
       payload: record,
       fingerprint,
     };
-    memorySubmissions = [submission, ...memorySubmissions].slice(0, 250);
-    const current = memoryState && typeof memoryState === "object" ? memoryState : {};
+    memory.submissions = [submission, ...memory.submissions].slice(0, 250);
+    const current = memory.state && typeof memory.state === "object" ? memory.state : {};
     const progressRecords = Array.isArray(current.progressRecords) ? current.progressRecords : [];
-    memoryState = {
+    memory.state = {
       ...current,
       savedAt: new Date().toISOString(),
       progressRecords: [record, ...progressRecords].slice(0, 500),
     };
-    memoryUpdatedAt = new Date().toISOString();
+    memory.updatedAt = new Date().toISOString();
     return NextResponse.json({ ok: true, submission, source: "memory" }, { status: 201 });
   }
 

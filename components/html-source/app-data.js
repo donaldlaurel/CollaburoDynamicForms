@@ -654,6 +654,7 @@ const FIELD_TYPES = [
   { type: "rental_group", label: "Rental group",  desc: "Pull from Rentals catalog", icon: "Tag" },
   { type: "extras",     label: "Extras",          desc: "Admin amount plus shared notes", icon: "Dollar" },
   { type: "separator",  label: "Separator line",  desc: "Visual divider line",   icon: "Minus" },
+  { type: "spacer",     label: "Line space",      desc: "Blank space between sections", icon: "Spacer" },
   { type: "instructional", label: "Instructional text", desc: "Display-only text", icon: "Info" },
 ];
 
@@ -687,6 +688,7 @@ const SIMPLE_FIELD_GROUPS = [
     items: [
       { key: "info_text", type: "instructional", label: "Info Text", desc: "Read-only instructions.", icon: "Info" },
       { key: "separator", type: "separator", label: "Section Divider", desc: "Visual divider between fields.", icon: "Minus" },
+      { key: "spacer", type: "spacer", label: "Line Space", desc: "Blank space between sections.", icon: "Spacer" },
     ],
   },
 ];

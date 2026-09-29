@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
+import memory from "../../../../lib/memory-store";
 
 // Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
 // bookings; every database route must opt out.
@@ -8,8 +9,6 @@ export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
 const APP_STATE_KEY = "default";
-let memoryState = null;
-
 function database() {
   return process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 }
@@ -61,7 +60,7 @@ function freshestProgressRecord(fromState, fromSubmissions) {
 }
 
 async function loadState(sql) {
-  if (!sql) return memoryState && typeof memoryState === "object" ? memoryState : {};
+  if (!sql) return memory.state && typeof memory.state === "object" ? memory.state : {};
   const rows = await sql`
     select payload
     from collaburo_app_config
@@ -75,7 +74,7 @@ async function saveState(sql, nextState) {
   const savedAt = new Date().toISOString();
   const payload = { ...nextState, savedAt };
   if (!sql) {
-    memoryState = payload;
+    memory.state = payload;
     return payload;
   }
   await sql`
