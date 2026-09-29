@@ -66,6 +66,11 @@ const IconMinus      = I(<path d="M5 12h14"/>);
 const IconMail       = I(<><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></>);
 const IconPhone      = I(<path d="M22 16.92v2a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 3.08 4.18 2 2 0 0 1 5.06 2h2a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.4 9.3a16 16 0 0 0 6.3 6.3l.84-.83a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z"/>);
 const IconTruck      = I(<><path d="M10 17H5a2 2 0 0 1-2-2V6h11v11"/><path d="M14 9h4l3 4v2a2 2 0 0 1-2 2h-1"/><path d="M14 17h-4"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="17.5" r="2.5"/></>);
+const IconShield     = I(<><path d="M12 2.5 4 5.5v6c0 5 3.4 8.8 8 10 4.6-1.2 8-5 8-10v-6l-8-3Z"/><path d="M12 2.5v19c4.6-1.2 8-5 8-10v-6l-8-3Z" fill="currentColor" fillOpacity=".35"/></>);
+const IconGoblet     = I(<><path d="M7 3h10v4a5 5 0 0 1-10 0V3Z"/><path d="M12 12v7M8 21h8"/><path d="M7 5H4.5a2.5 2.5 0 0 0 2.6 3.2M17 5h2.5a2.5 2.5 0 0 1-2.6 3.2"/></>);
+const IconAlert      = I(<><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></>);
+const IconCheckCircle = I(<><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/></>);
+const IconExternal   = I(<><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></>);
 
 window.Icons = {
   Layers: IconLayers, Tag: IconTag, Dollar: IconDollar, Settings: IconSettings,
@@ -76,5 +81,6 @@ window.Icons = {
   Img: IconImg, Type: IconType, Hash: IconHash, List: IconList, CheckSq: IconCheckSq,
   Toggle: IconToggle, Clock: IconClock, File: IconFile, Building: IconBuilding,
   Cards: IconCards, Branch: IconBranch, Close: IconClose, ArrUp: IconArrUp, ArrDn: IconArrDn,
-  Undo: IconUndo, Redo: IconRedo, Key: IconKey, Minus: IconMinus, Mail: IconMail, Phone: IconPhone, Truck: IconTruck
+  Undo: IconUndo, Redo: IconRedo, Key: IconKey, Minus: IconMinus, Mail: IconMail, Phone: IconPhone, Truck: IconTruck,
+  Shield: IconShield, Goblet: IconGoblet, Alert: IconAlert, CheckCircle: IconCheckCircle, External: IconExternal
 };

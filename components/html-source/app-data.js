@@ -83,6 +83,20 @@ const SAMPLE_STEPS = [
         category: "Event" },
       { id: "f14", label: "Expected Number of Attendees", type: "number", required: true,
         placeholder: "30", visibleToClient: true, category: "Event", min: 10, max: 500 },
+      { id: "f14_insurance", label: "Event Insurance required", type: "instructional", visibleToClient: true, category: "Event",
+        noticeStyle: "info", noticeIcon: "Shield",
+        fieldDescription: "Since your event has a social aspect to it, we require you to obtain an Event insurance from Duuo. Estimated cost is {{Insurance_Estimate}}. See last step for details.",
+        rules: [{ id: "rule_insurance_notice", action: "show", match: "any", clearValue: false, conditions: [
+          { fieldId: "f11", field: "Event Type", op: "in_group", value: "Social" },
+          { fieldId: "f13", field: "Alcohol on Site", op: "equals", value: "Yes" },
+        ] }] },
+      { id: "f14_agco", label: "AGCO License Required", type: "instructional", visibleToClient: true, category: "Event",
+        noticeStyle: "warning", noticeIcon: "Goblet",
+        fieldDescription: "Since you indicated there will be alcohol at your event, you must apply for an AGCO license at the following link\nhttps://www.agco.ca/\n- **{{AGCO_Fee_Serving}}** if you are providing alcohol to guests or allowing them to bring their own.\n- **{{AGCO_Fee_Selling}}** if selling alcohol at your event (a qualified Smart Serve bar person is required).",
+        noticeMore: "Once you apply to AGCO and pay, a payment receipt will be provided to you. Payment is non refundable should you cancel your event or your application is denied. It can take up to 10 days before you receive the approved SOP but it could be instantly approved.",
+        rules: [{ id: "rule_agco_notice", action: "show", match: "all", clearValue: false, conditions: [
+          { fieldId: "f13", field: "Alcohol on Site", op: "equals", value: "Yes" },
+        ] }] },
     ],
   },
   {
