@@ -16616,6 +16616,8 @@ function buildClientDraftFromProgressRecord(record, steps = []) {
     for (const exactOnly of [true, false]) {
       for (const step of orderedSteps) {
         for (const field of (step.fields || [])) {
+          const isBooleanField = field.type === "toggle" || field.type === "checkbox";
+          if (isBooleanField && (typeof value !== "boolean" || typeof answers[field.id] === "boolean")) continue;
           const label = String(field.label || "").toLowerCase();
           const matches = exactOnly ? lowered.some((needle) => label === needle) : lowered.some((needle) => label.includes(needle));
           if (matches && !clientAnswerHasValue(answers[field.id])) {
@@ -16626,6 +16628,20 @@ function buildClientDraftFromProgressRecord(record, steps = []) {
       }
     }
   };
+  // Earlier loads saved grouped-select answers as { "<label>": {} } and poured
+  // text values into toggles; restore the shapes the controls expect.
+  normalizedSteps.forEach((step) => {
+    (step.fields || []).forEach((field) => {
+      const current = answers[field.id];
+      if (field.type === "select" && field.groupOptions && current && typeof current === "object" && !Array.isArray(current) && !("__selected" in current)) {
+        const keys = Object.keys(current).filter((key) => !key.startsWith("__"));
+        if (keys.length === 1 && !clientAnswerHasValue(current[keys[0]])) answers[field.id] = keys[0];
+      }
+      if (field.type === "toggle" && typeof current === "string" && !/^(true|false)$/i.test(current.trim())) {
+        answers[field.id] = /^(yes|on)$/i.test(current.trim());
+      }
+    });
+  });
   const client = record.client || {};
   const request = record.request || {};
   const nameParts = String(client.name || "").trim().split(/\s+/);
@@ -16672,7 +16688,7 @@ function buildClientDraftFromProgressRecord(record, steps = []) {
         : (field.options || []).map((option) => normalizeSimpleOption(option));
       const matched = options.find((option) => optionMatchKey(option.label) === optionMatchKey(current));
       if (!matched) return;
-      const fieldUsesRichValues = (field.options || []).some(isRichWorkflowOption);
+      const fieldUsesRichValues = !field.groupOptions && (field.options || []).some(isRichWorkflowOption);
       if (fieldUsesRichValues) answers[field.id] = { [matched.label]: {} };
       else if (field.type === "multiselect") answers[field.id] = [matched.label];
       else answers[field.id] = matched.label;
