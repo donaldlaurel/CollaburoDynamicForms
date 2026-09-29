@@ -30,7 +30,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_circular_v2_48_ci0",
@@ -53,7 +55,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_circular_v3_56_ci0",
@@ -76,7 +80,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_circular_v1_70_ci2",
@@ -99,7 +105,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_v1_60_ci0",
@@ -122,7 +130,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_rectangular_v2_52_ci0",
@@ -145,7 +155,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_rectangular_v3_60_ci0",
@@ -169,7 +181,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_rectangular_v4_53_ci0",
@@ -192,7 +206,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_rectangular_v1_60_ci2",
@@ -215,7 +231,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_v2_70_ci2",
@@ -239,7 +257,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_v3_65_ci2",
@@ -263,7 +283,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_v4_60_ci2",
@@ -287,7 +309,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_v5_76_ci2",
@@ -311,7 +335,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_v6_65_ci2",
@@ -335,7 +361,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_v7_70_ci2",
@@ -359,7 +387,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_theatre_v1_47_ci0",
@@ -379,7 +409,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_theatre_v2_50_ci0",
@@ -399,7 +431,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_theatre_v3_60_ci0",
@@ -419,7 +453,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_theatre_v4_60_ci0",
@@ -438,7 +474,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_theatre_v1_47_ci1",
@@ -458,7 +496,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_theatre_v2_50_ci1",
@@ -478,7 +518,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_theatre_v3_60_ci1",
@@ -498,7 +540,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 60
       },
       {
         "presetId": "mhfloorlayout_theatre_v1_82_ci0",
@@ -518,7 +562,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 61,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_conference_v1_39_ci0",
@@ -535,7 +581,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_conference_v2_39_ci0",
@@ -552,7 +600,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_conference_v4_24_ci0",
@@ -570,7 +620,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_conference_v5_24_ci0",
@@ -588,7 +640,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_conference_v6_32_ci0",
@@ -606,7 +660,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_conference_v7_32_ci0",
@@ -624,7 +680,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_conference_v8_36_ci0",
@@ -641,7 +699,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_conference_v1_47_ci1",
@@ -658,7 +718,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_conference_v2_50_ci1",
@@ -675,7 +737,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_conference_v3_42_ci1",
@@ -692,7 +756,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_conference_v4_56_ci1",
@@ -709,7 +775,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_conference_v5_60_ci1",
@@ -725,7 +793,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_classroom_v1_54_ci0",
@@ -741,7 +811,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_classroom_v2_51_ci0",
@@ -757,7 +829,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_classroom_v3_51_ci0",
@@ -774,7 +848,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_open_v1_56_ci0",
@@ -795,7 +871,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Wedding & Reception",
           "Ceremony / Graduation",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_open_v2_56_ci0",
@@ -814,7 +892,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Wedding & Reception",
           "Ceremony / Graduation",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_open_v3_66_ci0",
@@ -833,7 +913,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Wedding & Reception",
           "Ceremony / Graduation",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 40
       },
       {
         "presetId": "mhfloorlayout_rectangular_open_v4_58_ci0",
@@ -853,7 +935,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Wedding & Reception",
           "Ceremony / Graduation",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_open_v5_36_ci0",
@@ -872,7 +956,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Wedding & Reception",
           "Ceremony / Graduation",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_rectangular_open_v3_66_ci1",
@@ -891,7 +977,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Wedding & Reception",
           "Ceremony / Graduation",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 41,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_cocktail_v1_8_ci0",
@@ -910,7 +998,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_cocktail_v2_12_ci0",
@@ -928,7 +1018,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_cocktail_v3_ci0",
@@ -945,7 +1037,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mhfloorlayout_bazaar_v1_22_ci0",
@@ -963,7 +1057,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Festival / Market / Show",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   },
@@ -988,7 +1084,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "10 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_deep_extra_seating_banquet_v2",
@@ -1002,7 +1100,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x 6-ft Rectangular Tables",
           "1 x Buffet Table"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   },
@@ -1027,7 +1127,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "2 x 8-ft Rectangular Tables",
           "20 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_banquet_v2",
@@ -1041,7 +1143,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "2 x 8-ft Rectangular Tables",
           "20 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_banquet_v3",
@@ -1055,7 +1159,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "5 x 6-ft Rectangular Tables",
           "22 Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_banquet_v4",
@@ -1069,7 +1175,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "1 x 6-ft Rectangular Table",
           "22 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_banquet_v5",
@@ -1083,7 +1191,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "2 x 6-ft Rectangular Tables",
           "35 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_banquet_v6",
@@ -1096,7 +1206,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "7 x 6-ft Rectangular Tables",
           "32 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_banquet_v7",
@@ -1109,7 +1221,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "6 x 6-ft Rectangular Tables",
           "24 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_round_v1",
@@ -1123,7 +1237,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "2 x 5-ft Round Tables",
           "16 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_round_v2",
@@ -1137,7 +1253,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "2 x 5-ft Round Tables",
           "16 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_round_v3",
@@ -1151,7 +1269,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "2 x 5-ft Round Tables",
           "22 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_round_v4",
@@ -1165,7 +1285,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "20 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_extra_seating_round_v5",
@@ -1179,7 +1301,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "20 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_classroom_v1",
@@ -1192,7 +1316,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "8 x 6-ft Rectangular Tables",
           "24 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_classroom_v2",
@@ -1205,7 +1331,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "4 x 6-ft Rectangular Tables",
           "16 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_theatre_v1",
@@ -1217,7 +1345,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "40 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_half_theatre_v2",
@@ -1229,7 +1359,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "38 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   },
@@ -1254,7 +1386,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "8 x 6-ft Rectangular Tables",
           "33 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v2",
@@ -1268,7 +1402,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "4 x 6-ft Rectangular Tables",
           "32 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v3",
@@ -1282,7 +1418,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "20 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v4",
@@ -1296,7 +1434,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "20 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v5",
@@ -1310,7 +1450,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x 6-ft Rectangular Tables",
           "35 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v6",
@@ -1323,7 +1465,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "6 x 6-ft Rectangular Tables",
           "39 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v7",
@@ -1336,7 +1480,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "4 x 8-ft Rectangular Tables",
           "40 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v8",
@@ -1350,7 +1496,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "28 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v9",
@@ -1364,7 +1512,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "4 x 6-ft Rectangular Tables",
           "44 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v10",
@@ -1378,7 +1528,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "32 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_seating_banquet_v11",
@@ -1393,7 +1545,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "22 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_round_banquet_v1",
@@ -1407,7 +1561,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "16 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_round_banquet_v2",
@@ -1421,7 +1577,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x Buffet Tables",
           "20 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_round_banquet_v3",
@@ -1434,7 +1592,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x 5-ft Round Tables",
           "30 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_extra_round_banquet_v4",
@@ -1448,7 +1608,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x 5-ft Round Tables",
           "30 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_theatre_v1",
@@ -1461,7 +1623,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x 6-ft Rectangular Tables",
           "48 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_theatre_v2",
@@ -1474,7 +1638,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "2 x High Tables",
           "3 x Buffet Tables"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_theatre_v3",
@@ -1486,7 +1652,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "60 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_full_theatre_v4",
@@ -1498,7 +1666,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "57 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   },
@@ -1524,7 +1694,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Cake Table",
           "2 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mh_stage_layout_v2",
@@ -1537,7 +1709,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "1 x 8-ft Rectangular Table",
           "6 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mh_stage_layout_v3",
@@ -1550,7 +1724,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "2 x 8-ft Rectangular Tables",
           "12 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mh_stage_layout_v4",
@@ -1563,7 +1739,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "1 x Projector Screen",
           "4 x Couch"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mh_stage_layout_v5",
@@ -1575,7 +1753,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "2 x Projector Screens"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mh_stage_layout_v6",
@@ -1590,7 +1770,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "1 DJ Table",
           "10 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "mh_stage_layout_v7",
@@ -1603,7 +1785,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x 8-ft Rectangular Tables",
           "12 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   },
@@ -1628,7 +1812,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "3 x 8-ft Rectangular Tables",
           "12 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_extra_seating_banquet_v2",
@@ -1641,7 +1827,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "4 x 5-ft Rectangular Tables",
           "8 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_extra_seating_v1",
@@ -1653,7 +1841,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "14 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_extra_seating_v2",
@@ -1665,7 +1855,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "15 x Venue Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_buffet_table",
@@ -1677,7 +1869,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "3 x Buffet Tables"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_cocktail_v1",
@@ -1689,7 +1883,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "5 x 2-ft Cocktail Tables"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "raised_area_cocktail_v2",
@@ -1699,7 +1895,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "capacityText": "",
         "recommendedFor": 0,
         "description": [],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   },
@@ -1731,7 +1929,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_circular_layout_2",
@@ -1755,7 +1955,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_circular_layout_3",
@@ -1780,7 +1982,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_1",
@@ -1803,7 +2007,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_2",
@@ -1827,7 +2033,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_3",
@@ -1851,7 +2059,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_4",
@@ -1875,7 +2085,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_5",
@@ -1900,7 +2112,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_6",
@@ -1924,7 +2138,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_7",
@@ -1947,7 +2163,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_8",
@@ -1970,7 +2188,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_rectangular_layout_9",
@@ -1994,7 +2214,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_theatre_layout_1",
@@ -2015,7 +2237,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_theatre_layout_2",
@@ -2036,7 +2260,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_theatre_layout_3",
@@ -2057,7 +2283,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_theatre_layout_4",
@@ -2078,7 +2306,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_theatre_layout_5",
@@ -2100,7 +2330,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_theatre_layout_6",
@@ -2121,7 +2353,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_theatre_layout_7",
@@ -2142,7 +2376,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Lecture / Theater / Movie",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_conference_layout_1",
@@ -2159,7 +2395,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_conference_layout_2",
@@ -2177,7 +2415,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_conference_layout_3",
@@ -2195,7 +2435,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_conference_layout_4",
@@ -2213,7 +2455,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Conference",
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_classroom_workshop_layout_1",
@@ -2230,7 +2474,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_classroom_workshop_layout_2",
@@ -2246,7 +2492,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_classroom_workshop_layout_3",
@@ -2263,7 +2511,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_classroom_workshop_layout_4",
@@ -2280,7 +2530,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_classroom_workshop_layout_5",
@@ -2297,7 +2549,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_classroom_workshop_layout_6",
@@ -2314,7 +2568,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_classroom_workshop_layout_7",
@@ -2331,7 +2587,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "eventTypes": [
           "Workshop / Training",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_cocktail_layout_1",
@@ -2349,7 +2607,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_cocktail_layout_2",
@@ -2367,7 +2627,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "lr_cocktail_layout_3",
@@ -2382,7 +2644,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   },
@@ -2415,7 +2679,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_circular_layout_2",
@@ -2439,7 +2705,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_circular_layout_3",
@@ -2465,7 +2733,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_1",
@@ -2489,7 +2759,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_2",
@@ -2513,7 +2785,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_3",
@@ -2537,7 +2811,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_4",
@@ -2561,7 +2837,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_5",
@@ -2585,7 +2863,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_6",
@@ -2609,7 +2889,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_7",
@@ -2633,7 +2915,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_8",
@@ -2657,7 +2941,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_9",
@@ -2681,7 +2967,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_10",
@@ -2705,7 +2993,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_11",
@@ -2728,7 +3018,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_rectangular_layout_12",
@@ -2752,7 +3044,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Ceremony / Graduation",
           "Memorial / End of Life Celebration",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_cocktail_layout_1",
@@ -2769,7 +3063,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_cocktail_layout_2",
@@ -2787,7 +3083,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_cocktail_layout_3",
@@ -2806,7 +3104,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_cocktail_layout_4",
@@ -2825,7 +3125,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_cocktail_layout_5",
@@ -2842,7 +3144,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
           "Social Event with dancing / Party",
           "Reception / Cocktail Party",
           "Other - Social and/or alcoholic events"
-        ]
+        ],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_ceremony_layout_1",
@@ -2854,7 +3158,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "53 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_ceremony_layout_2",
@@ -2866,7 +3172,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "58 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_ceremony_layout_3",
@@ -2878,7 +3186,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "53 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       },
       {
         "presetId": "bp_ceremony_layout_4",
@@ -2890,7 +3200,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "69 x Other Chairs"
         ],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   },
@@ -2909,7 +3221,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "capacityText": "",
         "recommendedFor": 0,
         "description": [],
-        "eventTypes": []
+        "eventTypes": [],
+        "guestMin": 0,
+        "guestMax": 0
       }
     ]
   }

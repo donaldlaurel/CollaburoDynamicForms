@@ -88,6 +88,8 @@ def layout(preset_id, name, category, image, capacity, description, event_types)
         "recommendedFor": seats(capacity),
         "description": description,
         "eventTypes": event_types,
+        "guestMin": 0,
+        "guestMax": 0,
     }
 
 
@@ -103,27 +105,42 @@ def parse_event_type_map(text: str, var: str) -> dict:
     return by_category
 
 
-def parse_floor_layouts(text: str, mapping_var: str, options_var: str) -> list:
+def guest_range(tiers: set, bounds: list) -> tuple:
+    """Merge the attendee tiers a layout appears in into one guest range (0 = unbounded)."""
+    if not bounds or len(tiers) == len(bounds):
+        return 0, 0
+    return bounds[min(tiers)][0], bounds[max(tiers)][1]
+
+
+def parse_floor_layouts(text: str, mapping_var: str, options_var: str, tier_bounds=None) -> list:
+    """tier_bounds: (min, max) guests per nested attendee tier, as in Main Hall's $capacityIndex."""
     body = block(text, rf"\${mapping_var}\s*=\s*\[")
     event_types = parse_event_type_map(text, options_var)
     cat_re = "|".join(CATEGORY_LABELS)
     token = re.compile(
         rf'"(?P<cat>{cat_re})"\s*=>|'
+        + r'(?P<tier>\[)(?=\s*"[^"]*"\s*=>)|'
         + STR.replace("(", "(?P<id>", 1) + r"\s*=>\s*\[\s*"
         + r"\s*,\s*".join(STR.replace("(", f"(?P<f{n}>", 1) for n in range(5))
         + r"\s*\]"
     )
-    out, seen, category = [], set(), None
+    out, by_key, category, tier = [], {}, None, -1
     for m in token.finditer(body):
         if m.group("cat"):
-            category = m.group("cat")
+            category, tier = m.group("cat"), -1
+            continue
+        if m.group("tier"):
+            tier += 1
             continue
         img, includes, chairs, label, capacity = (m.group(f"f{n}") for n in range(5))
-        if (label, img) in seen:
-            continue
-        seen.add((label, img))
-        out.append(layout(m.group("id"), label, CATEGORY_LABELS[category], img, capacity,
-                          lines_of(includes, chairs), event_types.get(category, [])))
+        key = (label, img)
+        if key not in by_key:
+            by_key[key] = (layout(m.group("id"), label, CATEGORY_LABELS[category], img, capacity,
+                                  lines_of(includes, chairs), event_types.get(category, [])), set())
+            out.append(by_key[key][0])
+        by_key[key][1].add(max(tier, 0))
+    for entry, tiers in by_key.values():
+        entry["guestMin"], entry["guestMax"] = guest_range(tiers, tier_bounds)
     return out
 
 
@@ -172,7 +189,7 @@ def main() -> None:
 
     groups = [
         {"key": "mh_floor", "venue": "Main Hall", "title": "Main Hall - Floor layouts", "kind": "floor", "match": [],
-         "layouts": parse_floor_layouts(mh, "image_mapping_dict", "options_dict")},
+         "layouts": parse_floor_layouts(mh, "image_mapping_dict", "options_dict", [(0, 40), (41, 60), (61, 0)])},
         {"key": "mh_raised_deep", "venue": "Main Hall", "title": "Main Hall - Raised Area + Deep Half Elevated Area", "kind": "area", "match": ["deep"],
          "layouts": raised.get("raised_area_deep", [])},
         {"key": "mh_raised_half", "venue": "Main Hall", "title": "Main Hall - Raised Area + Half Elevated Area", "kind": "area", "match": ["half"],
