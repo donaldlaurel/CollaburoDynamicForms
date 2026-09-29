@@ -11334,9 +11334,10 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 12 }}>
                 <div style={{ gridColumn: "2 / 3", padding: "12px 14px", background: "var(--accent-soft)", border: "1px solid var(--accent-soft-line)", borderRadius: 8 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <span style={{ color: "var(--accent)", fontSize: 14 }}>i</span>
+                    <span style={{ color: "var(--accent)", display: "inline-grid", placeItems: "center", cursor: "help" }} title="This is a suggested layout and may/may not include all the space requirements you have selected.">
+                      <Ic.Info size={14} />
+                    </span>
                     <strong style={{ fontSize: 13 }}>Maximum seating: {chosenMaxSeats || "TBD"} guests</strong>
-                    <span style={{ width: 14, height: 14, borderRadius: "50%", background: "var(--ink)", color: "#fff", display: "inline-grid", placeItems: "center", fontSize: 9, cursor: "help" }} title="This is a suggested layout and may/may not include all the space requirements you have selected.">●</span>
                   </div>
                   {chosenLayout.recommendedDescription && (
                     <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.6, paddingLeft: 20, marginTop: 6 }}>
