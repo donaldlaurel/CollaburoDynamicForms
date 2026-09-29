@@ -12,6 +12,7 @@ import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-dat
 import { ContractSettingsView, ContractSignView, ContractLoadingView, normalizeContractSettings, createDefaultContractSettings, buildContractSnapshot } from "./contract";
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
+import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
 
 const SHOW_OLD_SITE_IMPORT_BUTTONS = false;
 
@@ -9059,6 +9060,95 @@ function VenueEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDe
 
 window.VenueEditor = VenueEditor;
 
+function guessOldSiteLayoutGroupKey(area, venueName) {
+  const venue = (venueName || "").trim().toLowerCase();
+  const forVenue = OLD_SITE_LAYOUT_GROUPS.filter((group) => group.venue.toLowerCase() === venue);
+  if (area.id === area.venueId) return (forVenue.find((group) => group.kind === "floor") || forVenue[0] || OLD_SITE_LAYOUT_GROUPS[0]).key;
+  const areaName = (area.name || "").replace(/\s*\(.*\)\s*$/, "").toLowerCase();
+  const match = forVenue.find((group) => group.kind !== "floor" && group.match.some((word) => areaName.includes(word)));
+  return (match || forVenue[0] || OLD_SITE_LAYOUT_GROUPS[0]).key;
+}
+
+const oldSiteLayoutExists = (preset, layouts) => (layouts || []).some((layout) =>
+  layout.oldSitePresetId === preset.presetId || (layout.name === preset.name && layout.image === preset.image));
+
+function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSelected }) {
+  const Ic = window.Icons;
+  const [groupKey, setGroupKey] = React.useState(() => guessOldSiteLayoutGroupKey(area, venueName));
+  const [categoryFilter, setCategoryFilter] = React.useState("all");
+  const [query, setQuery] = React.useState("");
+  const [selectedIds, setSelectedIds] = React.useState([]);
+  const group = OLD_SITE_LAYOUT_GROUPS.find((candidate) => candidate.key === groupKey) || OLD_SITE_LAYOUT_GROUPS[0];
+  const categories = Array.from(new Set(group.layouts.map((preset) => preset.category)));
+  const q = query.trim().toLowerCase();
+  const visible = group.layouts.filter((preset) => (categoryFilter === "all" || preset.category === categoryFilter) && (!q || preset.name.toLowerCase().includes(q)));
+  const missing = visible.filter((preset) => !oldSiteLayoutExists(preset, existingLayouts));
+  const allSelected = missing.length > 0 && missing.every((preset) => selectedIds.includes(preset.presetId));
+  const selected = group.layouts.filter((preset) => selectedIds.includes(preset.presetId) && !oldSiteLayoutExists(preset, existingLayouts));
+  const toggle = (id) => setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  const toggleAll = () => {
+    const ids = missing.map((preset) => preset.presetId);
+    setSelectedIds((prev) => allSelected ? prev.filter((id) => !ids.includes(id)) : Array.from(new Set([...prev, ...ids])));
+  };
+  const changeGroup = (key) => {
+    setGroupKey(key);
+    setCategoryFilter("all");
+    setSelectedIds([]);
+  };
+
+  return (
+    <div className="rental-modal-backdrop" onClick={onClose}>
+      <div className="rental-modal" style={{ width: 760 }} onClick={(e) => e.stopPropagation()}>
+        <h3>Import floor layouts from old site</h3>
+        <div className="rental-modal-body">
+          <div className="rental-muted">
+            Adding to <b>{area.name}</b>. Imported layouts keep the old site's name, image, seating and setup notes; review event types and rental counts after importing.
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <select className="select" value={group.key} onChange={(e) => changeGroup(e.target.value)} style={{ minWidth: 260 }}>
+              {OLD_SITE_LAYOUT_GROUPS.map((candidate) => <option key={candidate.key} value={candidate.key}>{candidate.title} ({candidate.layouts.length})</option>)}
+            </select>
+            {categories.length > 1 && (
+              <select className="select" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={{ minWidth: 160 }}>
+                <option value="all">All styles</option>
+                {categories.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            )}
+            <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search layouts..." style={{ flex: 1, minWidth: 140 }} />
+            <button className="btn sm" onClick={toggleAll} disabled={missing.length === 0}>{allSelected ? "Deselect all" : "Select all"}</button>
+          </div>
+          <div className="rental-muted" style={{ fontSize: 12 }}>{visible.length} listed · {visible.length - missing.length} already added</div>
+          <div className="rental-recommend-list">
+            {visible.map((preset) => {
+              const exists = oldSiteLayoutExists(preset, existingLayouts);
+              return (
+                <label className="rental-recommend-row" key={preset.presetId} style={{ gridTemplateColumns: "auto 72px 1fr auto", alignItems: "center" }}>
+                  <input type="checkbox" checked={exists || selectedIds.includes(preset.presetId)} disabled={exists} onChange={() => toggle(preset.presetId)} />
+                  {preset.image
+                    ? <img src={preset.image} alt="" loading="lazy" style={{ width: 72, height: 54, objectFit: "contain", background: "#fff", border: "1px solid var(--line)", borderRadius: 4 }} />
+                    : <span style={{ width: 72, height: 54, border: "1px dashed var(--line)", borderRadius: 4 }} />}
+                  <span>
+                    <b>{preset.name}</b>
+                    <span>{exists ? "Already added" : [preset.category, preset.description.join(", ")].filter(Boolean).join(" · ")}</span>
+                  </span>
+                  <strong>{preset.capacityText || "-"}</strong>
+                </label>
+              );
+            })}
+            {visible.length === 0 && <div className="rental-muted">No old-site layouts match.</div>}
+          </div>
+        </div>
+        <div className="rental-modal-actions">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn rental-add-btn" onClick={() => onAddSelected(selected)} disabled={selected.length === 0}>
+            <Ic.Plus size={12} /> Add selected ({selected.length})
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // =========================================================================
 // LAYOUT EDITOR  (stepType === "layout")
 // =========================================================================
@@ -9066,6 +9156,7 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
   const Ic = window.Icons;
   const [expandedLayout, setExpandedLayout] = React.useState(null);
   const [previewAsset, setPreviewAsset] = React.useState(null);
+  const [oldSiteLayoutArea, setOldSiteLayoutArea] = React.useState(null);
   const [editingSR, setEditingSR] = React.useState(null);
   const [showAddSR, setShowAddSR] = React.useState(false);
   const [newSRName, setNewSRName] = React.useState("");
@@ -9219,6 +9310,24 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
   const addFL = (vid) => {
     const nl = { id: "fl_" + uid(), name: "", image: "", capacityMin: 0, capacityMax: 0, applicableEventTypes: [], applicableSpaceReqs: [], recommendedFor: 0, recommendedDescription: "", rentalRecommendations: {} };
     setVL(vid, { layouts: [...getVL(vid).layouts, nl] }); setExpandedLayout(nl.id);
+  };
+  const addOldSiteLayouts = (vid, presets) => {
+    const imported = presets.map((preset) => ({
+      id: "fl_" + uid(),
+      name: preset.name,
+      image: preset.image,
+      capacityMin: 0,
+      capacityMax: preset.recommendedFor,
+      applicableEventTypes: [...preset.eventTypes],
+      applicableSpaceReqs: [],
+      recommendedFor: preset.recommendedFor,
+      recommendedDescription: preset.description.join("\n"),
+      rentalRecommendations: {},
+      oldSitePresetId: preset.presetId,
+    }));
+    if (imported.length === 0) return;
+    setVL(vid, { layouts: [...getVL(vid).layouts, ...imported] });
+    setOldSiteLayoutArea(null);
   };
   const setFL = (vid, lid, patch) => setVL(vid, { layouts: getVL(vid).layouts.map((l) => (l.id === lid ? { ...l, ...patch } : l)) });
   const setFLRentalCount = (areaId, recommendationVenueId, lid, key, value) => {
@@ -9623,7 +9732,10 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
                   <h4>{area.name}</h4>
                   <div className="layout-admin-sub">Connected to {allVenues.find((v) => v.id === area.venueId)?.name || "venue"}</div>
                 </div>
-                <button className="btn dark sm" disabled={!hasFloorLayoutPlan} onClick={() => addFL(area.id)}>+ Add Floor Layout</button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn sm" disabled={!hasFloorLayoutPlan} onClick={() => setOldSiteLayoutArea(area)}>Import from old site</button>
+                  <button className="btn dark sm" disabled={!hasFloorLayoutPlan} onClick={() => addFL(area.id)}>+ Add Floor Layout</button>
+                </div>
               </div>
 
               <div className="layout-admin-checks">
@@ -9820,6 +9932,15 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
           </div>
         )}
       </div>
+      {oldSiteLayoutArea && (
+        <OldSiteLayoutModal
+          area={oldSiteLayoutArea}
+          venueName={allVenues.find((v) => v.id === oldSiteLayoutArea.venueId)?.name || ""}
+          existingLayouts={getVL(oldSiteLayoutArea.id).layouts}
+          onClose={() => setOldSiteLayoutArea(null)}
+          onAddSelected={(presets) => addOldSiteLayouts(oldSiteLayoutArea.id, presets)}
+        />
+      )}
       {previewAsset && (
         <div className="layout-preview-overlay" onClick={() => setPreviewAsset(null)} role="presentation">
           <div className="layout-preview-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={previewAsset.title}>
