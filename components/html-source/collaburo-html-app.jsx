@@ -20942,6 +20942,12 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         />
       );
     }
+    // This browser's cached progress records can be older than the database copy
+    // (only admin saves refresh that cache), and ClientPreview does not re-apply a
+    // newer copy of the same record, so wait for the server lookup first.
+    if (clientRecordId && !publicRecordLookupDone) {
+      return <div className="booking-answers-loading" style={{ minHeight: "100vh", display: "grid", placeItems: "center", fontWeight: 700 }}>Loading your booking…</div>;
+    }
     return (
       <>
 	        <ClientPreview
