@@ -9072,7 +9072,7 @@ function guessOldSiteLayoutGroupKey(area, venueName) {
 const oldSiteLayoutExists = (preset, layouts) => (layouts || []).some((layout) =>
   layout.oldSitePresetId === preset.presetId || (layout.name === preset.name && layout.image === preset.image));
 
-function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSelected }) {
+function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSelected, onRefreshRules }) {
   const Ic = window.Icons;
   const [groupKey, setGroupKey] = React.useState(() => guessOldSiteLayoutGroupKey(area, venueName));
   const [categoryFilter, setCategoryFilter] = React.useState("all");
@@ -9095,6 +9095,7 @@ function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSe
     setCategoryFilter("all");
     setSelectedIds([]);
   };
+  const importedCount = (existingLayouts || []).filter((layout) => layout.oldSitePresetId).length;
 
   return (
     <div className="rental-modal-backdrop" onClick={onClose}>
@@ -9129,7 +9130,11 @@ function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSe
                     : <span style={{ width: 72, height: 54, border: "1px dashed var(--line)", borderRadius: 4 }} />}
                   <span>
                     <b>{preset.name}</b>
-                    <span>{exists ? "Already added" : [preset.category, preset.description.join(", ")].filter(Boolean).join(" · ")}</span>
+                    <span>{exists ? "Already added" : [
+                      preset.category,
+                      preset.guestMin || preset.guestMax ? `shown for ${preset.guestMax ? `${preset.guestMin}–${preset.guestMax}` : `${preset.guestMin}+`} guests` : "",
+                      preset.description.join(", "),
+                    ].filter(Boolean).join(" · ")}</span>
                   </span>
                   <strong>{preset.capacityText || "-"}</strong>
                 </label>
@@ -9140,6 +9145,11 @@ function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSe
         </div>
         <div className="rental-modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
+          {importedCount > 0 && (
+            <button className="btn" onClick={onRefreshRules} title="Reset event types, guest range and seating on already-imported layouts to the old site's values">
+              Reset rules on {importedCount} imported
+            </button>
+          )}
           <button className="btn rental-add-btn" onClick={() => onAddSelected(selected)} disabled={selected.length === 0}>
             <Ic.Plus size={12} /> Add selected ({selected.length})
           </button>
@@ -9316,8 +9326,8 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
       id: "fl_" + uid(),
       name: preset.name,
       image: preset.image,
-      capacityMin: 0,
-      capacityMax: preset.recommendedFor,
+      capacityMin: preset.guestMin,
+      capacityMax: preset.guestMax,
       applicableEventTypes: [...preset.eventTypes],
       applicableSpaceReqs: [],
       recommendedFor: preset.recommendedFor,
@@ -9327,6 +9337,18 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
     }));
     if (imported.length === 0) return;
     setVL(vid, { layouts: [...getVL(vid).layouts, ...imported] });
+    setOldSiteLayoutArea(null);
+  };
+  const refreshOldSiteLayoutRules = (vid) => {
+    const presets = new Map(OLD_SITE_LAYOUT_GROUPS.flatMap((group) => group.layouts).map((preset) => [preset.presetId, preset]));
+    setVL(vid, {
+      layouts: getVL(vid).layouts.map((layout) => {
+        const preset = presets.get(layout.oldSitePresetId);
+        return preset
+          ? { ...layout, capacityMin: preset.guestMin, capacityMax: preset.guestMax, applicableEventTypes: [...preset.eventTypes], recommendedFor: preset.recommendedFor }
+          : layout;
+      }),
+    });
     setOldSiteLayoutArea(null);
   };
   const setFL = (vid, lid, patch) => setVL(vid, { layouts: getVL(vid).layouts.map((l) => (l.id === lid ? { ...l, ...patch } : l)) });
@@ -9460,6 +9482,7 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
 
         <div style={{ marginTop: 10 }}>
           <label className="lbl" style={{ textTransform: "uppercase", fontSize: 10, letterSpacing: ".05em" }}>Capacity Range (Guests)</label>
+          <div style={{ fontSize: 10.5, color: "var(--ink-4)", marginBottom: 4 }}>Clients only see this layout when their number of guests is in this range. Leave max at 0 for no upper limit.</div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input className="input" type="number" min={0} value={layout.capacityMin || 0} style={{ width: 80 }} onChange={(e) => setFL(venue.id, layout.id, { capacityMin: Number(e.target.value) })} />
             <span style={{ fontSize: 12, color: "var(--ink-3)" }}>to</span>
@@ -9471,6 +9494,7 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
         <div className="venue-grid-2" style={{ marginTop: 10 }}>
           <div>
             <label className="lbl" style={{ textTransform: "uppercase", fontSize: 10, letterSpacing: ".05em" }}>Applicable Event Types</label>
+            <div style={{ fontSize: 10.5, color: "var(--ink-4)", marginBottom: 4 }}>Only shown to clients with these event types. Leave empty to show for all.</div>
             <MultiSelectDropdown
               options={eventTypeOptions}
               selected={layout.applicableEventTypes || []}
@@ -9939,6 +9963,7 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
           existingLayouts={getVL(oldSiteLayoutArea.id).layouts}
           onClose={() => setOldSiteLayoutArea(null)}
           onAddSelected={(presets) => addOldSiteLayouts(oldSiteLayoutArea.id, presets)}
+          onRefreshRules={() => refreshOldSiteLayoutRules(oldSiteLayoutArea.id)}
         />
       )}
       {previewAsset && (
@@ -11077,6 +11102,14 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
 }
 
 
+// Event Type answers and layout event types may use short/long forms of the same label
+// ("Other - Business" vs "Other - Business and non-alcoholic events").
+function sameEventType(a, b) {
+  const x = String(a || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const y = String(b || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+}
+
 // ----- Layout Preview Body (for stepType === "layout" inside ClientPreview) -----
 function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommendations }) {
   const Ic = window.Icons;
@@ -11119,8 +11152,9 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     : [];
   const selectedSubSpacesByVenue = answers._venueSubSpaces || {};
 
-  // Get guest count from step 2 answers
+  // Get guest count and event type from step 2 answers
   let guestCount = 0;
+  let eventType = "";
   allSteps.forEach((s) => {
     if (s.stepType === "venue" || s.stepType === "layout") return;
     (s.fields || []).forEach((f) => {
@@ -11128,8 +11162,20 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
       if ((lab.includes("attendee") || lab.includes("number of guest") || lab.includes("number of attendees")) && answers[f.id]) {
         guestCount = parseInt(answers[f.id], 10) || 0;
       }
+      if ((lab.includes("event type") || lab.includes("type of event")) && typeof answers[f.id] === "string" && answers[f.id]) {
+        eventType = answers[f.id];
+      }
     });
   });
+  // Empty event types / a 0-0 capacity range mean "show for everyone"; a max of 0 means no upper limit.
+  const layoutFitsAnswers = (layout) => {
+    const types = layout.applicableEventTypes || [];
+    if (eventType && types.length > 0 && !types.some((type) => sameEventType(type, eventType))) return false;
+    const min = Number(layout.capacityMin || 0);
+    const max = Number(layout.capacityMax || 0);
+    if (guestCount && (guestCount < min || (max > 0 && guestCount > max))) return false;
+    return true;
+  };
 
   const layoutAreaOrder = Array.isArray(step.layoutAreaOrder) ? step.layoutAreaOrder : [];
   const layoutAreaOrderMap = new Map(layoutAreaOrder.map((id, index) => [id, index]));
@@ -11170,14 +11216,14 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
       const bOrder = layoutAreaOrderMap.has(b.id) ? layoutAreaOrderMap.get(b.id) : Number.MAX_SAFE_INTEGER;
       return aOrder === bOrder ? a._originalIndex - b._originalIndex : aOrder - bOrder;
     })
-    .map(({ _originalIndex, ...area }) => area);
+    .map(({ _originalIndex, ...area }) => ({ ...area, layouts: area.layouts.filter(layoutFitsAnswers) }));
 
   const toggleSpaceReq = (srId) => {
     setSelectedSpaceReqs((prev) => prev.includes(srId) ? prev.filter((x) => x !== srId) : [...prev, srId]);
   };
 
-  const selectLayout = (venueId, layoutId) => {
-    const next = { ...selectedLayouts, [venueId]: layoutId };
+  const selectLayout = (venueId, layoutId) => applySelectedLayouts({ ...selectedLayouts, [venueId]: layoutId });
+  const applySelectedLayouts = (next) => {
     onAnswer?.("_selectedLayouts", next);
     const byVenue = {};
     const aggregate = Object.entries(next).reduce((sum, [areaId, selectedLayoutId]) => {
@@ -11192,12 +11238,26 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     onLayoutRecommendations?.({ ...aggregate, __byVenue: byVenue });
   };
 
+  // A layout picked earlier can drop out when the client goes back and changes event type or guest count.
+  const hiddenSelectionAreaIds = venueAreas
+    .filter((area) => {
+      const chosenId = selectedLayouts[area.id];
+      return chosenId && chosenId !== "_other_" + area.id && !area.layouts.some((layout) => layout.id === chosenId);
+    })
+    .map((area) => area.id);
+  React.useEffect(() => {
+    if (!hiddenSelectionAreaIds.length) return;
+    const next = { ...selectedLayouts };
+    hiddenSelectionAreaIds.forEach((areaId) => { delete next[areaId]; });
+    applySelectedLayouts(next);
+  }, [hiddenSelectionAreaIds.join("|")]);
+
   const selectedLayoutSummary = venueAreas
     .map((area) => {
       const chosenId = selectedLayouts[area.id];
       const layout = area.layouts.find((l) => l.id === chosenId);
       if (!layout) return null;
-      const maxSeats = Number(layout.capacityMax || layout.recommendedFor || 0);
+      const maxSeats = Number(layout.recommendedFor || layout.capacityMax || 0);
       return {
         id: area.id,
         areaName: area.name.replace(/\s*\(sub-space of .*?\)\s*$/i, "").replace(/\s*\(.*?\)\s*$/i, ""),
@@ -11231,7 +11291,7 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
       {venueAreas.map((area) => {
         const chosenId = selectedLayouts[area.id] || null;
         const chosenLayout = area.layouts.find((l) => l.id === chosenId) || null;
-        const chosenMaxSeats = Number(chosenLayout?.capacityMax || chosenLayout?.recommendedFor || 0);
+        const chosenMaxSeats = Number(chosenLayout?.recommendedFor || chosenLayout?.capacityMax || 0);
 
         return (
           <div key={area.id} style={{ marginBottom: 32, borderTop: "2px solid var(--line)", paddingTop: 20 }}>
@@ -11246,6 +11306,11 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
                     <span>{layout.name}</span>
                   </label>
                 ))}
+                {area.layouts.length === 0 && (
+                  <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
+                    No suggested layouts match your event type and number of guests. Choose Others to describe your setup.
+                  </div>
+                )}
                 <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer", padding: "6px 0" }}>
                   <input type="radio" name={"layout_" + area.id} checked={chosenId === "_other_" + area.id} onChange={() => selectLayout(area.id, "_other_" + area.id)} style={{ accentColor: "var(--accent)", marginTop: 2 }} />
                   <span>Others</span>
