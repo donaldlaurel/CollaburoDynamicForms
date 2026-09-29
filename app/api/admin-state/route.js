@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
+import memory from "../../../lib/memory-store";
 
 // Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
 // bookings; every database route must opt out.
@@ -10,9 +11,6 @@ export const fetchCache = "force-no-store";
 const APP_STATE_KEY = "default";
 // Allow for timestamp serialization rounding between Postgres and ISO strings.
 const STALE_WRITE_TOLERANCE_MS = 2000;
-let memoryState = null;
-let memoryUpdatedAt = null;
-
 function database() {
   return process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 }
@@ -49,8 +47,8 @@ export async function GET(request) {
   const admin = isAdminRequest(request);
   const sql = database();
   if (!sql) {
-    const state = admin ? memoryState : sanitizeForPublic(memoryState);
-    return NextResponse.json({ ok: true, state, updatedAt: memoryUpdatedAt, source: "memory" });
+    const state = admin ? memory.state : sanitizeForPublic(memory.state);
+    return NextResponse.json({ ok: true, state, updatedAt: memory.updatedAt, source: "memory" });
   }
 
   const rows = await sql`
@@ -77,13 +75,13 @@ export async function PUT(request) {
 
   const sql = database();
   if (!sql) {
-    const currentMs = memoryUpdatedAt ? new Date(memoryUpdatedAt).getTime() || 0 : 0;
+    const currentMs = memory.updatedAt ? new Date(memory.updatedAt).getTime() || 0 : 0;
     if (baseMs !== null && currentMs > baseMs + STALE_WRITE_TOLERANCE_MS) {
-      return conflictResponse(memoryUpdatedAt);
+      return conflictResponse(memory.updatedAt);
     }
-    memoryState = state;
-    memoryUpdatedAt = new Date().toISOString();
-    return NextResponse.json({ ok: true, source: "memory", updatedAt: memoryUpdatedAt });
+    memory.state = state;
+    memory.updatedAt = new Date().toISOString();
+    return NextResponse.json({ ok: true, source: "memory", updatedAt: memory.updatedAt });
   }
 
   let rows;

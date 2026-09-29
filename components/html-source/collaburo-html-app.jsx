@@ -4004,10 +4004,23 @@ const TYPE_META = {
   rental_group:{ label: "Rental group", pillIcon: "Tag" },
   extras:      { label: "Extras",      pillIcon: "Dollar" },
   separator:   { label: "Separator",   pillIcon: "Minus" },
+  spacer:      { label: "Line space",  pillIcon: "Spacer" },
   instructional: { label: "Info text", pillIcon: "Info" },
 };
 
-const SIMPLE_FIELD_TYPES = ["text", "textarea", "email", "phone", "number", "date", "time", "file", "radio", "multiselect", "select", "toggle", "extras", "separator", "instructional"];
+const SIMPLE_FIELD_TYPES = ["text", "textarea", "email", "phone", "number", "date", "time", "file", "radio", "multiselect", "select", "toggle", "extras", "separator", "spacer", "instructional"];
+const SPACER_LINE_HEIGHT = 24;
+const SPACER_MAX_LINES = 10;
+
+function spacerLineCount(field) {
+  const lines = Math.round(Number(field?.spacerLines));
+  if (!Number.isFinite(lines) || lines < 1) return 1;
+  return Math.min(lines, SPACER_MAX_LINES);
+}
+
+function spacerHeight(field) {
+  return spacerLineCount(field) * SPACER_LINE_HEIGHT;
+}
 const SIMPLE_OPTION_FIELD_TYPES = ["radio", "multiselect", "select"];
 const SIMPLE_PLACEHOLDER_TYPES = ["text", "textarea", "email", "phone", "number", "select"];
 
@@ -4531,6 +4544,22 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
               <div style={{ borderTop: "2px solid var(--line)", margin: "8px 0 12px" }} />
               <div style={{ fontSize: 11, color: "var(--ink-4)" }}>This adds a visual divider line between sections in the client view. No configuration needed.</div>
             </div>
+          ) : field.type === "spacer" ? (
+            <div style={{ padding: "8px 0" }}>
+              <label className="lbl">Number of blank lines</label>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={SPACER_MAX_LINES}
+                step={1}
+                style={{ maxWidth: 120 }}
+                value={spacerLineCount(field)}
+                onChange={(e) => set({ spacerLines: spacerLineCount({ spacerLines: e.target.value }) })}
+              />
+              <div style={{ height: spacerHeight(field), margin: "10px 0", border: "1px dashed var(--line)", borderRadius: 4 }} />
+              <div style={{ fontSize: 11, color: "var(--ink-4)" }}>This adds blank space between sections in the client view.</div>
+            </div>
           ) : field.type === "dietary" ? (
             <DietaryEditor
               dietaryOptions={field.dietaryOptions || []}
@@ -4899,7 +4928,7 @@ const FIELD_RULE_OPERATORS = [
   { value: "in_group", label: "belongs to category", needsValue: true, groupedOnly: true },
 ];
 
-const FIELD_RULE_SOURCE_EXCLUDED_TYPES = new Set(["separator", "instructional"]);
+const FIELD_RULE_SOURCE_EXCLUDED_TYPES = new Set(["separator", "spacer", "instructional"]);
 
 // Venue, layout and checkout steps keep client answers in system answer keys rather than in
 // step.fields, so rules reference them through synthetic sources: { field, read(answers) }.
@@ -10066,6 +10095,9 @@ function PreviewField({ f }) {
   if (f.type === "separator") {
     return <div style={{ gridColumn: "1 / -1", borderTop: "1.5px solid var(--line)", margin: "12px 0" }} />;
   }
+  if (f.type === "spacer") {
+    return <div aria-hidden="true" style={{ gridColumn: "1 / -1", height: spacerHeight(f) }} />;
+  }
   if (f.type === "instructional") {
     return (
       <div style={{ gridColumn: "1 / -1" }}>
@@ -12400,7 +12432,10 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   };
   React.useEffect(() => {
     if (!publicMode) return;
-    const onActivity = () => touchClientActivity();
+    const onActivity = (event) => {
+      if (event.target?.closest?.(".cv-btn-next, .cv-save-edit-btn")) return;
+      touchClientActivity();
+    };
     window.addEventListener("click", onActivity);
     window.addEventListener("keydown", onActivity);
     return () => {
@@ -13214,7 +13249,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 
     list.forEach((owner) => {
       (owner.fields || []).forEach((field) => {
-        if (field.visibleToClient === false || ["separator", "instructional"].includes(field.type)) return;
+        if (field.visibleToClient === false || ["separator", "spacer", "instructional"].includes(field.type)) return;
         if (field.type !== "rental_group") {
           add(owner.name, field.label || "Untitled field", beforeAnswers[field.id], answers[field.id]);
           return;
@@ -13663,7 +13698,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                     {normalVisibleFields.length > 0 && (
                       <div className="cv-fields-grid" style={{ marginTop: 20 }}>
                         {normalVisibleFields.map((f) => {
-                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
+                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
                           const fieldError = fieldErrorFor(f.id);
                           return (
                             <div
@@ -13701,7 +13736,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                     {normalVisibleFields.length > 0 && (
                       <div className="cv-fields-grid" style={{ marginTop: 20 }}>
                         {normalVisibleFields.map((f) => {
-                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
+                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
                           const fieldError = fieldErrorFor(f.id);
                           return (
                             <div
@@ -13739,7 +13774,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                     {normalVisibleFields.length > 0 && (
                       <div className="cv-fields-grid" style={{ marginTop: 20 }}>
                         {normalVisibleFields.map((f) => {
-                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
+                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
                           const fieldError = fieldErrorFor(f.id);
                           return (
                             <div
@@ -13782,7 +13817,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 	                        {normalVisibleFields.length > 0 && (
 	                          <div className="cv-fields-grid">
 	                            {normalVisibleFields.map((f) => {
-	                              const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
+	                              const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
 	                              const fieldError = fieldErrorFor(f.id);
 	                              return (
 	                                <div
@@ -14689,7 +14724,7 @@ function buildNoticeValues({ steps = [], answers = {}, pricingRules = null, cost
     for (const step of steps || []) {
       for (const field of step.fields || []) {
         const label = String(field.label || "").toLowerCase();
-        if (["separator", "instructional"].includes(field.type) || !needles.some((needle) => label.includes(needle))) continue;
+        if (["separator", "spacer", "instructional"].includes(field.type) || !needles.some((needle) => label.includes(needle))) continue;
         const text = noticeAnswerText(answers[field.id]);
         if (text) return text;
       }
@@ -15058,6 +15093,9 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
   const pricesVisible = useClientPricingVisible();
   if (f.type === "separator") {
     return <div style={{ borderTop: "1.5px solid var(--line)", margin: "12px 0" }} />;
+  }
+  if (f.type === "spacer") {
+    return <div aria-hidden="true" style={{ height: spacerHeight(f) }} />;
   }
   if (f.type === "instructional") {
     return <InstructionalNotice field={f} />;
@@ -16804,6 +16842,7 @@ function saveHistoryList(list) {
 
 async function collaburoApi(path, options = {}) {
   const response = await fetch(path, {
+    cache: "no-store",
     ...options,
     headers: {
       "content-type": "application/json",
@@ -18871,6 +18910,7 @@ function BookingReadOnlyRichOptionDetails({ option, selection, guestCount = 0, d
 
 function BookingReadOnlyField({ field, value, previousValue, guestCount = 0 }) {
   if (field.type === "separator") return <div className="booking-readonly-separator" />;
+  if (field.type === "spacer") return <div aria-hidden="true" style={{ gridColumn: "1 / -1", height: spacerHeight(field) }} />;
   if (field.type === "instructional") return <div className="booking-readonly-instruction"><InstructionalNotice field={field} /></div>;
   const options = bookingFieldOptionRows(field);
   const gallery = (field.galleryImages || (field.galleryImage ? [field.galleryImage] : [])).filter(Boolean);
@@ -19285,7 +19325,7 @@ function bookingAuditFormChanges(before = {}, after = {}, steps = []) {
     costs: { spaceRentalTotal: "Space rental", spaceContentTotal: "Content rentals", cateringTotal: "Catering", setupTotal: "Set-up services", eventTotal: "Event services", cleanupTotal: "Clean-up services", subtotal: "Subtotal", total: "Total", securityDeposit: "Security deposit", totalWithDeposit: "Total with security deposit" },
   };
   ["client", "request", "costs"].forEach((section) => Object.entries(labels[section]).forEach(([key, label]) => add(section, label, before?.[section]?.[key], after?.[section]?.[key])));
-  const fields = (steps || []).flatMap((step) => step.fields || []).filter((field) => field.visibleToClient !== false && !["separator", "instructional", "rental_group"].includes(field.type));
+  const fields = (steps || []).flatMap((step) => step.fields || []).filter((field) => field.visibleToClient !== false && !["separator", "spacer", "instructional", "rental_group"].includes(field.type));
   fields.forEach((field) => add("Form answers", field.label || "Untitled field", before?.answers?.[field.id], after?.answers?.[field.id]));
   add("Form answers", "Selected space", before?.answers?._selectedVenueId || before?.answers?._selectedVenueIds, after?.answers?._selectedVenueId || after?.answers?._selectedVenueIds);
   return rows;
@@ -20380,7 +20420,13 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           }))
           .then((result) => {
             const saved = normalizeProgressRecord(result.record || mergedRecord);
-            setProgressRecords((records) => records.map((item) => String(item.id) === String(saved.id) ? saved : item));
+            if (result.updatedAt) lastDatabaseUpdatedAt = result.updatedAt;
+            const savedRecords = progressRecordsRef.current.map((item) => String(item.id) === String(saved.id) ? saved : item);
+            progressRecordsRef.current = savedRecords;
+            setProgressRecords(savedRecords);
+            try {
+              saveJsonSafely(PROGRESS_STORAGE_KEY, savedRecords);
+            } catch (_) {}
             pushToast({ kind: "success", title: "Admin changes saved", desc: result.changedFields?.length ? `Updated: ${result.changedFields.join(", ")}` : "No booking fields changed." });
             return saved;
           })
@@ -21060,6 +21106,7 @@ function defaultLabelFor(type) {
     radio: "Choose one",
     groupselect: "Choose one",
     separator: "Separator Line",
+    spacer: "Line Space",
     instructional: "Instructional text",
   }[type] || "Untitled field";
 }

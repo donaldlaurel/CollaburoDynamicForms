@@ -63,6 +63,7 @@ const IconUndo       = I(<><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0
 const IconRedo       = I(<><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/></>);
 const IconKey        = I(<><circle cx="8" cy="15" r="4"/><path d="m10.85 12.15 6.65-6.65L20 8l-3 3 1.5 1.5L17 14l-1.5-1.5L13 15"/></>);
 const IconMinus      = I(<path d="M5 12h14"/>);
+const IconSpacer     = I(<><path d="M4 4h16M4 20h16"/><path d="M12 8v8M9.5 10.5 12 8l2.5 2.5M9.5 13.5 12 16l2.5-2.5"/></>);
 const IconMail       = I(<><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></>);
 const IconPhone      = I(<path d="M22 16.92v2a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 3.08 4.18 2 2 0 0 1 5.06 2h2a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8.4 9.3a16 16 0 0 0 6.3 6.3l.84-.83a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z"/>);
 const IconTruck      = I(<><path d="M10 17H5a2 2 0 0 1-2-2V6h11v11"/><path d="M14 9h4l3 4v2a2 2 0 0 1-2 2h-1"/><path d="M14 17h-4"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="17.5" r="2.5"/></>);
@@ -81,6 +82,6 @@ window.Icons = {
   Img: IconImg, Type: IconType, Hash: IconHash, List: IconList, CheckSq: IconCheckSq,
   Toggle: IconToggle, Clock: IconClock, File: IconFile, Building: IconBuilding,
   Cards: IconCards, Branch: IconBranch, Close: IconClose, ArrUp: IconArrUp, ArrDn: IconArrDn,
-  Undo: IconUndo, Redo: IconRedo, Key: IconKey, Minus: IconMinus, Mail: IconMail, Phone: IconPhone, Truck: IconTruck,
+  Undo: IconUndo, Redo: IconRedo, Key: IconKey, Minus: IconMinus, Spacer: IconSpacer, Mail: IconMail, Phone: IconPhone, Truck: IconTruck,
   Shield: IconShield, Goblet: IconGoblet, Alert: IconAlert, CheckCircle: IconCheckCircle, External: IconExternal
 };
