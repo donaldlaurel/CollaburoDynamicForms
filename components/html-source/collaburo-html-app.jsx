@@ -12301,6 +12301,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const progressBarRef = React.useRef(null);
   const lastActivityPingRef = React.useRef(0);
   const loadedAnswersRef = React.useRef(answers);
+  const savedAnswersKeyRef = React.useRef(initialClientDraft?.recordId ? JSON.stringify(answers) : null);
   const ruleClearBaselineRef = React.useRef(null);
 
   const updateProgressScrollState = React.useCallback(() => {
@@ -12317,6 +12318,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     if ((!publicMode && !adminEditMode) || !initialDraft) return;
     const loadedAnswers = initialDraft.answers || {};
     loadedAnswersRef.current = loadedAnswers;
+    savedAnswersKeyRef.current = initialDraft.recordId ? JSON.stringify(loadedAnswers) : null;
     ruleClearBaselineRef.current = null;
     setStepIdx(Math.min(initialDraft.stepIdx || 0, Math.max(0, list.length - 1)));
     setAnswers(loadedAnswers);
@@ -12389,6 +12391,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     if (!publicMode) return;
     const onBeforeUnload = (event) => {
       if (!answerHasValue(answers)) return;
+      if (savedAnswersKeyRef.current === JSON.stringify(answers)) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -12746,6 +12749,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         if (cancelled || !data?.record) return;
         const draft = buildClientDraftFromProgressRecord(normalizeProgressRecord(data.record), list);
         if (!draft) return;
+        savedAnswersKeyRef.current = JSON.stringify(draft.answers || {});
         setAnswers(draft.answers || {});
         setVenueCost(draft.venueCost || null);
         setLayoutRecommendations(draft.layoutRecommendations || {});
@@ -13353,6 +13357,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     try {
       setSubmitState({ status: "submitting", message: "" });
       const savedRecord = await onSubmitRequest(payload);
+      savedAnswersKeyRef.current = JSON.stringify(payload.answers);
       const nextRecordId = savedRecord?.id || payload.recordId;
       const nextBookingCode = savedRecord ? bookingCodeForRecord(savedRecord) : bookingCodeFromId(nextRecordId);
       if (nextRecordId) {
@@ -13378,7 +13383,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     if (!confirmAdminAnswerRemovals()) return;
     try {
       setSubmitState({ status: "submitting", message: "" });
-      await onSubmitRequest(editSubmitPayload());
+      const payload = editSubmitPayload();
+      await onSubmitRequest(payload);
+      savedAnswersKeyRef.current = JSON.stringify(payload.answers);
       setSubmitState({ status: "success", message: "Your changes were saved successfully." });
       setClientNotice({ kind: "success", title: "Changes saved", message: "Your booking updates were saved." });
     } catch (error) {
