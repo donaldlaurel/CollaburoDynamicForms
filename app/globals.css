@@ -947,7 +947,7 @@ a { color: inherit; text-decoration: none; }
 .booking-answer-check.checked{background:#f27035;border-color:#f27035}
 .booking-readonly-boolean{display:flex;gap:10px;align-items:flex-start;padding:5px 0;color:#454d56;font-size:14px;line-height:1.4}.booking-readonly-boolean strong{display:block;color:#20252b;font-size:16px}.booking-readonly-boolean span:not(.booking-answer-check){display:block;color:#707a84;font-size:12px;margin-top:2px}
 .booking-readonly-options{display:grid;gap:7px}.booking-readonly-option{display:flex;gap:10px;align-items:flex-start;border:1px solid #d8dde3;border-radius:5px;padding:8px 10px;background:#fff;color:#69737d;font-size:13px;line-height:1.35}.booking-readonly-option.selected{border-color:#efb18d;background:#fff7f2;color:#20252b}.booking-readonly-option img{width:44px;height:34px;object-fit:cover;border-radius:3px}.booking-readonly-option strong,.booking-readonly-option small{display:block}.booking-readonly-option small{margin-top:2px;color:#707a84;font-size:12px}.booking-readonly-choice{width:18px;height:18px;border:1px solid #cbd1d8;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:#fff;font-size:12px}.booking-readonly-choice.selected{background:#f27035;border-color:#f27035}
-.booking-readonly-gallery{display:flex;gap:8px;flex-wrap:wrap}.booking-readonly-gallery img{width:108px;height:76px;object-fit:cover;border:1px solid #d8dde3;border-radius:4px}.booking-readonly-files{display:flex;flex-wrap:wrap;gap:8px}.booking-readonly-files a,.booking-readonly-files span{border:1px solid #d8dde3;border-radius:4px;padding:8px 10px;background:#f7f8fa;color:#252a30;font-size:13px}.booking-readonly-files a{color:#a64b1d;text-decoration:underline}.booking-readonly-separator{grid-column:1/-1;border-top:1px solid #d9dfe5;margin:4px 0}.booking-readonly-instruction{grid-column:1/-1;color:#4e5760;font-size:13px;line-height:1.5}.booking-readonly-instruction strong,.booking-readonly-instruction span{display:block}.booking-readonly-instruction span{color:#707a84;margin-top:3px}
+.booking-readonly-gallery{display:flex;gap:8px;flex-wrap:wrap}.booking-readonly-gallery img{width:108px;height:76px;object-fit:cover;border:1px solid #d8dde3;border-radius:4px}.booking-readonly-files{display:flex;flex-wrap:wrap;gap:8px}.booking-readonly-files a,.booking-readonly-files span{border:1px solid #d8dde3;border-radius:4px;padding:8px 10px;background:#f7f8fa;color:#252a30;font-size:13px}.booking-readonly-files a{color:#a64b1d;text-decoration:underline}.booking-readonly-separator{grid-column:1/-1;border-top:1px solid #d9dfe5;margin:4px 0}.booking-readonly-instruction{grid-column:1/-1;color:#4e5760;font-size:13px;line-height:1.5}
 .booking-readonly-venues{display:grid;gap:12px}.booking-readonly-venue{display:grid;grid-template-columns:minmax(0,230px) 1fr;border:1px solid #d8dde3;border-radius:6px;overflow:hidden;background:#fff}.booking-readonly-venue>img{width:100%;height:160px;object-fit:cover}.booking-readonly-venue>div{padding:14px}.booking-readonly-venue h3,.booking-readonly-rental-group h3{margin:0 0 6px;font-size:16px}.booking-readonly-venue p,.booking-readonly-rental-group p{margin:0;color:#66707a;font-size:13px;line-height:1.5}.booking-readonly-venue-meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;color:#3f4851;font-size:12px;font-weight:650}.booking-readonly-empty{padding:10px 12px;border:1px dashed #ccd3da;border-radius:5px;color:#77818b;font-size:13px}
 .booking-readonly-rental-group{margin-top:18px}.booking-readonly-rental-group>p{margin-bottom:10px}.booking-readonly-rental-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}.booking-readonly-rental-card{position:relative;min-height:74px;display:grid;grid-template-columns:76px minmax(0,1fr);border:1px solid #d8dde3;border-radius:6px;overflow:hidden;background:#fff}.booking-readonly-rental-card.selected{border-color:#ef9d70;box-shadow:0 0 0 2px rgba(242,112,53,.12)}.booking-rental-card-check{position:absolute;top:8px;left:8px;z-index:1;width:20px;height:20px;border:1px solid #c5ccd3;border-radius:4px;background:#fff;display:grid;place-items:center;color:#fff;font-size:13px;font-weight:900}.booking-rental-card-check.selected{background:#f27035;border-color:#f27035}.booking-readonly-rental-card>img,.booking-readonly-rental-image{display:block;width:76px;height:74px;object-fit:cover;background:#eef1f4}.booking-readonly-rental-image{display:grid;place-items:center;padding:8px;text-align:center;color:#67717b;font-size:11px}.booking-readonly-rental-card>div{align-self:center;padding:9px 10px;min-width:0}.booking-readonly-rental-card strong{font-size:13px;overflow-wrap:anywhere}.booking-readonly-rental-card p{margin:4px 0 0;font-size:11.5px}.booking-rental-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;align-items:start}.booking-rental-detail-card{align-self:start;border:1px solid #d8dde3;border-radius:6px;background:#fff;overflow:hidden}.booking-rental-detail-card h4{margin:0;padding:9px 11px;background:#f4f6f8;border-bottom:1px solid #d8dde3;font-size:13px}.booking-rental-detail{display:grid;gap:10px;padding:11px}.booking-rental-control,.booking-rental-control-group{display:grid;gap:5px}.booking-rental-control label,.booking-rental-control-group>label{font-size:12px;font-weight:800;color:#303841}.booking-rental-select{min-height:36px;border:1px solid #cbd1d8;border-radius:5px;background:#eef1f4;padding:8px 10px;font-size:13px;color:#252a30}.booking-rental-inline-control{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:10px;align-items:center;padding:5px 0;font-size:12px}.booking-rental-radio{display:flex;align-items:center;gap:8px;padding:5px 0;color:#69737d;font-size:13px}.booking-rental-radio.selected{color:#20252b;font-weight:700}
 .booking-readonly-rental-group{border:1px solid #d8dde3;border-radius:7px;overflow:hidden;background:#fff}.booking-readonly-rental-group>h3{margin:0;padding:11px 14px;border-bottom:1px solid #d8dde3;background:#f6f7f9}.booking-readonly-rental-group>p{padding:10px 14px 0}.booking-readonly-rental-grid{grid-template-columns:1fr;gap:8px;padding:12px}.booking-readonly-rental-card{display:block;min-height:0}.booking-rental-row-summary{display:grid;grid-template-columns:22px 58px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 12px}.booking-rental-card-check{position:static;width:20px;height:20px}.booking-rental-row-summary>img,.booking-rental-row-summary>.booking-readonly-rental-image{width:58px;height:50px;border-radius:4px;object-fit:cover}.booking-rental-row-summary>.booking-readonly-rental-image{padding:5px;font-size:10px}.booking-rental-row-summary>div{padding:0;align-self:center}.booking-rental-row-summary strong{display:block;font-size:14px}.booking-rental-row-summary p{margin:3px 0 0;color:#6d7781}.booking-rental-card-price{color:#303841;font-size:13px;font-weight:650;white-space:nowrap}.booking-readonly-rental-card>.booking-rental-detail{border-top:1px solid #d8dde3;margin:0 12px;padding:12px}.booking-rental-detail-grid,.booking-rental-detail-card{display:none}
@@ -3020,3 +3020,53 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
   .cv-progress-bar{justify-content:flex-start;gap:2px;padding:0 24px;scroll-padding-inline:24px}
   .cv-progress-line{width:16px}
 }
+
+/* Info-text notices */
+.cv-notice{--notice-bg:#f7f7f5;--notice-border:#d9d9d3;--notice-title:#6b6b63;--notice-link:#ee690c;background:var(--notice-bg);border:1px solid var(--notice-border);border-radius:5px;padding:12px 16px;color:#2b2b2b;font-size:14px;line-height:1.5}
+.cv-notice-title{display:flex;align-items:flex-start;gap:8px;color:var(--notice-title);font-weight:700;font-size:14.5px;letter-spacing:.02em}
+.cv-notice-title+.cv-notice-body{margin-top:6px}
+.cv-notice-icon{flex:0 0 auto;margin-top:2px}
+.cv-notice-title-text{min-width:0}
+.cv-notice-title-text p{margin:0}
+.cv-notice-body p{margin:0 0 6px}
+.cv-notice-body p:last-child{margin-bottom:0}
+.cv-notice-body ul{margin:8px 0 0;padding-left:20px}
+.cv-notice-body ul:not(:last-child){margin-bottom:6px}
+.cv-notice-body li{margin:3px 0}
+.cv-notice-body li::marker{color:#555}
+.cv-notice a{color:var(--notice-link);text-decoration:underline;text-underline-offset:2px;word-break:break-word}
+.cv-notice-link-icon{display:inline-block;vertical-align:-2px;margin-left:4px}
+.cv-notice-big{font-size:1.2em;font-weight:800;color:#111}
+.cv-notice-muted{font-size:.8em;color:#8a8f96}
+.cv-notice-more{margin-top:6px}
+.cv-notice-toggle{display:block;border:0;background:none;padding:0;margin-top:10px;color:var(--notice-link);font:inherit;font-size:14px;cursor:pointer}
+.cv-notice-toggle:hover{text-decoration:underline}
+.cv-notice-info{--notice-bg:#f1fbfe;--notice-border:#739fce;--notice-title:#7188a6;--notice-link:#2f6db5}
+.cv-notice-warning{--notice-bg:#fffce8;--notice-border:#e8d46e;--notice-title:#8a8a62;--notice-link:#ee690c}
+.cv-notice-success{--notice-bg:#f0faf2;--notice-border:#9ccba6;--notice-title:#3f7a4c;--notice-link:#2e7d3e}
+.cv-notice-danger{--notice-bg:#fff4f2;--notice-border:#e4a094;--notice-title:#a2493b;--notice-link:#c4432f}
+.cv-notice-plain{background:transparent;border:0;border-radius:0;padding:6px 0;font-size:13px;line-height:1.6}
+.cv-notice-plain .cv-notice-title{color:var(--ink);font-weight:400;font-size:13px;letter-spacing:0}
+.cv-notice-plain .cv-notice-body{font-size:11.5px;color:var(--ink-3);line-height:1.5}
+.cv-notice-plain .cv-notice-title+.cv-notice-body{margin-top:4px}
+.cv-notice-plain .cv-notice-toggle{font-size:12px}
+
+.notice-editor-presets{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+.notice-editor-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0 6px}
+.notice-editor-toolbar .btn{display:inline-flex;align-items:center;gap:4px}
+.notice-editor-variable{width:auto;min-width:220px;margin-left:auto}
+.notice-editor-help-toggle{border:0;background:none;padding:0;margin-top:8px;color:var(--accent);font:inherit;font-size:12px;cursor:pointer}
+.notice-editor-help{display:grid;gap:6px;margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2,#f7f7f7);font-size:12px;color:var(--ink-3);line-height:1.5}
+.notice-editor-help code{font-size:11.5px;background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--ink)}
+.notice-editor-preview{margin-top:14px;display:grid;gap:6px}
+
+.insurance-rate-group{border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--surface-2,#f7f7f7)}
+.insurance-type-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px}
+.insurance-type-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px;cursor:pointer;color:var(--ink)}
+.insurance-type-chip input{margin:0}
+.insurance-type-chip.on{border-color:var(--accent);background:#fff6ef}
+.insurance-type-chip.taken{color:var(--ink-3);opacity:.7}
+.insurance-rate-grid{display:grid;gap:8px 10px;align-items:start}
+.insurance-tier-label{padding-top:8px;font-weight:700;font-size:13px}
+.insurance-rate-hint{font-size:11px;color:var(--ink-3);margin-top:3px}
+.insurance-token{font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

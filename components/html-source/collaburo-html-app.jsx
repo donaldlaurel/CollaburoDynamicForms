@@ -39,6 +39,24 @@ const SAMPLE_PRICING_RULES = {
     { id: "dep_main_semiprivate_social_no", venueId: "v1", venueName: "Main Hall", eventPrivacy: "Semi-private", eventType: "Social Event without dancing / Banquet", alcoholOnSite: "No", amount: 500, active: true },
     { id: "dep_main_public_all_no", venueId: "v1", venueName: "Main Hall", eventPrivacy: "Public", eventType: "All", alcoholOnSite: "No", amount: 1000, active: true },
   ],
+  // Rate cells are keyed "<attendee tier index>_<yes|no alcohol>"; a cell holds a base price,
+  // 0 (included at no charge), "uninsurable", or blank (not quoted).
+  eventInsurance: {
+    enabled: true,
+    taxLabel: "GST",
+    taxRate: 8,
+    attendeeLimits: [30, 175],
+    groups: [
+      { id: "ins_wedding_tier", name: "Weddings, parties & ceremonies", eventTypes: ["Social Event with dancing / Party", "Ceremony / Graduation", "Wedding & Reception"], rates: { "0_no": 13.75, "0_yes": 109.75, "1_no": 20.63, "1_yes": 144.63, "2_no": 41.25, "2_yes": 189.25 } },
+      { id: "ins_standard_social", name: "Standard social events", eventTypes: ["Other - Social", "Social Event without dancing / Banquet", "Memorial / End of Life Celebration", "Lecture / Theater / Movie", "Reception / Cocktail Party"], rates: { "0_no": 9.75, "0_yes": 105.75, "1_no": 14.63, "1_yes": 138.63, "2_no": 29.25, "2_yes": 177.25 } },
+      { id: "ins_business", name: "Business events", eventTypes: ["Business / Board Meeting", "Conference", "Workshop / Training"], rates: { "0_no": 0, "0_yes": 103.5, "1_no": 0, "1_yes": 135.25, "2_no": 0, "2_yes": 170.5 } },
+      { id: "ins_other_business", name: "Other business, festivals & markets", eventTypes: ["Other - Business", "Festival / Market / Show"], rates: { "0_no": 0, "0_yes": 105.75, "1_no": 0, "1_yes": 138.63, "2_no": 0, "2_yes": 177.25 } },
+    ],
+  },
+  noticeVariables: [
+    { id: "nv_agco_serving", key: "AGCO_Fee_Serving", label: "AGCO permit fee — providing alcohol / BYOB", value: 50 },
+    { id: "nv_agco_selling", key: "AGCO_Fee_Selling", label: "AGCO permit fee — selling alcohol", value: 150 },
+  ],
   discountSettings: {
     maxCombinedDiscount: { enabled: false, valueType: "percentage", amount: 0 },
   },
@@ -4520,18 +4538,7 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
             />
           ) : field.type === "instructional" ? (
             <div>
-              <div className="field-grid one">
-                <div>
-                  <label className="lbl">Display Text</label>
-                  <textarea className="textarea" rows={3} value={field.label || ""} placeholder="Enter the instructional text to display to clients..." onChange={(e) => set({ label: e.target.value })} />
-                </div>
-              </div>
-              <div className="field-grid one" style={{ marginTop: 8 }}>
-                <div>
-                  <label className="lbl">Description <span className="hint">optional secondary text</span></label>
-                  <textarea className="textarea" rows={2} value={field.fieldDescription || ""} placeholder="Additional detail or context..." onChange={(e) => set({ fieldDescription: e.target.value })} />
-                </div>
-              </div>
+              <InstructionalNoticeEditor field={field} onChange={set} />
               <div className="adv" style={{ marginTop: 12 }}>
                 <div className="adv-head" onClick={() => setAdvOpen((o) => !o)}>
                   <span>Advanced settings</span>
@@ -10061,9 +10068,8 @@ function PreviewField({ f }) {
   }
   if (f.type === "instructional") {
     return (
-      <div style={{ gridColumn: "1 / -1", padding: "8px 0" }}>
-        <p style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.6, margin: 0 }}>{f.label}</p>
-        {f.fieldDescription && <p style={{ fontSize: 11.5, color: "var(--ink-3)", margin: "4px 0 0", lineHeight: 1.5 }}>{f.fieldDescription}</p>}
+      <div style={{ gridColumn: "1 / -1" }}>
+        <InstructionalNotice field={f} />
       </div>
     );
   }
@@ -13073,6 +13079,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     };
   };
   const checkoutCostData = buildCostSummaryData();
+  const noticeValues = buildNoticeValues({ steps: list, answers, pricingRules, costData: checkoutCostData });
   const autoDeliveryKey = JSON.stringify((checkoutCostData.deliveryLines || []).map((line) => [line.id, line.label, line.total]));
   React.useEffect(() => {
     const deliveryLines = checkoutCostData.deliveryLines || [];
@@ -13567,6 +13574,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 
   return (
     <ClientPricingVisibilityContext.Provider value={{ pricesVisible }}>
+    <NoticeValuesContext.Provider value={noticeValues}>
     <div className="cv-overlay" data-screen-label="Client Preview">
       {/* Close button */}
       {!publicMode && !adminEditMode && (
@@ -13948,6 +13956,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         )}
       </div>
       </div>
+    </NoticeValuesContext.Provider>
     </ClientPricingVisibilityContext.Provider>
   );
 }
@@ -14473,6 +14482,577 @@ function CVTimeInput({ f, value, onChange, labelEl }) {
   );
 }
 
+// ----- Info-text notices (styled callouts with admin-editable text, variables and formulas) -----
+const NOTICE_TONES = [
+  { value: "plain", label: "Plain text", icon: "none" },
+  { value: "info", label: "Blue — information", icon: "Shield" },
+  { value: "warning", label: "Yellow — requirement", icon: "Goblet" },
+  { value: "success", label: "Green — good to know", icon: "CheckCircle" },
+  { value: "danger", label: "Red — important", icon: "Alert" },
+  { value: "neutral", label: "Grey — note", icon: "Info" },
+];
+
+const NOTICE_ICON_OPTIONS = [
+  { value: "auto", label: "Default for style" },
+  { value: "none", label: "No icon" },
+  { value: "Info", label: "Info" },
+  { value: "Shield", label: "Shield (insurance)" },
+  { value: "Goblet", label: "Glass (alcohol)" },
+  { value: "Alert", label: "Warning" },
+  { value: "CheckCircle", label: "Check" },
+  { value: "Key", label: "Key" },
+  { value: "File", label: "Document" },
+  { value: "Dollar", label: "Money" },
+];
+
+const NOTICE_BUILTIN_TOKENS = [
+  ["Insurance_Estimate", "Insurance estimate, e.g. $144.63 ($156.20 with GST)"],
+  ["Insurance_Price", "Insurance price before tax"],
+  ["Insurance_Tax", "Insurance tax amount"],
+  ["Insurance_Price_With_Tax", "Insurance price including tax"],
+  ["Insurance_Tax_Label", "Insurance tax name, e.g. GST"],
+  ["Insurance_Tax_Rate", "Insurance tax rate, e.g. 8%"],
+  ["Event_Type", "Event type answer"],
+  ["Event_Privacy", "Event privacy answer"],
+  ["Alcohol_On_Site", "Alcohol on site answer"],
+  ["Attendees", "Expected number of attendees"],
+  ["Subtotal", "Booking subtotal"],
+  ["Tax", "Booking tax"],
+  ["Total", "Booking total"],
+  ["Security_Deposit", "Security deposit"],
+];
+
+const NoticeValuesContext = React.createContext(null);
+
+function noticeVariableKey(value) {
+  return String(value || "").replace(/[^A-Za-z0-9_]/g, "_");
+}
+
+function normalizeEventInsurance(value) {
+  const fallback = SAMPLE_PRICING_RULES.eventInsurance;
+  const source = value && typeof value === "object" ? value : fallback;
+  const limits = (Array.isArray(source.attendeeLimits) ? source.attendeeLimits : fallback.attendeeLimits)
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b);
+  return {
+    enabled: source.enabled !== false,
+    taxLabel: source.taxLabel ?? fallback.taxLabel,
+    taxRate: Number(source.taxRate ?? fallback.taxRate) || 0,
+    attendeeLimits: Array.from(new Set(limits)),
+    groups: (Array.isArray(source.groups) ? source.groups : []).map((group) => ({
+      id: group.id || uid("ins"),
+      name: group.name || "Rate group",
+      eventTypes: Array.isArray(group.eventTypes) ? group.eventTypes.filter(Boolean) : [],
+      rates: group.rates && typeof group.rates === "object" ? { ...group.rates } : {},
+    })),
+  };
+}
+
+function eventInsuranceTierLabels(limits = []) {
+  const labels = [];
+  let from = 1;
+  limits.forEach((limit) => {
+    labels.push(from === limit ? String(limit) : `${from}–${limit}`);
+    from = limit + 1;
+  });
+  labels.push(`${from}+`);
+  return labels;
+}
+
+function parseInsuranceRateCell(cell) {
+  if (cell === "" || cell == null) return { status: "unknown" };
+  if (/^\s*un/i.test(String(cell))) return { status: "uninsurable" };
+  const base = Number(cell);
+  if (!Number.isFinite(base) || base < 0) return { status: "unknown" };
+  return { status: base === 0 ? "zero" : "ok", base };
+}
+
+function lookupEventInsurance(insurance, { eventType, attendees, alcoholOnSite }) {
+  const unknown = { status: "unknown", base: null, tax: null, total: null };
+  if (!insurance || insurance.enabled === false) return unknown;
+  const count = Number(attendees);
+  const alcoholKey = /^\s*y/i.test(alcoholOnSite || "") ? "yes" : /^\s*n/i.test(alcoholOnSite || "") ? "no" : "";
+  if (!eventType || !alcoholKey || !(count >= 1)) return unknown;
+  const group = (insurance.groups || []).find((item) => (item.eventTypes || []).some((type) => sameEventType(type, eventType)));
+  if (!group) return unknown;
+  const limits = insurance.attendeeLimits || [];
+  const tierIndex = limits.findIndex((limit) => count <= Number(limit));
+  const cell = parseInsuranceRateCell(group.rates?.[`${tierIndex === -1 ? limits.length : tierIndex}_${alcoholKey}`]);
+  if (cell.status === "uninsurable") return { ...unknown, status: "uninsurable" };
+  if (cell.status === "unknown") return unknown;
+  const tax = Math.round(cell.base * Number(insurance.taxRate || 0)) / 100;
+  return { status: cell.status, base: cell.base, tax, total: Math.round((cell.base + tax) * 100) / 100 };
+}
+
+function formatNoticeMoney(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  const whole = Math.abs(n - Math.round(n)) < 0.005;
+  return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 });
+}
+
+function formatNoticeNumber(value, format = "money") {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  if (format === "number") return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (format === "percent") return n.toLocaleString("en-US", { maximumFractionDigits: 2 }) + "%";
+  return formatNoticeMoney(n);
+}
+
+// Supports numbers, variables, + - * / ( ) and min/max/round/ceil/floor/abs. Returns NaN when invalid.
+function evaluateNoticeFormula(expression, numbers = {}) {
+  const src = String(expression || "");
+  const lookup = Object.fromEntries(Object.entries(numbers).map(([key, value]) => [key.toLowerCase(), value]));
+  const fns = {
+    min: Math.min,
+    max: Math.max,
+    round: (v, digits = 0) => Math.round(v * 10 ** digits) / 10 ** digits,
+    ceil: Math.ceil,
+    floor: Math.floor,
+    abs: Math.abs,
+  };
+  let pos = 0;
+  const peek = () => {
+    while (pos < src.length && /\s/.test(src[pos])) pos += 1;
+    return src[pos];
+  };
+  const expect = (ch) => {
+    if (peek() !== ch) throw new Error("Expected " + ch);
+    pos += 1;
+  };
+  let expr;
+  const primary = () => {
+    const ch = peek();
+    if (ch === "(") { pos += 1; const v = expr(); expect(")"); return v; }
+    if (ch === "-") { pos += 1; return -primary(); }
+    if (ch === "+") { pos += 1; return primary(); }
+    const rest = src.slice(pos);
+    const num = /^(\d+(\.\d+)?|\.\d+)/.exec(rest);
+    if (num) { pos += num[0].length; return Number(num[0]); }
+    const id = /^[A-Za-z_][A-Za-z0-9_]*/.exec(rest);
+    if (!id) throw new Error("Unexpected token");
+    pos += id[0].length;
+    if (peek() === "(") {
+      const fn = fns[id[0].toLowerCase()];
+      if (!fn) throw new Error("Unknown function");
+      pos += 1;
+      const args = [];
+      if (peek() !== ")") {
+        args.push(expr());
+        while (peek() === ",") { pos += 1; args.push(expr()); }
+      }
+      expect(")");
+      return fn(...args);
+    }
+    const value = lookup[id[0].toLowerCase()];
+    return value == null ? NaN : Number(value);
+  };
+  const term = () => {
+    let v = primary();
+    for (;;) {
+      const ch = peek();
+      if (ch !== "*" && ch !== "/") return v;
+      pos += 1;
+      const r = primary();
+      v = ch === "*" ? v * r : v / r;
+    }
+  };
+  expr = () => {
+    let v = term();
+    for (;;) {
+      const ch = peek();
+      if (ch !== "+" && ch !== "-") return v;
+      pos += 1;
+      const r = term();
+      v = ch === "+" ? v + r : v - r;
+    }
+  };
+  try {
+    const value = expr();
+    return peek() === undefined ? value : NaN;
+  } catch (error) {
+    return NaN;
+  }
+}
+
+function noticeAnswerText(value) {
+  if (value == null || value === false) return "";
+  if (value === true) return "Yes";
+  if (Array.isArray(value)) return value.map(noticeAnswerText).filter(Boolean).join(", ");
+  if (typeof value === "object") return noticeAnswerText(value.__selected ?? value.main ?? value.label ?? "");
+  return String(value).split("|")[0].trim();
+}
+
+function buildNoticeValues({ steps = [], answers = {}, pricingRules = null, costData = null } = {}) {
+  const findAnswer = (needles) => {
+    for (const step of steps || []) {
+      for (const field of step.fields || []) {
+        const label = String(field.label || "").toLowerCase();
+        if (["separator", "instructional"].includes(field.type) || !needles.some((needle) => label.includes(needle))) continue;
+        const text = noticeAnswerText(answers[field.id]);
+        if (text) return text;
+      }
+    }
+    return "";
+  };
+  const pricing = normalizePricingRules(pricingRules || window.SAMPLE_PRICING_RULES);
+  const insurance = pricing.eventInsurance;
+  const eventType = findAnswer(["event type", "type of event"]);
+  const eventPrivacy = findAnswer(["event privacy", "privacy"]);
+  const alcoholOnSite = findAnswer(["alcohol"]);
+  const attendees = window.findGuestCount ? Number(window.findGuestCount(steps, answers) || 0) : 0;
+  const quote = lookupEventInsurance(insurance, { eventType, attendees, alcoholOnSite });
+  const taxLabel = insurance.taxLabel || "tax";
+  const numbers = {
+    Insurance_Price: quote.base,
+    Insurance_Tax: quote.tax,
+    Insurance_Price_With_Tax: quote.total,
+    Insurance_Tax_Rate: insurance.taxRate,
+    Attendees: attendees || null,
+    Subtotal: costData ? Number(costData.discountedSubtotal ?? costData.subtotal ?? 0) : null,
+    Tax: costData ? Number(costData.tax || 0) : null,
+    Total: costData ? Number(costData.total || 0) : null,
+    Security_Deposit: costData ? Number(costData.securityDeposit || 0) : null,
+  };
+  (pricing.noticeVariables || []).forEach((variable) => {
+    if (variable.key) numbers[variable.key] = Number(variable.value || 0);
+  });
+  const moneyOrDash = (value) => (value == null ? "—" : formatNoticeMoney(value));
+  const insuranceEstimate = quote.status === "uninsurable"
+    ? "[big]Un-insurable[/big]"
+    : quote.status === "unknown"
+    ? "[big]—[/big]"
+    : quote.status === "zero"
+    ? "[big]$0[/big] [muted](no charge)[/muted]"
+    : `[big]${formatNoticeMoney(quote.base)}[/big] [muted](${formatNoticeMoney(quote.total)} with ${taxLabel})[/muted]`;
+  const tokens = {
+    ...Object.fromEntries(Object.entries(numbers).map(([key, value]) => [key, moneyOrDash(value)])),
+    Insurance_Price: quote.status === "uninsurable" ? "Un-insurable" : moneyOrDash(quote.base),
+    Insurance_Estimate: insuranceEstimate,
+    Insurance_Tax_Label: taxLabel,
+    Insurance_Tax_Rate: formatNoticeNumber(insurance.taxRate, "percent"),
+    Attendees: attendees ? String(attendees) : "—",
+    Event_Type: eventType || "—",
+    Event_Privacy: eventPrivacy || "—",
+    Alcohol_On_Site: alcoholOnSite || "—",
+  };
+  return { tokens, numbers, insurance: quote };
+}
+
+// Values shown in the workflow builder, where no client answers exist yet.
+function sampleNoticeValues(pricingRules) {
+  const rules = pricingRules || window.__collaburoPricingRules || window.SAMPLE_PRICING_RULES;
+  const steps = [{ fields: [
+    { id: "type", label: "Event Type" },
+    { id: "privacy", label: "Event Privacy" },
+    { id: "alcohol", label: "Alcohol on Site" },
+    { id: "guests", label: "Expected Number of Attendees" },
+  ] }];
+  return buildNoticeValues({
+    steps,
+    answers: { type: "Wedding & Reception", privacy: "Private", alcohol: "Yes", guests: 50 },
+    pricingRules: rules,
+  });
+}
+
+function applyNoticeTokens(text, values) {
+  if (!text) return "";
+  const tokens = values?.tokens || {};
+  const lowerTokens = Object.fromEntries(Object.entries(tokens).map(([key, value]) => [key.toLowerCase(), value]));
+  return String(text).replace(/\{\{\s*(=?)\s*([^{}]*?)\s*\}\}/g, (match, isFormula, body) => {
+    if (isFormula) {
+      const [expression, format] = body.split("|");
+      return formatNoticeNumber(evaluateNoticeFormula(expression, values?.numbers || {}), String(format || "money").trim().toLowerCase());
+    }
+    const value = lowerTokens[body.toLowerCase()];
+    return value == null ? match : value;
+  });
+}
+
+const NOTICE_INLINE_PATTERN = /(\*\*([\s\S]+?)\*\*|\[big\]([\s\S]+?)\[\/big\]|\[muted\]([\s\S]+?)\[\/muted\]|\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:|tel:)[^)\s]+)\)|(?:https?:\/\/|www\.)[^\s<]+)/gi;
+
+function renderNoticeInline(text, keyPrefix = "n") {
+  const Ic = window.Icons;
+  const source = String(text || "");
+  const nodes = [];
+  let last = 0;
+  let index = 0;
+  const pattern = new RegExp(NOTICE_INLINE_PATTERN.source, "gi");
+  let match;
+  while ((match = pattern.exec(source))) {
+    const key = `${keyPrefix}-${index++}`;
+    let raw = match[0];
+    let trailing = "";
+    if (match[2] !== undefined) {
+      nodes.push(source.slice(last, match.index), <strong key={key}>{renderNoticeInline(match[2], key)}</strong>);
+    } else if (match[3] !== undefined) {
+      nodes.push(source.slice(last, match.index), <span key={key} className="cv-notice-big">{renderNoticeInline(match[3], key)}</span>);
+    } else if (match[4] !== undefined) {
+      nodes.push(source.slice(last, match.index), <span key={key} className="cv-notice-muted">{renderNoticeInline(match[4], key)}</span>);
+    } else {
+      const isMarkdownLink = match[5] !== undefined;
+      if (!isMarkdownLink) {
+        const trimmed = /[.,;:!?)]+$/.exec(raw);
+        if (trimmed) {
+          trailing = trimmed[0];
+          raw = raw.slice(0, -trailing.length);
+        }
+      }
+      const label = isMarkdownLink ? match[5] : raw;
+      const href = isMarkdownLink ? match[6] : (/^www\./i.test(raw) ? "https://" + raw : raw);
+      const external = /^https?:/i.test(href);
+      nodes.push(
+        source.slice(last, match.index),
+        <a key={key} href={href} target={external ? "_blank" : undefined} rel={external ? "noopener noreferrer" : undefined}>
+          {label}{external && Ic?.External && <Ic.External size={13} className="cv-notice-link-icon" />}
+        </a>,
+        trailing,
+      );
+    }
+    last = match.index + match[0].length;
+  }
+  nodes.push(source.slice(last));
+  return nodes.filter((node) => node !== "");
+}
+
+function renderNoticeBlocks(text, keyPrefix = "b") {
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  const flushParagraph = () => { if (paragraph.length) blocks.push({ type: "p", lines: paragraph }); paragraph = []; };
+  const flushList = () => { if (list.length) blocks.push({ type: "ul", items: list }); list = []; };
+  String(text || "").replace(/\r\n?/g, "\n").split("\n").forEach((line) => {
+    const bullet = /^\s*[-*•]\s+(.*)$/.exec(line);
+    if (bullet) { flushParagraph(); list.push(bullet[1]); return; }
+    if (!line.trim()) { flushParagraph(); flushList(); return; }
+    flushList();
+    paragraph.push(line);
+  });
+  flushParagraph();
+  flushList();
+  return blocks.map((block, i) => (block.type === "ul" ? (
+    <ul key={`${keyPrefix}${i}`}>
+      {block.items.map((item, j) => <li key={j}>{renderNoticeInline(item, `${keyPrefix}${i}-${j}`)}</li>)}
+    </ul>
+  ) : (
+    <p key={`${keyPrefix}${i}`}>
+      {block.lines.map((line, j) => <React.Fragment key={j}>{j > 0 && <br />}{renderNoticeInline(line, `${keyPrefix}${i}-${j}`)}</React.Fragment>)}
+    </p>
+  )));
+}
+
+function InstructionalNotice({ field, values: valuesProp = null }) {
+  const Ic = window.Icons;
+  const contextValues = React.useContext(NoticeValuesContext);
+  const [expanded, setExpanded] = React.useState(false);
+  const values = valuesProp || contextValues || sampleNoticeValues();
+  const tone = NOTICE_TONES.find((item) => item.value === field.noticeStyle) || NOTICE_TONES[0];
+  const title = applyNoticeTokens(field.label, values);
+  const body = applyNoticeTokens(field.fieldDescription, values);
+  const more = applyNoticeTokens(field.noticeMore, values);
+  const iconName = !field.noticeIcon || field.noticeIcon === "auto" ? tone.icon : field.noticeIcon;
+  const Icon = iconName !== "none" ? Ic?.[iconName] : null;
+  const moreSection = more ? (
+    expanded ? (
+      <>
+        <div className="cv-notice-body cv-notice-more">{renderNoticeBlocks(more, "m")}</div>
+        <button type="button" className="cv-notice-toggle" onClick={() => setExpanded(false)}>{field.noticeLessLabel || "See less"}</button>
+      </>
+    ) : (
+      <button type="button" className="cv-notice-toggle" onClick={() => setExpanded(true)}>{field.noticeMoreLabel || "See more"}</button>
+    )
+  ) : null;
+  return (
+    <div className={`cv-notice cv-notice-${tone.value}`}>
+      {title && (
+        <div className="cv-notice-title">
+          {Icon && <Icon size={17} className="cv-notice-icon" />}
+          <div className="cv-notice-title-text">{tone.value === "plain" ? renderNoticeBlocks(title, "t") : renderNoticeInline(title, "t")}</div>
+        </div>
+      )}
+      {body && <div className="cv-notice-body">{renderNoticeBlocks(body)}</div>}
+      {moreSection}
+    </div>
+  );
+}
+
+const NOTICE_PRESETS = {
+  insurance: {
+    noticeStyle: "info",
+    noticeIcon: "Shield",
+    label: "Event Insurance required",
+    fieldDescription: "Since your event has a social aspect to it, we require you to obtain an Event insurance from Duuo. Estimated cost is {{Insurance_Estimate}}. See last step for details.",
+    noticeMore: "",
+  },
+  agco: {
+    noticeStyle: "warning",
+    noticeIcon: "Goblet",
+    label: "AGCO License Required",
+    fieldDescription: "Since you indicated there will be alcohol at your event, you must apply for an AGCO license at the following link\nhttps://www.agco.ca/\n- **{{AGCO_Fee_Serving}}** if you are providing alcohol to guests or allowing them to bring their own.\n- **{{AGCO_Fee_Selling}}** if selling alcohol at your event (a qualified Smart Serve bar person is required).",
+    noticeMore: "Once you apply to AGCO and pay, a payment receipt will be provided to you. Payment is non refundable should you cancel your event or your application is denied. It can take up to 10 days before you receive the approved SOP but it could be instantly approved.",
+  },
+};
+
+function InstructionalNoticeEditor({ field, onChange }) {
+  const Ic = window.Icons;
+  const steps = React.useContext(WorkflowStepsContext) || [];
+  const bodyRef = React.useRef(null);
+  const moreRef = React.useRef(null);
+  const [activeArea, setActiveArea] = React.useState("fieldDescription");
+  const [helpOpen, setHelpOpen] = React.useState(false);
+  const boxed = (field.noticeStyle || "plain") !== "plain";
+  const customVariables = normalizePricingRules(window.__collaburoPricingRules || window.SAMPLE_PRICING_RULES).noticeVariables.filter((variable) => variable.key);
+
+  const insertText = (before, after = "", placeholder = "") => {
+    const key = activeArea;
+    const el = (key === "noticeMore" ? moreRef : bodyRef).current;
+    const current = field[key] || "";
+    const start = el ? el.selectionStart : current.length;
+    const end = el ? el.selectionEnd : current.length;
+    const selected = current.slice(start, end) || placeholder;
+    onChange({ [key]: current.slice(0, start) + before + selected + after + current.slice(end) });
+    window.requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      const caret = start + before.length;
+      el.setSelectionRange(caret, caret + selected.length);
+    });
+  };
+  const insertBullet = () => {
+    const current = field[activeArea] || "";
+    const el = (activeArea === "noticeMore" ? moreRef : bodyRef).current;
+    const start = el ? el.selectionStart : current.length;
+    insertText(start > 0 && current[start - 1] !== "\n" ? "\n- " : "- ", "", "List item");
+  };
+  const insertLink = () => {
+    const url = window.prompt("Link address", "https://");
+    if (!url || url === "https://") return;
+    insertText("[", `](${url.trim()})`, "link text");
+  };
+  const insertVariable = (value) => {
+    if (!value) return;
+    if (value === "__formula") insertText("{{= ", " }}", "Insurance_Price * 1.13");
+    else insertText(`{{${value}}}`);
+  };
+
+  const workflowFields = steps.flatMap((step) => step.fields || []).filter((item) => item.id !== field.id && !FIELD_RULE_SOURCE_EXCLUDED_TYPES.has(item.type));
+  const findField = (pattern) => workflowFields.find((item) => pattern.test(item.label || ""));
+  const presetRules = (kind) => {
+    const alcohol = findField(/alcohol/i);
+    const alcoholYes = alcohol ? { fieldId: alcohol.id, field: alcohol.label, op: "equals", value: "Yes" } : null;
+    let conditions = [alcoholYes];
+    if (kind === "insurance") {
+      const eventType = findField(/event type|type of event/i);
+      const socialGroup = eventType?.groupOptions
+        ? normalizeSimpleOptionGroups(eventType.options || []).find((group) => /social/i.test(group.label || ""))
+        : null;
+      conditions = [socialGroup ? { fieldId: eventType.id, field: eventType.label, op: "in_group", value: socialGroup.label } : null, alcoholYes];
+    }
+    conditions = conditions.filter(Boolean);
+    return conditions.length
+      ? [{ id: "rule_" + Date.now().toString(36), action: "show", match: "any", clearValue: false, conditions }]
+      : fieldRulesOf(field);
+  };
+  const applyPreset = (kind) => {
+    const apply = () => onChange({ ...NOTICE_PRESETS[kind], rules: presetRules(kind), visibility: null });
+    if (!String(field.label || "").trim() && !String(field.fieldDescription || "").trim()) {
+      apply();
+      return;
+    }
+    requestDeleteConfirmation({
+      title: "Replace info text",
+      body: "Replace the current text and show/hide rules with the ",
+      highlight: kind === "insurance" ? "Event Insurance" : "AGCO License",
+      tail: " template?",
+      confirmLabel: "Replace",
+      onConfirm: apply,
+    });
+  };
+
+  return (
+    <div className="notice-editor">
+      <div className="notice-editor-presets">
+        <span className="hint">Start from a template:</span>
+        <button type="button" className="btn sm" onClick={() => applyPreset("insurance")}><Ic.Shield size={12} /> Event Insurance</button>
+        <button type="button" className="btn sm" onClick={() => applyPreset("agco")}><Ic.Goblet size={12} /> AGCO License</button>
+      </div>
+      <div className="field-grid">
+        <div>
+          <label className="lbl">Style</label>
+          <select className="select" value={field.noticeStyle || "plain"} onChange={(e) => onChange({ noticeStyle: e.target.value })}>
+            {NOTICE_TONES.map((tone) => <option key={tone.value} value={tone.value}>{tone.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="lbl">Icon</label>
+          <select className="select" value={field.noticeIcon || "auto"} onChange={(e) => onChange({ noticeIcon: e.target.value })}>
+            {NOTICE_ICON_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="field-grid one" style={{ marginTop: 8 }}>
+        <div>
+          <label className="lbl">{boxed ? "Title" : "Display Text"}</label>
+          {boxed ? (
+            <input className="input" value={field.label || ""} placeholder="e.g. AGCO License Required" onChange={(e) => onChange({ label: e.target.value })} />
+          ) : (
+            <textarea className="textarea" rows={3} value={field.label || ""} placeholder="Enter the instructional text to display to clients..." onChange={(e) => onChange({ label: e.target.value })} />
+          )}
+        </div>
+      </div>
+      <div className="notice-editor-toolbar">
+        <button type="button" className="btn sm ghost" title="Bold" onClick={() => insertText("**", "**", "bold text")}><b>B</b></button>
+        <button type="button" className="btn sm ghost" title="Large, bold (for prices)" onClick={() => insertText("[big]", "[/big]", "$0.00")}>Large</button>
+        <button type="button" className="btn sm ghost" title="Small, grey" onClick={() => insertText("[muted]", "[/muted]", "small text")}>Muted</button>
+        <button type="button" className="btn sm ghost" title="Link" onClick={insertLink}><Ic.External size={12} /> Link</button>
+        <button type="button" className="btn sm ghost" title="Bullet point" onClick={insertBullet}><Ic.List size={12} /> Bullet</button>
+        <select className="select notice-editor-variable" value="" onChange={(e) => insertVariable(e.target.value)}>
+          <option value="">Insert amount / variable…</option>
+          <optgroup label="Calculated">
+            {NOTICE_BUILTIN_TOKENS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </optgroup>
+          {customVariables.length > 0 && (
+            <optgroup label="Custom amounts (Pricing page)">
+              {customVariables.map((variable) => <option key={variable.id} value={variable.key}>{variable.label || variable.key} ({formatNoticeMoney(variable.value)})</option>)}
+            </optgroup>
+          )}
+          <optgroup label="Formula">
+            <option value="__formula">Formula, e.g. price × 1.13</option>
+          </optgroup>
+        </select>
+      </div>
+      <div className="field-grid one">
+        <div>
+          <label className="lbl">{boxed ? "Message" : "Description"} <span className="hint">{boxed ? "shown under the title" : "optional secondary text"}</span></label>
+          <textarea ref={bodyRef} className="textarea" rows={boxed ? 5 : 2} value={field.fieldDescription || ""} placeholder="Additional detail or context..." onFocus={() => setActiveArea("fieldDescription")} onChange={(e) => onChange({ fieldDescription: e.target.value })} />
+        </div>
+      </div>
+      <div className="field-grid one" style={{ marginTop: 8 }}>
+        <div>
+          <label className="lbl">“See more” text <span className="hint">optional — hidden until the client clicks See more</span></label>
+          <textarea ref={moreRef} className="textarea" rows={2} value={field.noticeMore || ""} placeholder="Extra detail revealed by a See more link..." onFocus={() => setActiveArea("noticeMore")} onChange={(e) => onChange({ noticeMore: e.target.value })} />
+        </div>
+      </div>
+      <button type="button" className="notice-editor-help-toggle" onClick={() => setHelpOpen((open) => !open)}>
+        {helpOpen ? "Hide formatting help" : "Formatting & formula help"}
+      </button>
+      {helpOpen && (
+        <div className="notice-editor-help">
+          <div><code>**bold**</code>, <code>[big]$50[/big]</code>, <code>[muted](small grey)[/muted]</code></div>
+          <div><code>[link text](https://…)</code> or paste a plain URL. Start a line with <code>- </code> for a bullet. Leave a blank line to start a new paragraph.</div>
+          <div><code>{"{{Insurance_Price}}"}</code> inserts a calculated amount. Insurance rates, the tax rate and custom amounts are edited on the Pricing page.</div>
+          <div><code>{"{{= Insurance_Price * 1.13 }}"}</code> calculates a formula (shown as money). Add <code>| number</code> or <code>| percent</code> to change the format. Functions: <code>round</code>, <code>min</code>, <code>max</code>, <code>ceil</code>, <code>floor</code>.</div>
+        </div>
+      )}
+      <div className="notice-editor-preview">
+        <div className="lbl">Preview <span className="hint">sample booking: Wedding &amp; Reception, 50 guests, alcohol on site</span></div>
+        <InstructionalNotice field={field} />
+      </div>
+    </div>
+  );
+}
+
 function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeliveryLines = [], emailVerification = null, adminEditMode = false }) {
   const Ic = window.Icons;
   const pricesVisible = useClientPricingVisible();
@@ -14480,12 +15060,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
     return <div style={{ borderTop: "1.5px solid var(--line)", margin: "12px 0" }} />;
   }
   if (f.type === "instructional") {
-    return (
-      <div style={{ padding: "6px 0" }}>
-        <p style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.6, margin: 0 }}>{f.label}</p>
-        {f.fieldDescription && <p style={{ fontSize: 11.5, color: "var(--ink-3)", margin: "4px 0 0", lineHeight: 1.5 }}>{f.fieldDescription}</p>}
-      </div>
-    );
+    return <InstructionalNotice field={f} />;
   }
   const fieldGalleryImages = (f.galleryImages && f.galleryImages.length) ? f.galleryImages : (f.galleryImage ? [f.galleryImage] : []);
   const hasTooltip = f.helpText || fieldGalleryImages.length > 0;
@@ -15573,6 +16148,13 @@ function normalizePricingRules(rules = {}) {
       amount: Number(row.amount || 0),
       active: row.active !== false,
     })),
+    eventInsurance: normalizeEventInsurance(source.eventInsurance || sample.eventInsurance),
+    noticeVariables: (Array.isArray(source.noticeVariables) ? source.noticeVariables : sample.noticeVariables || []).map((variable) => ({
+      id: variable.id || uid("nv"),
+      key: noticeVariableKey(variable.key),
+      label: variable.label || "",
+      value: Number(variable.value || 0),
+    })),
     discountSettings: {
       maxCombinedDiscount: {
         enabled: !!maxCombined.enabled,
@@ -16515,6 +17097,28 @@ function HistoryModal({ history, onRestore, onClose }) {
   );
 }
 
+function AttendeeLimitsInput({ value = [], onChange }) {
+  const formatted = (value || []).join(", ");
+  const [text, setText] = React.useState(formatted);
+  React.useEffect(() => setText(formatted), [formatted]);
+  const commit = () => {
+    const limits = text.split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    const next = Array.from(new Set(limits)).sort((a, b) => a - b);
+    if (next.join(", ") !== formatted) onChange(next);
+    else setText(formatted);
+  };
+  return (
+    <input
+      className="input"
+      value={text}
+      placeholder="30, 175"
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") commit(); }}
+    />
+  );
+}
+
 function PricingRulesView({ rules, steps, onChange }) {
   const Ic = window.Icons;
   const pricingRules = rules || window.SAMPLE_PRICING_RULES || { fees: [], securityDeposits: [] };
@@ -16597,6 +17201,53 @@ function PricingRulesView({ rules, steps, onChange }) {
       itemType: "discount rule",
       itemName: rule?.name || "New discount",
       onConfirm: () => update({ discountRules: discounts.filter((item) => item.id !== id) }),
+    });
+  };
+  const insurance = normalizeEventInsurance(pricingRules.eventInsurance);
+  const insuranceTierLabels = eventInsuranceTierLabels(insurance.attendeeLimits);
+  const noticeVariables = pricingRules.noticeVariables || [];
+  const selectableEventTypes = eventTypes.filter((type) => type !== "All");
+  const unassignedEventTypes = selectableEventTypes.filter((type) => !insurance.groups.some((group) => group.eventTypes.some((item) => sameEventType(item, type))));
+  const updateInsurance = (patch) => update({ eventInsurance: { ...insurance, ...patch } });
+  const updateInsuranceGroup = (id, patch) => updateInsurance({ groups: insurance.groups.map((group) => group.id === id ? { ...group, ...patch } : group) });
+  const addInsuranceGroup = () => updateInsurance({ groups: [...insurance.groups, { id: uid("ins"), name: "New rate group", eventTypes: [], rates: {} }] });
+  const deleteInsuranceGroup = (id) => {
+    const group = insurance.groups.find((item) => item.id === id);
+    requestDeleteConfirmation({
+      itemType: "insurance rate group",
+      itemName: group?.name || "Rate group",
+      onConfirm: () => updateInsurance({ groups: insurance.groups.filter((item) => item.id !== id) }),
+    });
+  };
+  const toggleInsuranceEventType = (groupId, type, on) => updateInsurance({
+    groups: insurance.groups.map((group) => {
+      const without = group.eventTypes.filter((item) => !sameEventType(item, type));
+      if (group.id !== groupId) return on ? { ...group, eventTypes: without } : group;
+      return { ...group, eventTypes: on ? [...without, type] : without };
+    }),
+  });
+  const setInsuranceRate = (group, key, value) => {
+    const rates = { ...group.rates };
+    if (String(value).trim() === "") delete rates[key];
+    else rates[key] = value;
+    updateInsuranceGroup(group.id, { rates });
+  };
+  const insuranceRateHint = (cell) => {
+    const parsed = parseInsuranceRateCell(cell);
+    if (parsed.status === "uninsurable") return "Un-insurable";
+    if (parsed.status === "zero") return "Included (no charge)";
+    if (parsed.status !== "ok") return "Not quoted";
+    const total = Math.round((parsed.base + Math.round(parsed.base * insurance.taxRate) / 100) * 100) / 100;
+    return `${formatNoticeMoney(total)} with ${insurance.taxLabel || "tax"}`;
+  };
+  const updateNoticeVariable = (id, patch) => update({ noticeVariables: noticeVariables.map((variable) => variable.id === id ? { ...variable, ...patch } : variable) });
+  const addNoticeVariable = () => update({ noticeVariables: [...noticeVariables, { id: uid("nv"), key: `Amount_${noticeVariables.length + 1}`, label: "", value: 0 }] });
+  const deleteNoticeVariable = (id) => {
+    const variable = noticeVariables.find((item) => item.id === id);
+    requestDeleteConfirmation({
+      itemType: "custom amount",
+      itemName: variable?.label || variable?.key || "Custom amount",
+      onConfirm: () => update({ noticeVariables: noticeVariables.filter((item) => item.id !== id) }),
     });
   };
   const setDepositVenue = (id, venueId) => {
@@ -16901,6 +17552,108 @@ function PricingRulesView({ rules, steps, onChange }) {
               ))}
             </div>
             {deposits.length === 0 && <div className="rental-muted">No deposit matrix rules yet. Venue-level security deposits will be used as fallback.</div>}
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottom: "1px solid var(--line)", paddingBottom: 12, marginBottom: 14 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 20 }}>Event Insurance Rates</h2>
+                <p style={{ margin: "4px 0 0", color: "var(--ink-3)", fontSize: 12 }}>
+                  Used by {"{{Insurance_Estimate}}"} and the other insurance amounts in Info text notices. Enter the price before tax, 0 for included, or “uninsurable”.
+                </p>
+              </div>
+              <button className="btn dark sm" onClick={addInsuranceGroup}><Ic.Plus size={13} /> Add group</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "120px 150px 130px minmax(180px, 1fr)", gap: 10, alignItems: "end", marginBottom: 14 }}>
+              <label className="chk" style={{ marginBottom: 8 }}>
+                <input type="checkbox" checked={insurance.enabled} onChange={(e) => updateInsurance({ enabled: e.target.checked })} />
+                Enabled
+              </label>
+              <div>
+                <label className="lbl">Tax name</label>
+                <input className="input" value={insurance.taxLabel} placeholder="GST" onChange={(e) => updateInsurance({ taxLabel: e.target.value })} />
+              </div>
+              <div>
+                <label className="lbl">Tax rate %</label>
+                <input className="input" type="number" min="0" step="0.01" value={insurance.taxRate} onChange={(e) => updateInsurance({ taxRate: Number(e.target.value || 0) })} />
+              </div>
+              <div>
+                <label className="lbl">Attendee tier limits <span className="hint">comma separated, e.g. 30, 175</span></label>
+                <AttendeeLimitsInput value={insurance.attendeeLimits} onChange={(attendeeLimits) => updateInsurance({ attendeeLimits })} />
+              </div>
+            </div>
+            {unassignedEventTypes.length > 0 && (
+              <div className="rental-muted" style={{ marginBottom: 12, fontSize: 12 }}>
+                No rate for: {unassignedEventTypes.join(", ")}. These event types will show “—” as the estimate.
+              </div>
+            )}
+            <div style={{ display: "grid", gap: 14 }}>
+              {insurance.groups.map((group) => (
+                <div key={group.id} className="insurance-rate-group">
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                    <input className="input" style={{ fontWeight: 700, maxWidth: 360 }} value={group.name} onChange={(e) => updateInsuranceGroup(group.id, { name: e.target.value })} />
+                    <button className="btn icon sm danger-ghost" style={{ marginLeft: "auto" }} title="Delete rate group" onClick={() => deleteInsuranceGroup(group.id)}><Ic.Trash size={14} /></button>
+                  </div>
+                  <label className="lbl">Event types</label>
+                  <div className="insurance-type-chips">
+                    {Array.from(new Set([...selectableEventTypes, ...group.eventTypes.filter((type) => !selectableEventTypes.some((item) => sameEventType(item, type)))])).map((type) => {
+                      const checked = group.eventTypes.some((item) => sameEventType(item, type));
+                      const otherGroup = !checked && insurance.groups.find((item) => item.id !== group.id && item.eventTypes.some((value) => sameEventType(value, type)));
+                      return (
+                        <label key={type} className={"insurance-type-chip" + (checked ? " on" : "") + (otherGroup ? " taken" : "")} title={otherGroup ? `Currently in “${otherGroup.name}”. Selecting moves it here.` : ""}>
+                          <input type="checkbox" checked={checked} onChange={(e) => toggleInsuranceEventType(group.id, type, e.target.checked)} />
+                          {type}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="insurance-rate-grid" style={{ gridTemplateColumns: `130px repeat(2, minmax(140px, 1fr))` }}>
+                    <div className="lbl">Attendees</div>
+                    <div className="lbl">No alcohol</div>
+                    <div className="lbl">Alcohol on site</div>
+                    {insuranceTierLabels.map((tierLabel, tierIndex) => (
+                      <React.Fragment key={tierLabel}>
+                        <div className="insurance-tier-label">{tierLabel}</div>
+                        {["no", "yes"].map((alcoholKey) => {
+                          const key = `${tierIndex}_${alcoholKey}`;
+                          const cell = group.rates[key];
+                          return (
+                            <div key={key}>
+                              <input className="input" value={cell ?? ""} placeholder="—" onChange={(e) => setInsuranceRate(group, key, e.target.value)} />
+                              <div className="insurance-rate-hint">{insuranceRateHint(cell)}</div>
+                            </div>
+                          );
+                        })}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {insurance.groups.length === 0 && <div className="rental-muted">No insurance rate groups yet.</div>}
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottom: "1px solid var(--line)", paddingBottom: 12, marginBottom: 14 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 20 }}>Custom Amounts</h2>
+                <p style={{ margin: "4px 0 0", color: "var(--ink-3)", fontSize: 12 }}>Named amounts you can insert into Info text notices and formulas, such as AGCO permit fees.</p>
+              </div>
+              <button className="btn dark sm" onClick={addNoticeVariable}><Ic.Plus size={13} /> Add</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(160px, .8fr) minmax(200px, 1.2fr) 130px minmax(150px, .8fr) 34px", gap: 10, alignItems: "center" }}>
+              {["Name", "Description", "Amount", "Insert as", ""].map((label) => <div key={label} className="lbl">{label}</div>)}
+              {noticeVariables.map((variable) => (
+                <React.Fragment key={variable.id}>
+                  <input className="input" value={variable.key} placeholder="AGCO_Fee" onChange={(e) => updateNoticeVariable(variable.id, { key: e.target.value.replace(/[^A-Za-z0-9_]/g, "_") })} />
+                  <input className="input" value={variable.label || ""} placeholder="What this amount is for" onChange={(e) => updateNoticeVariable(variable.id, { label: e.target.value })} />
+                  <input className="input" type="number" step="0.01" value={variable.value ?? ""} onChange={(e) => updateNoticeVariable(variable.id, { value: Number(e.target.value || 0) })} />
+                  <code className="insurance-token">{variable.key ? `{{${variable.key}}}` : "—"}</code>
+                  <button className="btn icon sm danger-ghost" title="Delete amount" onClick={() => deleteNoticeVariable(variable.id)}><Ic.Trash size={14} /></button>
+                </React.Fragment>
+              ))}
+            </div>
+            {noticeVariables.length === 0 && <div className="rental-muted">No custom amounts yet.</div>}
           </div>
         </div>
       </div>
@@ -18118,7 +18871,7 @@ function BookingReadOnlyRichOptionDetails({ option, selection, guestCount = 0, d
 
 function BookingReadOnlyField({ field, value, previousValue, guestCount = 0 }) {
   if (field.type === "separator") return <div className="booking-readonly-separator" />;
-  if (field.type === "instructional") return <div className="booking-readonly-instruction"><strong>{field.label}</strong>{field.fieldDescription && <span>{field.fieldDescription}</span>}</div>;
+  if (field.type === "instructional") return <div className="booking-readonly-instruction"><InstructionalNotice field={field} /></div>;
   const options = bookingFieldOptionRows(field);
   const gallery = (field.galleryImages || (field.galleryImage ? [field.galleryImage] : [])).filter(Boolean);
   const isChoice = ["radio", "multiselect", "dietary"].includes(field.type) && options.length > 0;
@@ -18289,21 +19042,27 @@ function ClientBookingAnswersView({ record, steps = [], previousRecord = null })
   if (!record) return null;
   const answers = record.answers || {};
   const guestCount = window.findGuestCount ? window.findGuestCount(steps, answers) : Number(record.request?.attendeeCount || 0);
-  return <div className="booking-answers-page">
+  const noticeValues = buildNoticeValues({ steps, answers, pricingRules: window.__collaburoPricingRules, costData: record.costs || null });
+  const allFields = steps.flatMap((step) => step.fields || []);
+  const noticeVisible = (field) => field.type !== "instructional" || evaluateFieldRules(field, (condition) => {
+    const source = allFields.find((item) => item.id === condition.fieldId) || (!condition.fieldId ? allFields.find((item) => item.label === condition.field) : null);
+    return source ? { field: source, value: answers[source.id] } : null;
+  }).visible;
+  return <NoticeValuesContext.Provider value={noticeValues}><div className="booking-answers-page">
     <h1>Space Rental Request</h1>
     {steps.map((step) => {
       if (step.stepType === "venue") return <BookingReadOnlyVenue key={step.id} step={step} answers={answers} />;
       if (step.stepType === "layout") return <BookingReadOnlyRentals key={step.id} step={step} answers={answers} />;
       return <section className="booking-readonly-section" key={step.id}><h2>{step.name}</h2>{step.description && <p>{step.description}</p>}
         <div className="booking-answers-form">
-          {(step.fields || []).filter((field) => field.visibleToClient !== false && field.type !== "rental_group").map((field) => <BookingReadOnlyField key={field.id} field={field} value={answers[field.id]} previousValue={previousRecord?.answers?.[field.id]} guestCount={guestCount} />)}
+          {(step.fields || []).filter((field) => field.visibleToClient !== false && field.type !== "rental_group" && noticeVisible(field)).map((field) => <BookingReadOnlyField key={field.id} field={field} value={answers[field.id]} previousValue={previousRecord?.answers?.[field.id]} guestCount={guestCount} />)}
           {(step.checkout?.agreements || []).map((agreement) => <BookingReadOnlyField key={agreement.id} field={{ label: agreement.label, type: "checkbox", required: agreement.required !== false }} value={!!answers.__checkoutAgreements?.[step.id]?.[agreement.id]} previousValue={previousRecord ? !!previousRecord.answers?.__checkoutAgreements?.[step.id]?.[agreement.id] : undefined} guestCount={guestCount} />)}
         </div>
         <BookingReadOnlyRentals step={step} answers={answers} showHeading={false} />
       </section>;
     })}
     <BookingReadOnlyCostSummary costs={record.costs || {}} />
-  </div>;
+  </div></NoticeValuesContext.Provider>;
 }
 
 function AdminBookingAnswersView({ record, steps = [], onBack }) {
@@ -18920,6 +19679,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     return initial;
   });
   const [pricingRules, setPricingRules] = React.useState(() => loadPricingRules() || normalizePricingRules(window.SAMPLE_PRICING_RULES));
+  window.__collaburoPricingRules = pricingRules;
   const [siteSettings, setSiteSettings] = React.useState(() => loadSiteSettings() || normalizeSiteSettings(SAMPLE_SITE_SETTINGS));
   const [progressRecords, setProgressRecords] = React.useState(() => loadProgressRecords() || normalizeProgressRecords(SAMPLE_PROGRESS_RECORDS));
   const [publicEditRecord, setPublicEditRecord] = React.useState(null);
