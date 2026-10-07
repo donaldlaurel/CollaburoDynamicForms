@@ -16840,7 +16840,16 @@ function noticeAnswerText(value) {
   if (value == null || value === false) return "";
   if (value === true) return "Yes";
   if (Array.isArray(value)) return value.map(noticeAnswerText).filter(Boolean).join(", ");
-  if (typeof value === "object") return noticeAnswerText(value.__selected ?? value.main ?? value.label ?? "");
+  if (typeof value === "object") {
+    const picked = value.__selected ?? value.main ?? value.label;
+    if (picked !== undefined) return noticeAnswerText(picked);
+    // Radio/checkbox answers with sub-options are stored as { "<option label>": { ...sub answers } }.
+    return Object.entries(value)
+      .filter(([key, val]) => !key.startsWith("__") && val != null && val !== false)
+      .map(([key]) => noticeAnswerText(key))
+      .filter(Boolean)
+      .join(", ");
+  }
   return String(value).split("|")[0].trim();
 }
 
