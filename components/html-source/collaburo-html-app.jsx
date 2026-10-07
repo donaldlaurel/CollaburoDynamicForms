@@ -13,6 +13,7 @@ import { ContractSettingsView, ContractSignView, ContractLoadingView, normalizeC
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
+import { migrateToOldSiteParity } from "./old-site-parity-migration";
 
 const SHOW_OLD_SITE_IMPORT_BUTTONS = false;
 
@@ -21,10 +22,13 @@ const SHOW_OLD_SITE_IMPORT_BUTTONS = false;
 
 Object.assign(window, { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, SIDE_NAV, SIDE_NAV_BOTTOM, ROOMS });
 
-const ClientPricingVisibilityContext = React.createContext({ pricesVisible: true });
+const ClientPricingVisibilityContext = React.createContext({ pricesVisible: true, areas: {} });
 
-function useClientPricingVisible() {
-  return React.useContext(ClientPricingVisibilityContext).pricesVisible !== false;
+// area: "itemPrices" | "venueTotal" | "noticeAmounts" — what may show before the email is verified.
+function useClientPricingVisible(area = "itemPrices") {
+  const context = React.useContext(ClientPricingVisibilityContext);
+  if (context.pricesVisible !== false) return true;
+  return !!context.areas?.[area];
 }
 
 
@@ -105,6 +109,8 @@ const DISCOUNT_CONDITION_OPERATORS = [
   { value: "equals", label: "Equals" },
   { value: "not_equals", label: "Does not equal" },
   { value: "contains", label: "Contains" },
+  { value: "in", label: "Is one of (comma-separated)" },
+  { value: "not_in", label: "Has a value other than (comma-separated)" },
   { value: "greater_than", label: "Greater than" },
   { value: "less_than", label: "Less than" },
   { value: "has_value", label: "Has value" },
@@ -117,6 +123,8 @@ const DEFAULT_DELIVERY_OPTIONS = [
   { id: "delivery_small", label: "Delivery - Small Items", amount: 45, active: true, description: "Small supplier drop-off or courier-sized rentals." },
   { id: "delivery_large", label: "Delivery - Large Items / Furniture", amount: 100, active: true, description: "Furniture, tables, chairs, and other bulky rentals." },
 ];
+
+const DEFAULT_RENTAL_DELIVERY_NOTE = "This item is delivered and picked up from a 3rd party supplier.  A delivery cost is added on the Delivery section.";
 
 const PROCUREMENT_TYPES = [
   { value: "internal", label: "Internal" },
@@ -3660,6 +3668,9 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
   };
   const setDeliveryRequired = (checked) => onPatch({ deliveryRequired: checked, deliveryOptionId: checked ? (item.deliveryOptionId || activeDeliveryOptions[0]?.id || "") : "" });
   const itemVenues = venues.filter((venue) => venue?.id && rentalAvailableForVenue(item, venue.id));
+  const itemSubSpaces = itemVenues.flatMap((venue) => (venue.subSpace?.enabled ? venue.subSpace.options || [] : [])
+    .filter((option) => option?.id)
+    .map((option) => ({ venue, option })));
   const seedRow = rentalSeedRowFor(item);
   const defaultSetupPatch = seedRow ? rentalDefaultSetupPatch(seedRow.id, rows) : null;
   const restoreSetup = () => {
@@ -3749,6 +3760,53 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
                     </div>
                   </div>
                 )}
+                {itemVenues.length > 1 && (
+                  <div className="full">
+                    <label className="lbl">Maximum units by venue</label>
+                    <div className="rental-muted" style={{ marginBottom: 6 }}>Leave blank to use the maximum above.</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 }}>
+                      {itemVenues.map((venue) => (
+                        <label key={venue.id} style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--ink-2)" }}>
+                          <span>{venue.name || "Untitled venue"}</span>
+                          <input className="input" type="number" min="0" value={item.maxUnitsByVenue?.[venue.id] ?? ""} placeholder={item.maxUnits === "" || item.maxUnits == null ? "—" : String(item.maxUnits)} onChange={(e) => {
+                            const next = { ...(item.maxUnitsByVenue || {}) };
+                            if (e.target.value === "") delete next[venue.id];
+                            else next[venue.id] = Math.max(0, Number(e.target.value) || 0);
+                            onPatch({ maxUnitsByVenue: next });
+                          }} />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {itemSubSpaces.length > 0 && (
+                  <div className="full">
+                    <label className="lbl">Only offer with these sub-spaces</label>
+                    <div className="rental-muted" style={{ marginBottom: 6 }}>Leave all unchecked to offer it whenever the venue is booked.</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
+                      {itemSubSpaces.map(({ venue, option }) => {
+                        const selected = (item.subSpaceIds || []).includes(option.id);
+                        return (
+                          <label key={option.id} className="chk">
+                            <input type="checkbox" checked={selected} onChange={(e) => {
+                              const next = new Set(item.subSpaceIds || []);
+                              if (e.target.checked) next.add(option.id);
+                              else next.delete(option.id);
+                              onPatch({ subSpaceIds: Array.from(next) });
+                            }} />
+                            {itemVenues.length > 1 ? `${venue.name} – ${option.name}` : option.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {requiresDelivery && (
+                  <div className="full">
+                    <label className="chk"><input type="checkbox" checked={!!item.showDeliveryNote} onChange={(e) => onPatch({ showDeliveryNote: e.target.checked })} /> Show delivery note to clients</label>
+                    <div className="rental-muted" style={{ marginTop: 4 }}>The note text is set in Site Settings → Delivery Options.</div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3785,7 +3843,11 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
                   <label className="lbl">Quantity rule</label>
                   <select className="select" value={item.quantitySource === "parent" ? "own" : item.quantitySource || "own"} onChange={(e) => onPatch({ quantitySource: e.target.value })}>
                     {RENTAL_QUANTITY_SOURCES.filter((q) => q.value !== "parent").map((q) => <option key={q.value} value={q.value}>{q.label}</option>)}
+                    <option value="category">Use the group's shared quantity</option>
                   </select>
+                  {item.quantitySource === "category" && (
+                    <div className="rental-muted" style={{ marginTop: 4 }}>Set the shared quantity on the step's rental group field.</div>
+                  )}
                   {item.quantitySource === "parent" && (
                     <div className="rental-muted" style={{ marginTop: 4 }}>Top-level rentals cannot inherit a parent quantity. This will behave as “Ask for this item.”</div>
                   )}
@@ -4853,11 +4915,20 @@ function withSeededTechQuestions(catalog, groupName) {
   return [...catalog, { ...normalized, category: groupName, ...rentalDefaultSetupPatch(seed.id, catalog) }];
 }
 
+// Items limited to sub-spaces (e.g. Phone Booth with the Elevated Area) only
+// appear once the client has picked one of those sub-spaces for the venue.
+function rentalSubSpaceRequirementMet(item = {}, venueId = "") {
+  const required = Array.isArray(item.subSpaceIds) ? item.subSpaceIds.filter(Boolean) : [];
+  if (!required.length || !venueId) return true;
+  const selected = (window.CURRENT_VENUE_SUBSPACES || {})[venueId];
+  return !!selected && required.includes(selected);
+}
+
 function workflowRentalCatalogItems(groupName, venueId = "") {
   const source = window.CURRENT_RENTAL_CATALOG || window.SAMPLE_RENTAL_CATALOG || [];
   const catalog = withSeededTechQuestions(window.normalizeRentalCatalog ? window.normalizeRentalCatalog(source) : source, groupName);
   return catalog
-    .filter((item) => item.category === groupName && item.active !== false && rentalAvailableForVenue(item, venueId))
+    .filter((item) => item.category === groupName && item.active !== false && rentalAvailableForVenue(item, venueId) && rentalSubSpaceRequirementMet(item, venueId))
     .map((item) => rentalItemForVenue(item, venueId));
 }
 
@@ -4911,6 +4982,52 @@ function RentalGroupFieldEditor({ field, onChange }) {
           <input className="input" value={field.rentalPreviewHeading || ""} placeholder="Example: Space Contents" onChange={(e) => set({ rentalPreviewHeading: e.target.value })} />
         </div>
       </div>
+      {items.some(rentalUsesSharedQuantity) && (() => {
+        const shared = field.sharedQuantity || {};
+        const setShared = (patch) => set({ sharedQuantity: { ...shared, ...patch } });
+        const numberOrBlank = (value) => (value === "" ? "" : Math.max(0, Number(value) || 0));
+        const venues = window.CURRENT_WORKFLOW_VENUES || [];
+        return (
+          <div className="field-grid one">
+            <div>
+              <label className="lbl">Shared quantity</label>
+              <div className="rental-muted" style={{ marginBottom: 6 }}>
+                Asked once for every item set to “Use the group's shared quantity” ({items.filter(rentalUsesSharedQuantity).length} items).
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                  <span>Label</span>
+                  <input className="input" value={shared.label ?? ""} placeholder="Quantity" onChange={(e) => setShared({ label: e.target.value })} />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                  <span>Minimum</span>
+                  <input className="input" type="number" min="0" value={shared.min ?? ""} placeholder="1" onChange={(e) => setShared({ min: numberOrBlank(e.target.value) })} />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                  <span>Maximum</span>
+                  <input className="input" type="number" min="0" value={shared.max ?? ""} placeholder="100" onChange={(e) => setShared({ max: numberOrBlank(e.target.value) })} />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                  <span>Step</span>
+                  <input className="input" type="number" min="1" value={shared.step ?? ""} placeholder="1" onChange={(e) => setShared({ step: numberOrBlank(e.target.value) })} />
+                </label>
+                {venues.map((venue) => (
+                  <label key={venue.id} style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+                    <span>Max – {venue.name}</span>
+                    <input className="input" type="number" min="0" value={shared.maxByVenue?.[venue.id] ?? ""} placeholder={String(shared.max ?? 100)} onChange={(e) => {
+                      const next = { ...(shared.maxByVenue || {}) };
+                      if (e.target.value === "") delete next[venue.id];
+                      else next[venue.id] = Math.max(0, Number(e.target.value) || 0);
+                      setShared({ maxByVenue: next });
+                    }} />
+                  </label>
+                ))}
+              </div>
+              <label className="chk" style={{ marginTop: 8 }}><input type="checkbox" checked={shared.required !== false} onChange={(e) => setShared({ required: e.target.checked })} /> Required when any of these items is selected</label>
+            </div>
+          </div>
+        );
+      })()}
       {rentalGroupDisplayMode({ ...field, rentalGroup: selectedGroup }) === "repeatable_rows" && (
         <>
           <div className="field-grid">
@@ -5621,8 +5738,14 @@ const FIELD_RULE_OPERATORS = [
   { value: "not_equals", label: "does not equal", needsValue: true },
   { value: "contains", label: "includes", needsValue: true },
   { value: "not_contains", label: "does not include", needsValue: true },
+  { value: "in", label: "is one of (comma-separated)", needsValue: true, freeText: true },
+  { value: "not_in", label: "has a value other than (comma-separated)", needsValue: true, freeText: true },
   { value: "in_group", label: "belongs to category", needsValue: true, groupedOnly: true },
 ];
+
+function ruleValueList(value) {
+  return String(value ?? "").split(/[,|]/).map((item) => item.trim().toLowerCase()).filter(Boolean);
+}
 
 const FIELD_RULE_SOURCE_EXCLUDED_TYPES = new Set(["separator", "spacer", "instructional"]);
 
@@ -5753,6 +5876,12 @@ function evaluateFieldCondition(condition, sourceField, raw) {
     case "not_equals": return !equalsTarget;
     case "contains": return includesTarget;
     case "not_contains": return !includesTarget;
+    case "in":
+    case "not_in": {
+      const list = ruleValueList(condition.value);
+      const listed = (value) => list.includes(normalize(value)) || list.includes(normalize(String(value).split("|")[0]));
+      return condition.op === "in" ? values.some(listed) : values.length > 0 && !values.every(listed);
+    }
     case "in_group": return normalize(groupedOptionCategoryForValue(sourceField, raw)) === target;
     default: return true;
   }
@@ -5896,7 +6025,7 @@ function FieldRuleCondition({ condition, sourceGroups, sourceFields, onChange, o
     : [];
   const operators = FIELD_RULE_OPERATORS.filter((op) => !op.groupedOnly || categories.length > 0);
   const opMeta = operators.find((op) => op.value === condition.op) || operators[0];
-  const choices = opMeta.value === "in_group" ? categories : fieldRuleOptionLabels(selected);
+  const choices = opMeta.freeText ? [] : opMeta.value === "in_group" ? categories : fieldRuleOptionLabels(selected);
   const valueControl = !opMeta.needsValue ? null : choices.length > 0 ? (
     <select className="select" value={condition.value || ""} onChange={(e) => onChange({ ...condition, value: e.target.value })}>
       <option value="">Choose…</option>
@@ -5927,7 +6056,7 @@ function FieldRuleCondition({ condition, sourceGroups, sourceFields, onChange, o
         value={opMeta.value}
         onChange={(e) => {
           const nextOp = FIELD_RULE_OPERATORS.find((op) => op.value === e.target.value);
-          const nextChoices = nextOp?.value === "in_group" ? categories : fieldRuleOptionLabels(selected);
+          const nextChoices = nextOp?.freeText ? [] : nextOp?.value === "in_group" ? categories : fieldRuleOptionLabels(selected);
           const keepValue = nextOp?.needsValue && (!nextChoices.length || nextChoices.includes(condition.value));
           onChange({ ...condition, op: e.target.value, value: keepValue ? condition.value : (nextOp?.needsValue ? nextChoices[0] || "" : "") });
         }}
@@ -8534,6 +8663,16 @@ function SimpleServiceRow({ service, onUpdate, onRemove, dragHandlers = {}, targ
                   <input className="input" type="number" min={1} value={peopleRange.min} onChange={(e) => onUpdate({ peopleRange: { ...peopleRange, min: Number(e.target.value) || 1 } })} style={{ width: 70 }} />
                   <span>to</span>
                   <input className="input" type="number" min={1} value={peopleRange.max} onChange={(e) => onUpdate({ peopleRange: { ...peopleRange, max: Number(e.target.value) || 1 } })} style={{ width: 70 }} />
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!peopleRange.startBlank} onChange={(e) => onUpdate({ peopleRange: { ...peopleRange, startBlank: e.target.checked } })} style={{ accentColor: "var(--accent)" }} />
+                    Start blank ("Select one", $0 until chosen)
+                  </label>
+                </div>
+              )}
+              {!service.peopleLinkedToGuests && (
+                <div style={{ paddingLeft: 24, marginTop: 6, display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                  <span>Selector label</span>
+                  <input className="input" value={service.peopleLabel || ""} placeholder="# of people" onChange={(e) => onUpdate({ peopleLabel: e.target.value })} style={{ width: 160 }} />
                 </div>
               )}
               {(service.pricingStructure === "per_person" || service.pricingStructure === "per_person_hour") && (
@@ -8556,11 +8695,51 @@ function SimpleServiceRow({ service, onUpdate, onRemove, dragHandlers = {}, targ
               <input className="input" type="number" min={1} value={hoursRange.min} onChange={(e) => onUpdate({ hoursRange: { ...hoursRange, min: Number(e.target.value) || 1 } })} style={{ width: 70 }} />
               <span>to</span>
               <input className="input" type="number" min={1} value={hoursRange.max} onChange={(e) => onUpdate({ hoursRange: { ...hoursRange, max: Number(e.target.value) || 1 } })} style={{ width: 70 }} />
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                <input type="checkbox" checked={!!hoursRange.startBlank} onChange={(e) => onUpdate({ hoursRange: { ...hoursRange, startBlank: e.target.checked } })} style={{ accentColor: "var(--accent)" }} />
+                Start blank
+              </label>
               {service.pricingStructure === "per_hour" || service.pricingStructure === "per_person_hour" ? (
                 <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>· multiplies price</span>
               ) : null}
             </div>
           )}
+          {service.hasHoursOption && isCharged && (service.pricingStructure || "flat") === "flat" && (
+            <div style={{ marginTop: 6, paddingLeft: 24, display: "flex", alignItems: "center", gap: 8, fontSize: 12, flexWrap: "wrap" }}>
+              <span>Price covers</span>
+              <input className="input" type="number" min={0} value={service.includedHours ?? ""} onChange={(e) => onUpdate({ includedHours: e.target.value === "" ? "" : Number(e.target.value) })} placeholder="0" style={{ width: 60 }} />
+              <span>hour(s), then $</span>
+              <input className="input" type="number" min={0} step="0.01" value={service.extraHourRate ?? ""} onChange={(e) => onUpdate({ extraHourRate: e.target.value === "" ? "" : Number(e.target.value) })} placeholder="0" style={{ width: 70 }} />
+              <span>per extra hour</span>
+            </div>
+          )}
+        </div>
+
+        {/* Extra inputs shown when this service is picked */}
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-4)", textTransform: "uppercase", marginBottom: 6 }}>Extra inputs</div>
+          {(service.subFields || []).map((sub, index) => {
+            const patchSub = (patch) => onUpdate({ subFields: (service.subFields || []).map((item, i) => i === index ? { ...item, ...patch } : item) });
+            return (
+              <div key={sub.id || index} style={{ display: "grid", gridTemplateColumns: "1fr 110px 1fr auto auto", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                <input className="input" value={sub.label || ""} onChange={(e) => patchSub({ label: e.target.value })} placeholder="Label, e.g. Type of Music" style={{ fontSize: 12 }} />
+                <select className="select" value={sub.type || "text"} onChange={(e) => patchSub({ type: e.target.value })}>
+                  <option value="text">Text</option>
+                  <option value="number">Number</option>
+                  <option value="select">Dropdown</option>
+                </select>
+                <input className="input" value={sub.type === "select" ? (sub.options || "") : (sub.placeholder || "")} onChange={(e) => patchSub(sub.type === "select" ? { options: e.target.value } : { placeholder: e.target.value })} placeholder={sub.type === "select" ? "Choices, comma separated" : "Placeholder"} style={{ fontSize: 12 }} />
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5 }}>
+                  <input type="checkbox" checked={!!sub.required} onChange={(e) => patchSub({ required: e.target.checked })} style={{ accentColor: "var(--accent)" }} />
+                  Required
+                </label>
+                <button className="btn icon sm danger-ghost" title="Remove input" onClick={() => onUpdate({ subFields: (service.subFields || []).filter((_, i) => i !== index) })}><Ic.Close size={11} /></button>
+              </div>
+            );
+          })}
+          <button className="btn ghost sm" onClick={() => onUpdate({ subFields: [...(service.subFields || []), { id: uid("sf"), label: "", type: "text", required: false }] })} style={{ fontSize: 11, color: "var(--accent)", fontWeight: 700 }}>
+            <Ic.Plus size={10} /> Add input
+          </button>
         </div>
       </div>
       </div>
@@ -8569,7 +8748,7 @@ function SimpleServiceRow({ service, onUpdate, onRemove, dragHandlers = {}, targ
   );
 }
 
-function CheckoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDuplicateField, onDeleteField, onUpdateField, openFieldId, onToggleField, onReorderFields, onDeleteStep }) {
+function CheckoutEditor({ step, allSteps = [], onUpdateStep, onAddField, onAddMultipleFields, onDuplicateField, onDeleteField, onUpdateField, openFieldId, onToggleField, onReorderFields, onDeleteStep }) {
   const Ic = window.Icons;
   const [editingHead, setEditingHead] = React.useState(false);
   const [headDraft, setHeadDraft] = React.useState({ name: "", description: "" });
@@ -8748,11 +8927,62 @@ function CheckoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, o
           </div>
 
           <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 15 }}>Contract Link</h3>
+            <p style={{ margin: "4px 0 12px", fontSize: 12, color: "var(--ink-3)" }}>Show a link to the rental contract above the agreements.</p>
+            <label className="chk" style={{ marginBottom: 10 }}>
+              <input type="checkbox" checked={!!checkout.contractLink?.enabled} onChange={(e) => updateCheckout({ contractLink: { ...(checkout.contractLink || {}), enabled: e.target.checked } })} />
+              Show contract link
+            </label>
+            {checkout.contractLink?.enabled && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 12 }}>
+                <div>
+                  <label className="lbl">Link text</label>
+                  <input className="input" value={checkout.contractLink.label || ""} placeholder="View the rental contract" onChange={(e) => updateCheckout({ contractLink: { ...checkout.contractLink, label: e.target.value } })} />
+                </div>
+                <div>
+                  <label className="lbl">Opens in</label>
+                  <select className="select" value={checkout.contractLink.mode || "tab"} onChange={(e) => updateCheckout({ contractLink: { ...checkout.contractLink, mode: e.target.value } })}>
+                    <option value="tab">New tab</option>
+                    <option value="modal">Pop-up</option>
+                  </select>
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label className="lbl">Contract URL</label>
+                  <input className="input" value={checkout.contractLink.url || ""} placeholder="https://..." onChange={(e) => updateCheckout({ contractLink: { ...checkout.contractLink, url: e.target.value } })} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 15 }}>Repeat Notices</h3>
+            <p style={{ margin: "4px 0 12px", fontSize: 12, color: "var(--ink-3)" }}>Show the notices (e.g. insurance, AGCO licence) that applied on these steps again on the final step.</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {allSteps.filter((s) => s.id !== step.id && (s.fields || []).some((f) => f.type === "instructional")).map((s) => {
+                const selected = (checkout.showNoticesFromSteps || []).includes(s.id);
+                return (
+                  <label key={s.id} className="chk" style={{ background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 7, padding: "6px 10px" }}>
+                    <input type="checkbox" checked={selected} onChange={(e) => {
+                      const current = checkout.showNoticesFromSteps || [];
+                      updateCheckout({ showNoticesFromSteps: e.target.checked ? [...current, s.id] : current.filter((id) => id !== s.id) });
+                    }} />
+                    {s.name}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16 }}>
             <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Submit Button</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "180px 180px 1fr", gap: 12 }}>
               <div>
                 <label className="lbl">Button label</label>
                 <input className="input" value={checkout.submitLabel || "Submit"} onChange={(e) => updateCheckout({ submitLabel: e.target.value })} />
+              </div>
+              <div>
+                <label className="lbl">Other steps' button</label>
+                <input className="input" value={checkout.nextLabel || "Save & Next"} onChange={(e) => updateCheckout({ nextLabel: e.target.value })} />
               </div>
               <div>
                 <label className="lbl">Success message</label>
@@ -9190,6 +9420,7 @@ function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDel
   const setAdv = (patch) => set({ advancedPricing: { ...venue.advancedPricing, ...patch } });
   const setSub = (patch) => set({ subSpace: { ...venue.subSpace, ...patch } });
   const autoSwitchBestPricing = venue.advancedPricing?.autoSwitchBestPricing !== false;
+  const venuePlanSelection = venue.advancedPricing?.planSelection === "by_hours" ? "by_hours" : "best_value";
   const setHours = (day, val) => {
     const h = { ...(venue.advancedPricing.bookingHours || {}) };
     h[day] = val;
@@ -9377,6 +9608,13 @@ function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDel
               <label className="lbl">Venue Capacity <span className="hint">(used for recommendation)</span></label>
               <input className="input" type="number" min={0} value={venue.venueCapacity || 0} onChange={(e) => set({ venueCapacity: Number(e.target.value) })} placeholder="Max number of people" />
               <p style={{ fontSize: 10.5, color: "var(--ink-4)", marginTop: 3 }}>The maximum number of people this venue can accommodate. Used for matching attendee count to the right venue.</p>
+              <label className="chk" style={{ marginTop: 6 }}>
+                <input type="checkbox" checked={!!venue.disableWhenOverCapacity} onChange={(e) => set({ disableWhenOverCapacity: e.target.checked })} />
+                Disable this venue when attendees exceed its capacity
+              </label>
+              {venue.disableWhenOverCapacity && (
+                <input className="input" style={{ marginTop: 4 }} value={venue.overCapacityMessage || ""} placeholder="Not available for {{Attendees}} attendees" onChange={(e) => set({ overCapacityMessage: e.target.value })} />
+              )}
             </div>
             <div>
               <label className="lbl">Suitable Event Types <span className="hint">(used for recommendation)</span></label>
@@ -9401,17 +9639,40 @@ function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDel
               <h4>Pricing Plan</h4>
               <button className="btn sm" onClick={addPricing}><Ic.Plus size={11} /> Add Pricing</button>
             </div>
-            <label className="chk" style={{ margin: "0 0 12px", alignItems: "flex-start" }}>
-              <input type="checkbox" checked={autoSwitchBestPricing} onChange={(e) => setAdv({ autoSwitchBestPricing: e.target.checked })} />
-              <span>
-                Automatically switch customer to the lowest-priced pricing plan based on booking duration
-                <span style={{ display: "block", fontSize: 10.5, color: "var(--ink-4)", marginTop: 2 }}>
-                  Compares rental subtotal only. Setup, cleanup, deposits, taxes, and add-ons are added afterward.
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px", fontSize: 12.5 }}>
+              <span style={{ fontWeight: 600 }}>Choose the plan</span>
+              <select className="select" style={{ width: "auto" }} value={venuePlanSelection} onChange={(e) => setAdv({ planSelection: e.target.value })}>
+                <option value="best_value">by lowest price</option>
+                <option value="by_hours">by booking length (hour bands)</option>
+              </select>
+            </div>
+            {venuePlanSelection === "best_value" ? (
+              <label className="chk" style={{ margin: "0 0 12px", alignItems: "flex-start" }}>
+                <input type="checkbox" checked={autoSwitchBestPricing} onChange={(e) => setAdv({ autoSwitchBestPricing: e.target.checked })} />
+                <span>
+                  Automatically switch customer to the lowest-priced pricing plan based on booking duration
+                  <span style={{ display: "block", fontSize: 10.5, color: "var(--ink-4)", marginTop: 2 }}>
+                    Compares rental subtotal only. Setup, cleanup, deposits, taxes, and add-ons are added afterward.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            ) : (
+              <p style={{ fontSize: 10.5, color: "var(--ink-4)", margin: "0 0 12px" }}>
+                The first plan whose hour band contains the booking length is used. Set-up and clean-up fees are added on top of every plan.
+              </p>
+            )}
             {venue.pricing.map((p, i) => (
-              <div key={p.id} className="pricing-row">
+              <React.Fragment key={p.id}>
+              {venuePlanSelection === "by_hours" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, margin: "6px 0 2px" }}>
+                  <span>Plan {i + 1} applies when booking is more than</span>
+                  <input className="input" type="number" min="0" step="0.5" style={{ width: 64 }} value={p.appliesFromHours ?? ""} placeholder="0" onChange={(e) => updatePricing(i, { appliesFromHours: e.target.value === "" ? "" : Number(e.target.value) })} />
+                  <span>hours, up to</span>
+                  <input className="input" type="number" min="0" step="0.5" style={{ width: 64 }} value={p.appliesToHours ?? ""} placeholder="any" onChange={(e) => updatePricing(i, { appliesToHours: e.target.value === "" ? "" : Number(e.target.value) })} />
+                  <span>hours</span>
+                </div>
+              )}
+              <div className="pricing-row">
                 <div>
                   <label className="lbl" style={{ fontSize: 10 }}>Rate Type</label>
                   <select className="select" value={p.rateType} onChange={(e) => updatePricing(i, { rateType: e.target.value })}>
@@ -9434,6 +9695,7 @@ function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDel
                 </div>
                 <button className="btn icon sm danger-ghost" style={{ marginTop: 14 }} onClick={() => removePricing(i)}><Ic.Close size={12} /></button>
               </div>
+              </React.Fragment>
             ))}
           </div>
 
@@ -9449,6 +9711,25 @@ function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDel
                   <div><label className="lbl">Set Up Fee ($)</label><input className="input" type="number" min="0" step="0.01" value={venue.advancedPricing.setupFee || ""} onChange={(e) => setAdv({ setupFee: Number(e.target.value) })} /></div>
                   <div><label className="lbl">Clean Up Fee ($)</label><input className="input" type="number" min="0" step="0.01" value={venue.advancedPricing.cleanupFee || ""} onChange={(e) => setAdv({ cleanupFee: Number(e.target.value) })} /></div>
                   <div><label className="lbl">Security Deposit ($)</label><input className="input" type="number" min="0" step="0.01" value={venue.advancedPricing.securityDeposit || ""} onChange={(e) => setAdv({ securityDeposit: Number(e.target.value) })} /></div>
+                </div>
+
+                <div className="adv-pricing-grid" style={{ marginTop: 12 }}>
+                  <div>
+                    <label className="lbl">Minimum booking (hours)</label>
+                    <input className="input" type="number" min="0" step="0.5" value={venue.advancedPricing.bookingMinHours ?? ""} onChange={(e) => setAdv({ bookingMinHours: e.target.value === "" ? "" : Number(e.target.value) })} />
+                    <label className="chk" style={{ marginTop: 4 }}>
+                      <input type="checkbox" checked={!!venue.advancedPricing.enforceBookingMinHours} onChange={(e) => setAdv({ enforceBookingMinHours: e.target.checked })} />
+                      Block shorter bookings
+                    </label>
+                  </div>
+                  <div>
+                    <label className="lbl">Time step</label>
+                    <select className="select" value={venue.advancedPricing.timeStepMinutes || 30} onChange={(e) => setAdv({ timeStepMinutes: Number(e.target.value) })}>
+                      <option value={15}>15 minutes</option>
+                      <option value={30}>30 minutes</option>
+                      <option value={60}>60 minutes</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Discount Eligibility */}
@@ -9778,6 +10059,8 @@ function VenueEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDe
           </div>
         )}
 
+        <VenueStepSettingsPanel step={step} allSteps={allSteps} onUpdateStep={onUpdateStep} />
+
         {/* Additional fields added via "Add field" */}
         {(step.fields || []).length > 0 && (
           <div style={{ marginTop: 24 }}>
@@ -9807,6 +10090,95 @@ function VenueEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onDe
 }
 
 window.VenueEditor = VenueEditor;
+
+function VenueStepSettingsPanel({ step, allSteps, onUpdateStep }) {
+  const Ic = window.Icons;
+  const venues = step.venues || [];
+  const rules = step.recommendationRules || [];
+  const notice = step.bookingNotice || {};
+  const eventTypeField = (allSteps || []).flatMap((s) => s.fields || []).find((f) => f.groupOptions && /event type|type of event/i.test(f.label || ""));
+  const eventTypeGroups = eventTypeField ? normalizeSimpleOptionGroups(eventTypeField.options || []) : [];
+  const eventTypeChoices = [
+    ...eventTypeGroups.map((group) => ({ value: group.label, label: `All ${group.label}` })),
+    ...eventTypeGroups.flatMap((group) => (group.options || []).map((option) => ({ value: option.label, label: option.label }))),
+  ];
+  const update = (patch) => onUpdateStep({ ...step, ...patch });
+  const setRules = (next) => update({ recommendationRules: next });
+  const patchRule = (index, patch) => setRules(rules.map((rule, i) => i === index ? { ...rule, ...patch } : rule));
+  const moveRule = (index, delta) => {
+    const target = index + delta;
+    if (target < 0 || target >= rules.length) return;
+    const next = [...rules];
+    [next[index], next[target]] = [next[target], next[index]];
+    setRules(next);
+  };
+  return (
+    <div className="venue-section" style={{ marginTop: 18, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16 }}>
+      <div className="venue-section-head">
+        <h4>Venue recommendation</h4>
+        <label className="chk" style={{ marginLeft: "auto" }}>
+          <input type="checkbox" checked={step.showRecommendation !== false} onChange={(e) => update({ showRecommendation: e.target.checked })} />
+          Show recommendation box
+        </label>
+      </div>
+      <p style={{ fontSize: 11, color: "var(--ink-4)", margin: "0 0 8px" }}>
+        Rules are checked top to bottom; the first match wins. When no rule matches, the venue with the best capacity and event-type fit is recommended.
+      </p>
+      {rules.map((rule, index) => {
+        const venue = venues.find((v) => v.id === rule.venueId);
+        return (
+          <div key={rule.id || index} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 10, marginBottom: 8, display: "grid", gap: 6 }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+              <span>Guests from</span>
+              <input className="input" type="number" min="0" style={{ width: 64 }} value={rule.minGuests ?? ""} onChange={(e) => patchRule(index, { minGuests: e.target.value === "" ? "" : Number(e.target.value) })} />
+              <span>to</span>
+              <input className="input" type="number" min="0" style={{ width: 64 }} value={rule.maxGuests ?? ""} placeholder="any" onChange={(e) => patchRule(index, { maxGuests: e.target.value === "" ? "" : Number(e.target.value) })} />
+              <span>recommend</span>
+              <select className="select" style={{ width: "auto" }} value={rule.venueId || ""} onChange={(e) => patchRule(index, { venueId: e.target.value, subSpaceId: "" })}>
+                <option value="">(text only)</option>
+                {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+              {venue?.subSpace?.enabled && (
+                <select className="select" style={{ width: "auto" }} value={rule.subSpaceId || ""} onChange={(e) => patchRule(index, { subSpaceId: e.target.value })}>
+                  <option value="">no extension</option>
+                  {(venue.subSpace.options || []).map((option) => <option key={option.id} value={option.id}>+ {option.name}</option>)}
+                </select>
+              )}
+              <input className="input" style={{ flex: 1, minWidth: 140 }} value={rule.text || ""} placeholder="Display text (optional), e.g. Large Room or Patio" onChange={(e) => patchRule(index, { text: e.target.value })} />
+              <button className="btn icon sm ghost" title="Move up" onClick={() => moveRule(index, -1)}>↑</button>
+              <button className="btn icon sm ghost" title="Move down" onClick={() => moveRule(index, 1)}>↓</button>
+              <button className="btn icon sm danger-ghost" title="Remove rule" onClick={() => setRules(rules.filter((_, i) => i !== index))}><Ic.Close size={11} /></button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {eventTypeChoices.map((choice) => {
+                const selected = (rule.eventTypes || []).includes(choice.value);
+                return (
+                  <button key={choice.value} className="btn sm" style={{ fontSize: 10, padding: "3px 8px", borderRadius: 12, background: selected ? "var(--accent)" : "var(--surface-2)", color: selected ? "#fff" : "var(--ink-2)", border: selected ? "1px solid var(--accent)" : "1px solid var(--line)" }}
+                    onClick={() => patchRule(index, { eventTypes: selected ? (rule.eventTypes || []).filter((x) => x !== choice.value) : [...(rule.eventTypes || []), choice.value] })}>
+                    {choice.label}
+                  </button>
+                );
+              })}
+              {!(rule.eventTypes || []).length && <span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>Applies to every event type</span>}
+            </div>
+          </div>
+        );
+      })}
+      <button className="btn sm" onClick={() => setRules([...rules, { id: uid("rec"), eventTypes: [], minGuests: 1, maxGuests: "", venueId: venues[0]?.id || "", subSpaceId: "", text: "" }])}>
+        <Ic.Plus size={11} /> Add rule
+      </button>
+
+      <div className="venue-section-head" style={{ marginTop: 18 }}>
+        <h4>Booking notice</h4>
+        <label className="chk" style={{ marginLeft: "auto" }}>
+          <input type="checkbox" checked={notice.enabled !== false} onChange={(e) => update({ bookingNotice: { ...notice, enabled: e.target.checked } })} />
+          Show below the selected venues
+        </label>
+      </div>
+      <textarea className="textarea" rows={3} value={notice.text || ""} placeholder="e.g. Collabüro will complete the agreed-upon room setup..." onChange={(e) => update({ bookingNotice: { ...notice, text: e.target.value } })} />
+    </div>
+  );
+}
 
 function guessOldSiteLayoutGroupKey(area, venueName) {
   const venue = (venueName || "").trim().toLowerCase();
@@ -10420,6 +10792,10 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
       {/* ========== FLOOR LAYOUT PLANS ========== */}
       <div style={{ marginBottom: 18 }}>
         <h3 className="layout-section-title">Floor Layout Plans</h3>
+        <div style={{ marginBottom: 12 }}>
+          <label className="lbl">Helper text under each "Floor Layout" heading <span className="hint">clients see this above the layout choices</span></label>
+          <input className="input" value={step.layoutHelperText || ""} placeholder="Choose the layout that most closely resembles your event set-up." onChange={(e) => update({ layoutHelperText: e.target.value })} />
+        </div>
 
         {allVenues.length === 0 && <div style={{ color: "var(--ink-3)", fontStyle: "italic", fontSize: 12 }}>No venues found. Add venues in the Venue Space step first.</div>}
 
@@ -10463,6 +10839,7 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
                         <select className="select" value={space.visibilityMode || "always"} onChange={(e) => updateLayoutSpace(space.id, { visibilityMode: e.target.value })}>
                           <option value="always">Always show with parent venue</option>
                           <option value="parent_without_subspace">Only when no sub-space is selected</option>
+                          <option value="when_subspace_selected">Only when a sub-space is selected</option>
                         </select>
                         <button className="btn sm" style={{ height: 32, whiteSpace: "nowrap", background: "var(--ink)", color: "#fff", border: "none", borderRadius: 6, padding: "0 12px", cursor: "pointer" }} onClick={() => setEditingLayoutSpace(null)}>Done</button>
                         <button className="btn icon sm ghost" style={{ color: "var(--danger)" }} title="Delete layout space" onClick={() => deleteLayoutSpace(space.id)}>✕</button>
@@ -10478,7 +10855,7 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
                       <React.Fragment>
                         <strong style={{ fontSize: 12 }}>{space.name || "Untitled space"}</strong>
                         <span style={{ fontSize: 11, color: "var(--ink-3)" }}>{allVenues.find((v) => v.id === space.venueId)?.name || "Venue"}</span>
-                        <span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{space.visibilityMode === "parent_without_subspace" ? "Hidden when a sub-space is selected" : "Always shown with parent venue"}</span>
+                        <span style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{space.visibilityMode === "parent_without_subspace" ? "Hidden when a sub-space is selected" : space.visibilityMode === "when_subspace_selected" ? "Shown only when a sub-space is selected" : "Always shown with parent venue"}</span>
                         <span style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
                           <button className="btn icon sm ghost" title="Edit layout space" onClick={() => setEditingLayoutSpace(space.id)}><Ic.Edit size={13} /></button>
                           <button className="btn icon sm ghost" style={{ color: "var(--danger)" }} title="Delete layout space" onClick={() => deleteLayoutSpace(space.id)}>✕</button>
@@ -11249,10 +11626,39 @@ function venuePlanRentalSubtotal(plan = {}, actualHours = 0) {
   return rate;
 }
 
+function venueTimeStepSeconds(venue) {
+  return Math.max(1, Number(venue?.advancedPricing?.timeStepMinutes || 30)) * 60;
+}
+
+function bookingDurationHours(booking = {}) {
+  const { startDate, startTime, endDate, endTime } = booking || {};
+  if (!startDate || !startTime || !endDate || !endTime) return 0;
+  const diff = new Date(`${endDate}T${endTime}`) - new Date(`${startDate}T${startTime}`);
+  return Number.isFinite(diff) && diff > 0 ? Math.ceil(diff / 36e5 * 10) / 10 : 0;
+}
+
+function venueMinHoursViolations(venueStep, answers = {}) {
+  const ids = Array.isArray(answers._selectedVenueIds) ? answers._selectedVenueIds : answers._selectedVenueId ? [answers._selectedVenueId] : [];
+  const bookings = answers._venueBookings || {};
+  return (venueStep?.venues || []).filter((venue) => {
+    const minimum = Number(venue.advancedPricing?.bookingMinHours || 0);
+    if (!ids.includes(venue.id) || !venue.advancedPricing?.enforceBookingMinHours || minimum <= 0) return false;
+    const hours = bookingDurationHours(bookings[venue.id]);
+    return hours > 0 && hours < minimum;
+  });
+}
+
+// Hour band a plan covers: more than appliesFromHours, up to and including appliesToHours.
+function venuePlanCoversHours(plan = {}, hours = 0) {
+  const from = plan.appliesFromHours === "" || plan.appliesFromHours == null ? null : Number(plan.appliesFromHours);
+  const to = plan.appliesToHours === "" || plan.appliesToHours == null ? null : Number(plan.appliesToHours);
+  return (from === null || hours > from) && (to === null || hours <= to);
+}
+
 // ----- Venue Preview Body (for stepType === "venue" inside ClientPreview) -----
 function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, validationMessages = {} }) {
   const Ic = window.Icons;
-  const pricesVisible = useClientPricingVisible();
+  const pricesVisible = useClientPricingVisible("venueTotal");
   const dateTimeRequirementMessage = validationMessages.dateTimeRequirementMessage || "Select booking dates and times to calculate an accurate venue quote.";
   const initialSelectedVenueIds = Array.isArray(answers._selectedVenueIds)
     ? answers._selectedVenueIds
@@ -11330,22 +11736,48 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
     if (onAnswer) onAnswer("_venueSubSpaceOpen", subSpaceOpenByVenue);
   }, [JSON.stringify(subSpaceOpenByVenue)]);
 
-  // --- Recommendation logic: uses venueCapacity + suitableEventTypes ---
-  const getRecommendation = () => {
-    let eventType = "";
-    let attendeeCount = 0;
-    allSteps.forEach((s) => {
-      if (s.stepType === "venue") return;
-      (s.fields || []).forEach((f) => {
-        const val = answers[f.id];
-        if (!val) return;
-        const lab = (f.label || "").toLowerCase();
-        if (lab.includes("event type") || lab.includes("type of event")) eventType = String(val);
-        if (lab.includes("attendee") || lab.includes("number of guest") || lab.includes("number of attendees")) attendeeCount = parseInt(val, 10) || 0;
-      });
+  // --- Recommendation logic: admin rules first, then venueCapacity + suitableEventTypes scoring ---
+  let eventType = "";
+  let eventTypeGroup = "";
+  let attendeeCount = 0;
+  allSteps.forEach((s) => {
+    if (s.stepType === "venue") return;
+    (s.fields || []).forEach((f) => {
+      const val = answers[f.id];
+      if (!val) return;
+      const lab = (f.label || "").toLowerCase();
+      if (lab.includes("event type") || lab.includes("type of event")) {
+        eventType = noticeAnswerText(val);
+        eventTypeGroup = groupedOptionCategoryForValue(f, val);
+      }
+      if (lab.includes("attendee") || lab.includes("number of guest") || lab.includes("number of attendees")) attendeeCount = parseInt(val, 10) || 0;
     });
-
+  });
+  const overCapacity = (venue) => !!venue.disableWhenOverCapacity && attendeeCount > 0 && Number(venue.venueCapacity || 0) > 0 && attendeeCount > Number(venue.venueCapacity);
+  const overCapacityMessage = (venue) => String(venue.overCapacityMessage || `Not available for ${attendeeCount} attendees`).replace(/\{\{\s*Attendees\s*\}\}/gi, String(attendeeCount));
+  const getRecommendation = () => {
     if (!attendeeCount && !eventType) return null;
+
+    const ruleMatch = attendeeCount > 0 ? (step.recommendationRules || []).find((rule) => {
+      if (rule.active === false) return false;
+      const types = (rule.eventTypes || []).filter(Boolean);
+      const typeOk = !types.length || types.some((type) => sameEventType(type, eventType) || (!!eventTypeGroup && String(type).trim().toLowerCase() === eventTypeGroup.trim().toLowerCase()));
+      const min = rule.minGuests === "" || rule.minGuests == null ? 0 : Number(rule.minGuests);
+      const max = rule.maxGuests === "" || rule.maxGuests == null ? Infinity : Number(rule.maxGuests);
+      return typeOk && attendeeCount >= min && attendeeCount <= max;
+    }) : null;
+    if (ruleMatch) {
+      const venue = venues.find((v) => v.id === ruleMatch.venueId);
+      const subSpace = venue?.subSpace?.enabled ? (venue.subSpace.options || []).find((o) => o.id === ruleMatch.subSpaceId) : null;
+      if (venue || ruleMatch.text) {
+        return {
+          venue,
+          subSpace,
+          label: ruleMatch.text || [venue?.name, subSpace?.name].filter(Boolean).join(" + "),
+          reason: `Based on ${eventType ? `your ${eventType} with ` : ""}${attendeeCount} attendees, we recommend:`,
+        };
+      }
+    }
 
     // Score each venue: capacity fit + event type match
     const scored = venues.map((v) => {
@@ -11368,10 +11800,18 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
     const parts = [];
     if (eventType) parts.push(`your ${eventType}`);
     if (attendeeCount) parts.push(`${attendeeCount} attendees`);
-    return { venue: best.venue, reason: parts.length > 0 ? `Based on ${parts.join(" with ")}, we recommend:` : "We recommend:" };
+    return { venue: best.venue, label: best.venue.name, reason: parts.length > 0 ? `Based on ${parts.join(" with ")}, we recommend:` : "We recommend:" };
   };
 
-  const rec = getRecommendation();
+  const rec = step.showRecommendation === false ? null : getRecommendation();
+  const applyRecommendation = () => {
+    if (!rec?.venue || overCapacity(rec.venue)) return;
+    selectVenueReplacingConflicts(rec.venue.id);
+    if (rec.subSpace) {
+      setVenueSubSpaceOpen(rec.venue.id, true);
+      setVenueSubSpaceId(rec.venue.id, rec.subSpace.id);
+    }
+  };
 
   // --- Price calculator (auto-select best plan) ---
   const calcPriceForVenue = (venue) => calcPriceForBooking(venue, bookingByVenue[venue.id] || {});
@@ -11387,9 +11827,12 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
 
     const plans = (venue.pricing || []).filter(Boolean);
     const defaultPlan = plans[0];
-    const autoSwitch = venue.advancedPricing?.autoSwitchBestPricing !== false;
+    const byHours = venue.advancedPricing?.planSelection === "by_hours";
+    const autoSwitch = !byHours && venue.advancedPricing?.autoSwitchBestPricing !== false;
     const pricedPlans = plans.map((p) => ({ plan: p, rentalSubtotal: venuePlanRentalSubtotal(p, totalHours) }));
-    const best = autoSwitch
+    const best = byHours
+      ? (pricedPlans.find((candidate) => venuePlanCoversHours(candidate.plan, totalHours)) || pricedPlans[pricedPlans.length - 1])
+      : autoSwitch
       ? pricedPlans.reduce((winner, candidate) => candidate.rentalSubtotal < winner.rentalSubtotal ? candidate : winner, pricedPlans[0])
       : pricedPlans[0];
     const plan = best?.plan || defaultPlan;
@@ -11653,13 +12096,15 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
     <div className="cv-venue-preview">
       {/* Recommendation banner */}
       {rec && (
-        <div className="cv-recommend" onClick={() => selectVenueReplacingConflicts(rec.venue.id)}>
+        <div className="cv-recommend" onClick={applyRecommendation} style={rec.venue ? undefined : { cursor: "default" }}>
           <div className="cv-recommend-icon">✦</div>
           <div>
             <div className="cv-recommend-label">{rec.reason}</div>
-            <div className="cv-recommend-venue">{rec.venue.name}</div>
+            <div className="cv-recommend-venue">{rec.label}</div>
           </div>
-          <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>{selectedIds.includes(rec.venue.id) ? "Selected" : "Add"}</span>
+          {rec.venue && (
+            <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>{selectedIds.includes(rec.venue.id) ? "Selected" : "Add"}</span>
+          )}
         </div>
       )}
 
@@ -11667,14 +12112,16 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
       <div className="cv-venue-select-grid">
         {venues.map((v) => {
           const blockers = selectedIds.includes(v.id) ? [] : venueBlockers(v);
-          const blocked = blockers.length > 0;
+          const capacityBlocked = !selectedIds.includes(v.id) && overCapacity(v);
+          const blocked = blockers.length > 0 || capacityBlocked;
+          const blockedText = blockers.length > 0 ? `Not available with ${blockers.map((b) => b.name).join(", ")}` : capacityBlocked ? overCapacityMessage(v) : "";
           return (
           <div
             key={v.id}
             className={"cv-venue-select-item" + (selectedIds.includes(v.id) ? " active" : "") + (blocked ? " blocked" : "")}
-            onClick={() => { toggleVenue(v.id); }}
+            onClick={() => { if (!capacityBlocked) toggleVenue(v.id); }}
             aria-disabled={blocked || undefined}
-            title={blocked ? `Not available with ${blockers.map((b) => b.name).join(", ")}` : undefined}
+            title={blocked ? blockedText : undefined}
           >
             <input
               type="checkbox"
@@ -11698,7 +12145,7 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
               </div>
             )}
             {blocked && (
-              <div className="cv-venue-select-blocked">Not available with {blockers.map((b) => b.name).join(", ")}</div>
+              <div className="cv-venue-select-blocked">{blockedText}</div>
             )}
           </div>
           );
@@ -11881,7 +12328,7 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>Start Time{startHours && startHours !== "closed" && startHours ? ` (${startHours.open} – ${startHours.close})` : ""}</label>
-                    <input className="cv-input" type="time" value={booking.startTime || ""} min={startHours && startHours !== "closed" ? startHours.open : undefined} max={startHours && startHours !== "closed" ? startHours.close : undefined} onInput={(e) => setVenueBooking(selected.id, { startTime: clampTime(selected, e.target.value, booking.startDate) })} onChange={(e) => setVenueBooking(selected.id, { startTime: clampTime(selected, e.target.value, booking.startDate) })} disabled={!booking.startDate} />
+                    <input className="cv-input" type="time" step={venueTimeStepSeconds(selected)} value={booking.startTime || ""} min={startHours && startHours !== "closed" ? startHours.open : undefined} max={startHours && startHours !== "closed" ? startHours.close : undefined} onInput={(e) => setVenueBooking(selected.id, { startTime: clampTime(selected, e.target.value, booking.startDate) })} onChange={(e) => setVenueBooking(selected.id, { startTime: clampTime(selected, e.target.value, booking.startDate) })} disabled={!booking.startDate} />
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>End Date</label>
@@ -11889,7 +12336,7 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>End Time{endHours && endHours !== "closed" && endHours ? ` (${endHours.open} – ${endHours.close})` : ""}</label>
-                    <input className="cv-input" type="time" value={booking.endTime || ""} min={endHours && endHours !== "closed" ? endHours.open : undefined} max={endHours && endHours !== "closed" ? endHours.close : undefined} onInput={(e) => setVenueBooking(selected.id, { endTime: clampTime(selected, e.target.value, booking.endDate) })} onChange={(e) => setVenueBooking(selected.id, { endTime: clampTime(selected, e.target.value, booking.endDate) })} disabled={!booking.endDate} />
+                    <input className="cv-input" type="time" step={venueTimeStepSeconds(selected)} value={booking.endTime || ""} min={endHours && endHours !== "closed" ? endHours.open : undefined} max={endHours && endHours !== "closed" ? endHours.close : undefined} onInput={(e) => setVenueBooking(selected.id, { endTime: clampTime(selected, e.target.value, booking.endDate) })} onChange={(e) => setVenueBooking(selected.id, { endTime: clampTime(selected, e.target.value, booking.endDate) })} disabled={!booking.endDate} />
                   </div>
                 </div>
                 {selected.allowMultipleDates && (
@@ -11921,7 +12368,7 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                                   </div>
                                   <div>
                                     <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>Start Time{dStartHours && dStartHours !== "closed" ? ` (${dStartHours.open} – ${dStartHours.close})` : ""}</label>
-                                    <input className="cv-input" type="time" value={date.startTime || ""} min={dStartHours && dStartHours !== "closed" ? dStartHours.open : undefined} max={dStartHours && dStartHours !== "closed" ? dStartHours.close : undefined} onChange={(e) => updateAdditionalDate(selected, date.id, { startTime: clampTime(selected, e.target.value, date.startDate) })} disabled={!date.startDate} />
+                                    <input className="cv-input" type="time" step={venueTimeStepSeconds(selected)} value={date.startTime || ""} min={dStartHours && dStartHours !== "closed" ? dStartHours.open : undefined} max={dStartHours && dStartHours !== "closed" ? dStartHours.close : undefined} onChange={(e) => updateAdditionalDate(selected, date.id, { startTime: clampTime(selected, e.target.value, date.startDate) })} disabled={!date.startDate} />
                                   </div>
                                   <div>
                                     <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>End Date</label>
@@ -11929,7 +12376,7 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                                   </div>
                                   <div>
                                     <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>End Time{dEndHours && dEndHours !== "closed" ? ` (${dEndHours.open} – ${dEndHours.close})` : ""}</label>
-                                    <input className="cv-input" type="time" value={date.endTime || ""} min={dEndHours && dEndHours !== "closed" ? dEndHours.open : undefined} max={dEndHours && dEndHours !== "closed" ? dEndHours.close : undefined} onChange={(e) => updateAdditionalDate(selected, date.id, { endTime: clampTime(selected, e.target.value, date.endDate) })} disabled={!date.endDate} />
+                                    <input className="cv-input" type="time" step={venueTimeStepSeconds(selected)} value={date.endTime || ""} min={dEndHours && dEndHours !== "closed" ? dEndHours.open : undefined} max={dEndHours && dEndHours !== "closed" ? dEndHours.close : undefined} onChange={(e) => updateAdditionalDate(selected, date.id, { endTime: clampTime(selected, e.target.value, date.endDate) })} disabled={!date.endDate} />
                                   </div>
                                 </div>
                                 {pricesVisible && dateQuote && (
@@ -11982,6 +12429,11 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                     {dateTimeRequirementMessage}
                   </div>
                 )}
+                {price && selected.advancedPricing?.enforceBookingMinHours && Number(selected.advancedPricing?.bookingMinHours || 0) > price.totalHours && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: "#d44", background: "#fef2f2", padding: "8px 10px", borderRadius: 6, border: "1px solid #fecaca" }}>
+                    ⚠ {selected.name} has a minimum booking of {selected.advancedPricing.bookingMinHours} hours.
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -11992,6 +12444,9 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
         <div style={{ color: "var(--ink-3)", fontStyle: "italic", padding: "20px 0" }}>
           No venues available for selection.
         </div>
+      )}
+      {selectedVenues.length > 0 && step.bookingNotice?.enabled !== false && String(step.bookingNotice?.text || "").trim() && (
+        <InstructionalNotice field={{ id: `${step.id}_booking_notice`, type: "instructional", label: step.bookingNotice.title || "", fieldDescription: step.bookingNotice.text, noticeStyle: step.bookingNotice.style || "info", noticeIcon: step.bookingNotice.icon || "auto" }} />
       )}
     </div>
   );
@@ -12100,6 +12555,7 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     customLayoutSpaces.filter((space) => space.venueId === v.id).forEach((space) => {
       const selectedSubSpaceId = selectedSubSpacesByVenue[v.id] || "";
       if (space.visibilityMode === "parent_without_subspace" && selectedSubSpaceId) return;
+      if (space.visibilityMode === "when_subspace_selected" && !selectedSubSpaceId) return;
       if (floorLayouts[space.id]?.hasFloorLayoutPlan !== false && floorLayouts[space.id] && (floorLayouts[space.id].layouts || []).length > 0) {
         const layouts = floorLayouts[space.id].layouts || [];
         if (layouts.length > 0) unorderedVenueAreas.push({ id: space.id, venueId: v.id, name: space.name + " (" + v.name + ")", layouts, blankFloorPlan: floorLayouts[space.id].blankFloorPlan || "" });
@@ -12192,7 +12648,10 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
 
         return (
           <div key={area.id} style={{ marginBottom: 32, borderTop: "2px solid var(--line)", paddingTop: 20 }}>
-            <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>{area.name} Floor Layout:</h4>
+            <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: (floorLayouts[area.id]?.helperText || step.layoutHelperText) ? 4 : 12 }}>{area.name} Floor Layout:</h4>
+            {(floorLayouts[area.id]?.helperText || step.layoutHelperText) && (
+              <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 12px", lineHeight: 1.5 }}>{floorLayouts[area.id]?.helperText || step.layoutHelperText}</p>
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
               {/* Radio list */}
@@ -12665,17 +13124,28 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
   );
 }
 
+function RentalDeliveryNote() {
+  const text = normalizeSiteSettings(window.CURRENT_SITE_SETTINGS || SAMPLE_SITE_SETTINGS).fulfillment?.deliveryNote;
+  const note = text == null ? DEFAULT_RENTAL_DELIVERY_NOTE : String(text).trim();
+  if (!note) return null;
+  return <p className="cv-rental-detail-desc" style={{ fontStyle: "italic" }}>{note}</p>;
+}
+
 function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCount }) {
   const Ic = window.Icons;
   const pricesVisible = useClientPricingVisible();
-  const cross = React.useContext(RentalCrossContext)?.cross || null;
+  const crossContext = React.useContext(RentalCrossContext);
+  const cross = crossContext?.cross || null;
+  const venueMaxUnits = item.maxUnitsByVenue?.[crossContext?.venueId || ""];
+  const maxUnits = venueMaxUnits === "" || venueMaxUnits == null ? item.maxUnits : venueMaxUnits;
   const inclusion = rentalActiveInclusion(cross, item.id);
   const quantityLocked = rentalLockedPresetQuantity(cross, item.id);
   const itemValue = value || {};
   const hasOptionGroups = (item.optionGroups || []).length > 0;
   const priceLabel = inclusion && inclusion.waivePrice ? "Included" : workflowRentalPriceLabel(item);
   const needsParentQuantity = rentalOptionGroupsNeedParentQuantity(item);
-  const showBaseQuantity = !rentalUsesFixedBaseQuantity(item) && (needsParentQuantity || !item.hideBaseQuantity);
+  const includedWithoutQuantity = !!inclusion?.waivePrice && !quantityLocked;
+  const showBaseQuantity = !includedWithoutQuantity && !rentalUsesSharedQuantity(item) && !rentalUsesFixedBaseQuantity(item) && (needsParentQuantity || !item.hideBaseQuantity);
   const applyRecommendedQuantity = () => {
     const qty = Number(recommendedCount || 0);
     if (!qty) return;
@@ -12716,11 +13186,12 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
             </div>
             <select className="cv-input cv-select" value={itemValue.quantity ?? ""} disabled={quantityLocked} onChange={(e) => onChange({ ...itemValue, quantity: Number(e.target.value) })}>
               <option value="">Select one</option>
-              {rentalCountOptions(item.minUnits || 0, item.maxUnits || 99, item.increment || 1).map((n) => <option key={n} value={n}>{n}</option>)}
+              {rentalCountOptions(item.minUnits || 0, maxUnits || 99, item.increment || 1).map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </div>
         )}
-        {!grouped && inclusion && <p className="cv-rental-included-note">Included in {inclusion.packageName}</p>}
+        {(!grouped || includedWithoutQuantity) && inclusion && <p className="cv-rental-included-note">Included in {inclusion.packageName}</p>}
+        {item.showDeliveryNote && rentalRequiresDelivery(item) && <RentalDeliveryNote />}
         {hasOptionGroups ? (
           (item.optionGroups || []).map((group) => (
             <RentalOptionGroupPreview key={group.id} item={item} group={group} allGroups={item.optionGroups || []} itemValue={itemValue} onItemValue={onChange} />
@@ -12771,6 +13242,29 @@ function rentalFieldSelectedItemIds(field, fieldState = {}, items = []) {
 
 // Selection state across every rental group of one step/venue, so questions and
 // packages can depend on items that live in other groups.
+function rentalUsesSharedQuantity(item = {}) {
+  return item?.quantitySource === "category";
+}
+
+function rentalSharedQuantitySettings(field = {}, venueId = "") {
+  const shared = field.sharedQuantity || {};
+  const venueMax = shared.maxByVenue?.[venueId];
+  return {
+    label: shared.label || "Quantity",
+    min: Number(shared.min ?? 1) || 1,
+    max: Number(venueMax === "" || venueMax == null ? shared.max ?? 100 : venueMax) || 100,
+    step: Math.max(1, Number(shared.step || 1)),
+    required: shared.required !== false,
+  };
+}
+
+// Items on the group's shared quantity (old-site Dinnerware "Quantity") are
+// priced from that one answer instead of their own picker.
+function rentalItemValueWithShared(item, itemValue = {}, fieldState = {}) {
+  if (!rentalUsesSharedQuantity(item)) return itemValue || {};
+  return { ...(itemValue || {}), quantity: Number(fieldState.sharedQuantity || 0) };
+}
+
 function buildRentalCrossContext(fields = [], rentalState = {}, venueId = "", booking = null) {
   const itemsById = {};
   const fieldOfItem = {};
@@ -12786,7 +13280,7 @@ function buildRentalCrossContext(fields = [], rentalState = {}, venueId = "", bo
     });
     rentalFieldSelectedItemIds(field, fieldState, items).forEach((id) => {
       selected.add(id);
-      itemValues[id] = (fieldState.itemValues || {})[id] || {};
+      itemValues[id] = rentalItemValueWithShared(itemsById[id], (fieldState.itemValues || {})[id] || {}, fieldState);
     });
   });
   const includedBy = {};
@@ -12952,6 +13446,13 @@ function rentalStepMissingRequirements(fields = [], stepRentalState = {}, venueI
       const item = cross.itemsById[itemId];
       const fieldId = cross.fieldOfItem[itemId];
       if (!item || !fieldId || missing[fieldId] === "questions") return;
+      if (rentalUsesSharedQuantity(item) && !Number(state?.[fieldId]?.sharedQuantity || 0)) {
+        const field = fields.find((candidate) => candidate.id === fieldId);
+        if (rentalSharedQuantitySettings(field, venueId).required) {
+          missing[fieldId] = "questions";
+          return;
+        }
+      }
       const itemValue = cross.itemValues[itemId] || {};
       const groups = [rentalParentVisibilitySource(item), ...(item.optionGroups || [])];
       const values = rentalOptionGroupVisibilityValues(groups, itemValue);
@@ -13001,6 +13502,7 @@ function rentalItemNeedsDetail(item) {
   if ((item.optionGroups || []).length > 0) return true;
   if (rentalPackageIncludes(item).length > 0) return true;
   if ((item.recommendations || []).length > 0) return true;
+  if (rentalUsesSharedQuantity(item)) return false;
   if (rentalOptionGroupsNeedParentQuantity(item) || (!item.hideBaseQuantity && !rentalUsesFixedBaseQuantity(item))) return true;
   return false;
 }
@@ -13150,7 +13652,7 @@ function computeRentalFieldsCost(step, stepState = {}, venue = null, booking = n
         });
       }
     } else items.filter((item) => selectedIds.has(item.id)).forEach((item) => {
-      const result = rentalItemCostLine(item, (fieldState.itemValues || {})[item.id] || {}, cross);
+      const result = rentalItemCostLine(item, rentalItemValueWithShared(item, (fieldState.itemValues || {})[item.id] || {}, fieldState), cross);
       result.lines.forEach((line) => lines.push(line));
       if (rentalRequiresDelivery(item)) deliveryItems.push({ itemId: item.id, label: item.name, deliveryOptionId: item.deliveryOptionId });
     });
@@ -13262,7 +13764,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
   const rentalState = value || {};
   const cross = buildRentalCrossContext(fields, rentalState, venueId, booking);
   const commitState = (nextState) => onChange(reconcileRentalPackageIncludes(rentalState, nextState, fields, venueId));
-  const crossContextValue = { cross, selectItems: (itemIds) => commitState(selectRentalItemsInState(rentalState, fields, venueId, itemIds)) };
+  const crossContextValue = { cross, venueId, selectItems: (itemIds) => commitState(selectRentalItemsInState(rentalState, fields, venueId, itemIds)) };
   const isLockedInclude = (itemId) => !!rentalActiveInclusion(cross, itemId)?.locked;
   const itemPriceLabel = (item) => rentalActiveInclusion(cross, item.id)?.waivePrice ? "Included" : workflowRentalPriceLabel(item);
   const allTiles = [];
@@ -13384,10 +13886,22 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                   />
                 );
               }
+              const shared = items.some(rentalUsesSharedQuantity) ? rentalSharedQuantitySettings(field, venueId) : null;
               return (
                 <div key={field.id} className="cv-rental-detail cv-rental-group-panel">
                   <div className="cv-rental-detail-head">{field.label}:</div>
                   <div className="cv-rental-detail-body">
+                    {shared && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div className="cv-rental-field-label">
+                          <span>{shared.label}{shared.required ? " *" : ""}</span>
+                        </div>
+                        <select className="cv-input cv-select" value={fieldState.sharedQuantity ?? ""} onChange={(e) => setFieldState(field.id, { ...fieldState, sharedQuantity: e.target.value === "" ? "" : Number(e.target.value) })}>
+                          <option value="">Select one</option>
+                          {rentalCountOptions(shared.min, shared.max, shared.step).map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
+                    )}
                     <div className="cv-rental-group-list">
                       {items.map((item) => {
                         if (rentalItemAlwaysShown(item)) {
@@ -13440,7 +13954,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                                 item={item}
                                 grouped
                                 recommendedCount={layoutRecommendationCountForItem(item, layoutRecommendations)}
-                                value={(fieldState.itemValues || {})[item.id]}
+                                value={rentalItemValueWithShared(item, (fieldState.itemValues || {})[item.id], fieldState)}
                                 onChange={(nextItem) => setFieldState(field.id, { ...fieldState, itemValues: { ...(fieldState.itemValues || {}), [item.id]: nextItem } })}
                               />
                             )}
@@ -13511,9 +14025,51 @@ function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layout
   );
 }
 
-function CheckoutPreviewBody({ step, costData, value, onChange, onBreakdown, summaryLocked, lockedMessage }) {
+function CheckoutContractLink({ contractLink }) {
+  if (!contractLink?.enabled || !String(contractLink.url || "").trim()) return null;
+  const url = String(contractLink.url).trim();
+  if (!/^(https?:\/\/|\/)/i.test(url)) return null;
+  const label = contractLink.label || "View the rental contract";
+  if (contractLink.mode === "modal") {
+    return <ContractLinkModalButton label={label} url={url} />;
+  }
+  return (
+    <p style={{ margin: "14px 0 0", fontSize: 13 }}>
+      <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", fontWeight: 650 }}>{label}</a>
+    </p>
+  );
+}
+
+function ContractLinkModalButton({ label, url }) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <p style={{ margin: "14px 0 0", fontSize: 13 }}>
+        <button type="button" onClick={() => setOpen(true)} style={{ border: 0, background: "transparent", color: "var(--accent)", fontWeight: 650, textDecoration: "underline", padding: 0, cursor: "pointer", font: "inherit" }}>{label}</button>
+      </p>
+      {open && (
+        <div className="cv-cost-modal-backdrop" onClick={() => setOpen(false)}>
+          <div className="cv-cost-modal" style={{ width: "min(900px, 94vw)", height: "80vh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <strong>{label}</strong>
+              <button type="button" className="cv-btn-prev" onClick={() => setOpen(false)}>Close</button>
+            </div>
+            <iframe title={label} src={url} style={{ flex: 1, width: "100%", border: "1px solid #e6ded8", borderRadius: 6 }} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function CheckoutPreviewBody({ step, costData, value, onChange, onBreakdown, summaryLocked, lockedMessage, carriedNotices = [] }) {
   const pricesVisible = useClientPricingVisible();
   const checkout = step.checkout || {};
+  const carriedNoticesEl = carriedNotices.length > 0 ? (
+    <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+      {carriedNotices.map((field) => <InstructionalNotice key={field.id} field={field} />)}
+    </div>
+  ) : null;
   const summaryItems = checkout.summaryItems || {};
   const agreements = checkout.agreements || [];
   const fmt = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -13531,6 +14087,7 @@ function CheckoutPreviewBody({ step, costData, value, onChange, onBreakdown, sum
   const setAgreement = (id, checked) => onChange({ ...(value || {}), [id]: checked });
   const agreementsEl = (
     <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+      <CheckoutContractLink contractLink={checkout.contractLink} />
       {agreements.map((agreement) => (
         <label key={agreement.id} className="cv-toggle-row" style={{ alignItems: "flex-start", lineHeight: 1.35 }}>
           <input
@@ -13572,6 +14129,7 @@ function CheckoutPreviewBody({ step, costData, value, onChange, onBreakdown, sum
           </div>
         )}
         {agreementsEl}
+        {carriedNoticesEl}
       </div>
     );
   }
@@ -13626,6 +14184,7 @@ function CheckoutPreviewBody({ step, costData, value, onChange, onBreakdown, sum
         )}
         {agreementsEl}
       </div>
+      {carriedNoticesEl}
     </div>
   );
 }
@@ -13660,6 +14219,8 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 
   const [stepIdx, setStepIdx] = React.useState(() => initialClientDraft ? Math.min(initialClientDraft.stepIdx, Math.max(0, list.length - 1)) : startIdx);
   const [answers, setAnswers] = React.useState(() => initialClientDraft?.answers || {});
+  // Read synchronously by rental availability during this render, so it cannot wait for an effect.
+  window.CURRENT_VENUE_SUBSPACES = answers._venueSubSpaces || {};
   const [venueCost, setVenueCost] = React.useState(() => initialClientDraft?.venueCost || null);
   const [layoutRecommendations, setLayoutRecommendations] = React.useState(() => initialClientDraft?.layoutRecommendations || {});
   const [costBreakdown, setCostBreakdown] = React.useState(null);
@@ -13924,10 +14485,16 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     if (f.visibleToClient === false) return false;
     return fieldRuleState(f).visible;
   };
+  const primaryPhoneFieldId = workflowFieldEntries.find(({ field }) => field.type === "phone")?.field.id || "";
   const ruleAwareField = (f) => {
     const { required } = fieldRuleState(f);
     const options = visibleFieldOptions(f.options, isOptionVisible);
-    return required === !!f.required && options === f.options ? f : { ...f, required, options };
+    const next = required === !!f.required && options === f.options ? f : { ...f, required, options };
+    // Browsers fill every "tel" input with the same number, so only the client's own phone may autofill.
+    if ((f.type === "phone" || f.type === "number") && !f.autoComplete) {
+      return { ...next, autoComplete: f.id === primaryPhoneFieldId ? "tel" : "off" };
+    }
+    return next;
   };
   React.useEffect(() => {
     if (adminEditMode) return;
@@ -14014,7 +14581,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         const rules = fieldRuleState(f);
         if (rules.disabled) return false;
         const rawValue = f.type === "rental_group" ? answers.__rentalGroups?.[targetStep.id]?.[f.id] : answers[f.id];
-        return (rules.required && !answerHasValue(rawValue)) || fieldMissingRequiredSubOption(f, rawValue) || fieldHasInvalidPhone(f, rawValue) || !!rentalMissing[f.id];
+        return (rules.required && !answerHasValue(rawValue)) || fieldMissingRequiredSubOption(f, rawValue) || fieldMissingServiceSelections(f, rawValue) || fieldHasInvalidPhone(f, rawValue) || !!rentalMissing[f.id];
       });
   };
   const validationMessageForField = (field, targetStep) => {
@@ -14025,6 +14592,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     }
     const rawValue = field.type === "rental_group" ? answers.__rentalGroups?.[targetStep.id]?.[field.id] : answers[field.id];
     if (fieldMissingRequiredSubOption(field, rawValue)) return validations.requiredSubOptionMessage || "Choose a required sub-option.";
+    if (fieldMissingServiceSelections(field, rawValue)) return "Please complete the selections for the services you picked.";
     if (fieldHasInvalidPhone(field, rawValue)) return PHONE_INVALID_MESSAGE;
     return validations.requiredFieldMessage || "This field is required.";
   };
@@ -14093,8 +14661,36 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       pulseEmailField();
       return;
     }
-    setEmailVerification({ email: targetEmail, verifiedAt: new Date().toISOString(), dummy: true });
-    setEmailVerificationStatus({ status: "verified", message: "Email validated. Pricing is now visible." });
+    const mode = validations.emailVerificationMode === "instant" ? "instant" : "link";
+    setEmailVerificationStatus(mode === "link" ? { status: "sending", message: "Sending verification email..." } : { status: "checking", message: "Checking email..." });
+    try {
+      if (mode === "instant") {
+        if (validations.checkEmailDomain !== false) {
+          const check = await collaburoApi("/api/email-verification", { method: "POST", body: JSON.stringify({ action: "check-domain", email: targetEmail }) });
+          if (check && check.exists === false) {
+            setEmailVerificationStatus({ status: "error", message: "Email does not exist" });
+            pulseEmailField();
+            return;
+          }
+        }
+        setEmailVerification({ email: targetEmail, verifiedAt: new Date().toISOString(), dummy: true });
+        setEmailVerificationStatus({ status: "verified", message: "Email validated. Pricing is now visible." });
+        return;
+      }
+      const data = await collaburoApi("/api/email-verification", {
+        method: "POST",
+        body: JSON.stringify({ action: "send", email: targetEmail, checkDomain: validations.checkEmailDomain !== false, returnPath: window.location.pathname }),
+      });
+      if (data?.testMode && data.sessionToken) {
+        setEmailVerification({ email: targetEmail, verifiedAt: data.verifiedAt || new Date().toISOString(), sessionToken: data.sessionToken });
+        setEmailVerificationStatus({ status: "verified", message: "Email validated. Pricing is now visible." });
+        return;
+      }
+      setEmailVerificationStatus({ status: "sent", message: `We sent a verification link to ${targetEmail}. Open it to view pricing; your progress is saved.` });
+    } catch (error) {
+      setEmailVerificationStatus({ status: "error", message: error.message || "Could not verify this email. Please try again." });
+      pulseEmailField();
+    }
   };
   React.useEffect(() => {
     if (!publicMode || !validations.emailVerification) return;
@@ -14154,6 +14750,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         setEmailVerification((current) => ({ ...current, email: emailAnswer, sessionToken: current.sessionToken || emailVerification.sessionToken }));
         setEmailVerificationStatus({ status: "verified", message: "Saved booking loaded for this verified email." });
         if (draft.recordId) {
+          PUBLIC_PREVIEW_SESSION.ownRecordCodes.add(String(bookingCodeFromId(draft.recordId))).add(String(draft.recordId));
           const url = new URL(window.location.href);
           url.searchParams.set("record", bookingCodeFromId(draft.recordId));
           window.history.replaceState({ record: bookingCodeFromId(draft.recordId) }, "", url.toString());
@@ -14171,6 +14768,14 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const canLeaveStep = (targetStep, { forceRequired = false } = {}) => {
     if (!publicMode || (adminEditMode && ADMIN_BOOKING_FORM_OVERRIDES.validations.requiredFields)) return true;
     if (!forceRequired && (!publicMode || !validations.strictProgression)) return true;
+    if (targetStep?.stepType === "venue") {
+      const tooShort = venueMinHoursViolations(targetStep, answers);
+      if (tooShort.length) {
+        const venue = tooShort[0];
+        setClientNotice({ kind: "danger", title: "Booking too short", message: `${venue.name} has a minimum booking of ${venue.advancedPricing.bookingMinHours} hours.`, duration: 4600 });
+        return false;
+      }
+    }
     const missing = getMissingRequiredFields(targetStep);
     if (missing.length === 0) return true;
     const nextErrors = missing.reduce((acc, field) => {
@@ -14225,7 +14830,10 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       if (row.venueId && row.venueId !== "All" && String(row.venueId) === String(context.venueId || "")) score += 3;
       else if (row.venueName && row.venueName !== "All" && matchesRuleValue(row.venueName, context.venueName)) score += 2;
       if (row.eventPrivacy && String(row.eventPrivacy).toLowerCase() !== "all") score += 1;
-      if (row.eventType && String(row.eventType).toLowerCase() !== "all") score += 1;
+      if (row.eventType && String(row.eventType).toLowerCase() !== "all") {
+        const isGroupRow = !!context.eventTypeGroup && String(row.eventType).trim().toLowerCase() === context.eventTypeGroup.trim().toLowerCase();
+        score += isGroupRow ? 1 : 2;
+      }
       if (row.alcoholOnSite && String(row.alcoholOnSite).toLowerCase() !== "all") score += 1;
       return score;
     };
@@ -14376,6 +14984,8 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       const actualText = String(clean || raw || "").trim().toLowerCase();
       const expectedText = String(expected || "").trim().toLowerCase();
       if (operator === "not_equals") return actualText !== expectedText;
+      if (operator === "in") return ruleValueList(expected).includes(actualText);
+      if (operator === "not_in") return !!actualText && !ruleValueList(expected).includes(actualText);
       if (operator === "contains") return !!expectedText && actualText.includes(expectedText);
       if (operator === "greater_than") return Number(clean || raw || 0) > Number(expected || 0);
       if (operator === "less_than") return Number(clean || raw || 0) < Number(expected || 0);
@@ -14393,31 +15003,42 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const globalDiscountCap = discountCapAmount(pricing.discountSettings?.maxCombinedDiscount, subtotal);
     let remainingGlobalDiscount = Number.isFinite(globalDiscountCap) ? Math.max(0, globalDiscountCap) : Infinity;
     let nonStackableApplied = false;
-    const automaticDiscountLines = (pricing.discountRules || [])
+    const discountLineFor = (rule, remaining) => {
+      const selectedTargets = rule.applyTo === "line_items" ? (rule.targets || []) : rule.applyTo === "space_rental" ? ["venue_only"] : ["subtotal"];
+      const basis = selectedTargets.reduce((sum, target) => sum + Number(discountBasis[target] || 0), 0);
+      if (basis <= 0) return null;
+      const rawTotal = rule.valueType === "flat" ? Number(rule.amount || 0) : basis * (Number(rule.amount || 0) / 100);
+      const ruleCap = discountCapAmount(rule.maxDiscount, basis);
+      const cappedTotal = Math.min(rawTotal, basis, ruleCap, remaining);
+      if (cappedTotal <= 0) return null;
+      return {
+        id: rule.id,
+        label: rule.name || "Discount",
+        displayLabel: rule.valueType === "percentage" ? `${rule.name || "Discount"} (${Number(rule.amount || 0)}%)` : (rule.name || "Discount"),
+        applyTo: rule.applyTo || "subtotal",
+        targets: selectedTargets,
+        basis,
+        total: -cappedTotal,
+      };
+    };
+    const matchedDiscountRules = (pricing.discountRules || [])
       .filter((rule) => rule.active !== false && Number(rule.amount || 0) > 0)
       .filter(ruleMatches)
-      .sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0))
-      .reduce((lines, rule) => {
+      .sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
+    const automaticDiscountLines = pricing.discountSettings?.stacking === "highest_only"
+      ? matchedDiscountRules
+        .map((rule) => discountLineFor(rule, remainingGlobalDiscount))
+        .filter(Boolean)
+        .sort((a, b) => a.total - b.total)
+        .slice(0, 1)
+      : matchedDiscountRules.reduce((lines, rule) => {
         if (remainingGlobalDiscount <= 0 || nonStackableApplied) return lines;
         if (rule.stackable === false && lines.length > 0) return lines;
-        const selectedTargets = rule.applyTo === "line_items" ? (rule.targets || []) : ["subtotal"];
-        const basis = selectedTargets.reduce((sum, target) => sum + Number(discountBasis[target] || 0), 0);
-        if (basis <= 0) return lines;
-        const rawTotal = rule.valueType === "flat" ? Number(rule.amount || 0) : basis * (Number(rule.amount || 0) / 100);
-        const ruleCap = discountCapAmount(rule.maxDiscount, basis);
-        const cappedTotal = Math.min(rawTotal, basis, ruleCap, remainingGlobalDiscount);
-        if (cappedTotal <= 0) return lines;
-        remainingGlobalDiscount -= cappedTotal;
+        const line = discountLineFor(rule, remainingGlobalDiscount);
+        if (!line) return lines;
+        remainingGlobalDiscount += line.total;
         if (rule.stackable === false) nonStackableApplied = true;
-        lines.push({
-          id: rule.id,
-          label: rule.name || "Discount",
-          displayLabel: rule.valueType === "percentage" ? `${rule.name || "Discount"} (${Number(rule.amount || 0)}%)` : (rule.name || "Discount"),
-          applyTo: rule.applyTo || "subtotal",
-          targets: selectedTargets,
-          basis,
-          total: -cappedTotal,
-        });
+        lines.push(line);
         return lines;
       }, []);
     const automaticDiscountTotal = automaticDiscountLines.reduce((sum, line) => sum + Math.abs(Number(line.total || 0)), 0);
@@ -14463,11 +15084,17 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const feesTotal = feeLines.reduce((sum, fee) => sum + Number(fee.total || 0), 0);
     const total = discountedSubtotal + feesTotal;
     const tax = feeLines.filter((fee) => /tax/i.test(fee.label)).reduce((sum, fee) => sum + Number(fee.total || 0), 0);
+    const eventContext = eventContextFromAnswers(list, answers, pricing.fieldMap);
+    const eventTypeField = allFields.find((f) => f.id === pricing.fieldMap?.eventTypeFieldId)
+      || allFields.find((f) => f.groupOptions && /event type|type of event/i.test(f.label || ""));
     const baseDepositContext = {
-      eventPrivacy: findAnswerByLabel(["event privacy", "privacy"]),
-      eventType: findAnswerByLabel(["event type", "type of event"]),
-      alcoholOnSite: findAnswerByLabel(["alcohol"]),
+      eventPrivacy: eventContext.eventPrivacy,
+      eventType: eventContext.eventType,
+      eventTypeGroup: eventTypeField ? groupedOptionCategoryForValue(eventTypeField, answers[eventTypeField.id]) : "",
+      alcoholOnSite: eventContext.alcoholOnSite,
     };
+    const eventTypeMatches = (ruleValue, context) => matchesRuleValue(ruleValue, context.eventType)
+      || (!!context.eventTypeGroup && String(ruleValue || "").trim().toLowerCase() === context.eventTypeGroup.trim().toLowerCase());
     const depositForVenue = (item) => {
       const depositContext = {
         ...baseDepositContext,
@@ -14480,7 +15107,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
           const venueMatches = String(row.venueId || "All") === "All" || String(row.venueId) === String(depositContext.venueId || "") || matchesRuleValue(row.venueName, depositContext.venueName);
           return venueMatches
             && matchesRuleValue(row.eventPrivacy, depositContext.eventPrivacy)
-            && matchesRuleValue(row.eventType, depositContext.eventType)
+            && eventTypeMatches(row.eventType, depositContext)
             && matchesRuleValue(row.alcoholOnSite, depositContext.alcoholOnSite);
         })
         .sort((a, b) => ruleSpecificity(b, depositContext) - ruleSpecificity(a, depositContext))[0];
@@ -14569,6 +15196,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       return changed ? next : current;
     });
   }, [autoDeliveryKey, list]);
+  const checkoutStepConfig = list.find((s) => s.stepType === "checkout")?.checkout || {};
   const checkoutAgreementValue = answers.__checkoutAgreements?.[step?.id] || {};
   const checkoutAgreements = step?.stepType === "checkout" ? (step.checkout?.agreements || []) : [];
   const missingCheckoutAgreements = checkoutAgreements.filter((agreement) => agreement.required !== false && !checkoutAgreementValue[agreement.id]);
@@ -14797,14 +15425,19 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       const nextBookingCode = savedRecord ? bookingCodeForRecord(savedRecord) : bookingCodeFromId(nextRecordId);
       if (nextRecordId) {
         setDraftRecordId(nextRecordId);
+        if (publicMode) PUBLIC_PREVIEW_SESSION.ownRecordCodes.add(String(nextBookingCode)).add(String(nextRecordId));
         const url = new URL(window.location.href);
         url.searchParams.set("record", nextBookingCode);
         window.history.replaceState({ record: nextBookingCode }, "", url.toString());
       }
       setDraftSubmittedAt(submittedAt);
       setSavedStepIds(nextSavedIds);
-      setSubmitState({ status: "success", message: finalSubmit ? "Your request was saved successfully." : "Progress saved." });
-      setClientNotice({ kind: "success", title: finalSubmit ? "Request saved" : "Progress saved", message: finalSubmit ? "Your request was saved successfully." : "You can continue when ready." });
+      const configuredSuccess = String(checkoutStepConfig.successMessage || "").trim();
+      const finalMessage = configuredSuccess && configuredSuccess !== "This would submit the booking request." ? configuredSuccess : "Your request was saved successfully.";
+      setSubmitState({ status: "success", message: finalSubmit ? finalMessage : "Progress saved." });
+      if (finalSubmit || site.display?.progressToast !== false) {
+        setClientNotice({ kind: "success", title: finalSubmit ? "Request saved" : "Progress saved", message: finalSubmit ? finalMessage : "You can continue when ready." });
+      }
       return savedRecord;
     } catch (error) {
       console.error("Save failed", error);
@@ -14880,6 +15513,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       </div>
     </>
   );
+  const showCostSidebar = (adminEditMode || step?.stepType !== "checkout") && site.display?.costSummary !== false;
   const renderCostSummaryCard = (className = "cv-cost-sidebar") => {
     const fmt = checkoutCostData.fmt;
     const splitContent = splitSpaceContentCost(checkoutCostData);
@@ -15050,7 +15684,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   };
 
   return (
-    <ClientPricingVisibilityContext.Provider value={{ pricesVisible }}>
+    <ClientPricingVisibilityContext.Provider value={{ pricesVisible, areas: validations.pricesBeforeVerification || {} }}>
     <NoticeValuesContext.Provider value={noticeValues}>
     <div className="cv-overlay" data-screen-label="Client Preview">
       {/* Close button */}
@@ -15124,7 +15758,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
             {step ? (
               <>
                 <div className="cv-step-title">{step.name}</div>
-                {step.description && <p className="cv-step-desc">{step.description}</p>}
+                {step.description && site.display?.stepIntro !== false && <p className="cv-step-desc">{step.description}</p>}
 
                 {step.stepType === "checkout" ? (
                   <>
@@ -15136,6 +15770,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                       onBreakdown={(title, amount, lines) => setCostBreakdown({ title, amount, lines: (lines || []).filter((ln) => Number(ln.total || 0) !== 0 || ln.meta || ln.label) })}
                       summaryLocked={costSummaryLocked}
                       lockedMessage={costSummaryLockedMessage}
+                      carriedNotices={list
+                        .filter((s) => s.id !== step.id && (step.checkout?.showNoticesFromSteps || []).includes(s.id))
+                        .flatMap((s) => (s.fields || []).filter((f) => f.type === "instructional" && isFieldVisible(f)))}
                     />
                     {normalVisibleFields.length > 0 && (
                       <div className="cv-fields-grid" style={{ marginTop: 20 }}>
@@ -15352,7 +15989,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                       }
                     }}
                   >
-                    {submitState.status === "submitting" ? "Saving..." : isLast ? "Save" : "Save & Next"}
+                    {submitState.status === "submitting" ? "Saving..." : isLast ? (checkoutStepConfig.submitLabel || "Submit") : (checkoutStepConfig.nextLabel || "Save & Next")}
                   </button>
                 </div>
               </>
@@ -15362,9 +15999,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
           </div>
 
           {/* Dynamic cost summary sidebar */}
-          {(adminEditMode || step?.stepType !== "checkout") && renderCostSummaryCard("cv-cost-sidebar cv-cost-sidebar-desktop")}
+          {showCostSidebar && renderCostSummaryCard("cv-cost-sidebar cv-cost-sidebar-desktop")}
         </div>
-        {(adminEditMode || step?.stepType !== "checkout") && (
+        {showCostSidebar && (
           <>
             <button type="button" className="cv-mobile-cost-tab" onClick={() => setMobileCostOpen(true)}>
               <span>Summary of Cost</span>
@@ -15485,15 +16122,20 @@ window.computeRichCost = function(field, value, guestCount) {
       let qtyPeople = item.peopleLinkedToGuests
         ? guests
         : item.hasPeopleOption
-        ? ((childValue && Number(childValue.__qty_people)) || 1)
+        ? ((childValue && Number(childValue.__qty_people)) || (item.peopleRange?.startBlank ? 0 : 1))
         : guests;
-      const qtyHours = (childValue && Number(childValue.__qty_hours)) || 1;
+      const qtyHours = (childValue && Number(childValue.__qty_hours)) || (item.hasHoursOption && item.hoursRange?.startBlank ? 0 : 1);
       // Multiplier based on pricing structure
       let multiplier = 1;
       if (item.pricingStructure === "per_person") multiplier = qtyPeople;
       else if (item.pricingStructure === "per_hour") multiplier = qtyHours;
       else if (item.pricingStructure === "per_person_hour") multiplier = qtyPeople * qtyHours;
-      const price = basePrice * multiplier;
+      let price = basePrice * multiplier;
+      const includedHours = Number(item.includedHours || 0);
+      const extraHourRate = Number(item.extraHourRate || 0);
+      if (item.enablePrice && item.hasHoursOption && (item.pricingStructure || "flat") === "flat" && includedHours > 0 && extraHourRate > 0) {
+        price = basePrice + Math.max(0, qtyHours - includedHours) * extraHourRate;
+      }
       lines.push({
         label: item.label, price, basePrice, qtyPeople, qtyHours, multiplier,
         depth, enablePrice: !!item.enablePrice, level, pricingStructure: item.pricingStructure
@@ -15690,6 +16332,22 @@ function formatFileSize(bytes = 0) {
   return `${Math.round(size / (1024 * 102.4)) / 10} MB`;
 }
 
+function serviceSelectionMissing(item, cur) {
+  if (!item?.requireSelections) return false;
+  const current = cur && typeof cur === "object" ? cur : {};
+  if (item.hasSexOption && (item.sexOptions || []).length && !current.__sex) return true;
+  if (item.hasPeopleOption && !item.peopleLinkedToGuests && item.peopleRange?.startBlank && !current.__qty_people) return true;
+  if (item.hasHoursOption && item.hoursRange?.startBlank && !current.__qty_hours) return true;
+  return (item.subFields || []).some((sub) => sub.required && !String(current.__fields?.[sub.id] ?? "").trim());
+}
+
+function fieldMissingServiceSelections(field, rawValue) {
+  if (!field || !rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) return false;
+  return (field.options || [])
+    .filter((option) => option && typeof option === "object" && rawValue[option.label] !== undefined)
+    .some((option) => serviceSelectionMissing(option, rawValue[option.label]));
+}
+
 // Renders admin-controlled selectors when a service is selected.
 // Three independent dropdowns: Sex / # of people / # of hours.
 // When the People selector is linked to the total guest count, the dropdown is replaced
@@ -15700,7 +16358,8 @@ function CVQuantityRow({ item, value, onChange, label, guestCount }) {
   const hasPeopleSelector = !!item.hasPeopleOption && !peopleLinked;
   const showLinkedIndicator = !!item.hasPeopleOption && peopleLinked;
   const hasHours = !!item.hasHoursOption;
-  if (!hasSex && !hasPeopleSelector && !hasHours && !showLinkedIndicator) return null;
+  const subFields = (item.subFields || []).filter((sub) => sub && sub.label);
+  if (!hasSex && !hasPeopleSelector && !hasHours && !showLinkedIndicator && !subFields.length) return null;
 
   const cur = value[label] || {};
   const peopleRange = item.peopleRange || { min: 1, max: 50 };
@@ -15738,13 +16397,14 @@ function CVQuantityRow({ item, value, onChange, label, guestCount }) {
       )}
       {hasPeopleSelector && (
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}># of people{reqMark}:</span>
+          <span style={{ fontWeight: 600 }}>{item.peopleLabel || "# of people"}{reqMark}:</span>
           <select
             className="cv-input cv-select"
-            value={cur.__qty_people || peopleRange.min}
-            onChange={(e) => setVal("__qty_people", Number(e.target.value))}
+            value={cur.__qty_people || (peopleRange.startBlank ? "" : peopleRange.min)}
+            onChange={(e) => setVal("__qty_people", e.target.value === "" ? undefined : Number(e.target.value))}
             style={{ width: "auto", minWidth: 64, padding: "4px 24px 4px 8px" }}
           >
+            {peopleRange.startBlank && <option value="">Select one</option>}
             {peopleVals.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
@@ -15754,14 +16414,34 @@ function CVQuantityRow({ item, value, onChange, label, guestCount }) {
           <span style={{ fontWeight: 600 }}># of hours{reqMark}:</span>
           <select
             className="cv-input cv-select"
-            value={cur.__qty_hours || hoursRange.min}
-            onChange={(e) => setVal("__qty_hours", Number(e.target.value))}
+            value={cur.__qty_hours || (hoursRange.startBlank ? "" : hoursRange.min)}
+            onChange={(e) => setVal("__qty_hours", e.target.value === "" ? undefined : Number(e.target.value))}
             style={{ width: "auto", minWidth: 64, padding: "4px 24px 4px 8px" }}
           >
+            {hoursRange.startBlank && <option value="">Select one</option>}
             {hoursVals.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
       )}
+      {subFields.map((sub) => {
+        const subValue = cur.__fields?.[sub.id] ?? "";
+        const setSub = (val) => setVal("__fields", { ...(cur.__fields || {}), [sub.id]: val });
+        const subReq = item.requireSelections && sub.required ? <span style={{ color: "#d44", fontWeight: 700, marginLeft: 2 }}>*</span> : null;
+        const choices = String(sub.options || "").split(/\r?\n|,/).map((choice) => choice.trim()).filter(Boolean);
+        return (
+          <label key={sub.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontWeight: 600 }}>{sub.label}{subReq}:</span>
+            {sub.type === "select" ? (
+              <select className="cv-input cv-select" value={subValue} onChange={(e) => setSub(e.target.value)} style={{ width: "auto", minWidth: 110, padding: "4px 24px 4px 8px" }}>
+                <option value="">Select one</option>
+                {choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
+              </select>
+            ) : (
+              <input className="cv-input" type={sub.type === "number" ? "number" : "text"} value={subValue} placeholder={sub.placeholder || ""} onChange={(e) => setSub(e.target.value)} style={{ width: 180, padding: "4px 8px" }} />
+            )}
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -16164,8 +16844,14 @@ function noticeAnswerText(value) {
   return String(value).split("|")[0].trim();
 }
 
-function buildNoticeValues({ steps = [], answers = {}, pricingRules = null, costData = null } = {}) {
-  const findAnswer = (needles) => {
+// Event type / privacy / alcohol / attendees answers, read from the field ids mapped in
+// pricing settings first and from label matching when no id is mapped.
+function eventContextFromAnswers(steps = [], answers = {}, fieldMap = {}) {
+  const findAnswer = (fieldId, needles) => {
+    if (fieldId) {
+      const mapped = noticeAnswerText(answers[fieldId]);
+      if (mapped) return mapped;
+    }
     for (const step of steps || []) {
       for (const field of step.fields || []) {
         const label = String(field.label || "").toLowerCase();
@@ -16176,12 +16862,19 @@ function buildNoticeValues({ steps = [], answers = {}, pricingRules = null, cost
     }
     return "";
   };
+  const mappedAttendees = fieldMap?.attendeesFieldId ? Number(answers[fieldMap.attendeesFieldId]) : 0;
+  return {
+    eventType: findAnswer(fieldMap?.eventTypeFieldId, ["event type", "type of event"]),
+    eventPrivacy: findAnswer(fieldMap?.privacyFieldId, ["event privacy", "privacy"]),
+    alcoholOnSite: findAnswer(fieldMap?.alcoholFieldId, ["alcohol"]),
+    attendees: mappedAttendees > 0 ? mappedAttendees : (window.findGuestCount ? Number(window.findGuestCount(steps, answers) || 0) : 0),
+  };
+}
+
+function buildNoticeValues({ steps = [], answers = {}, pricingRules = null, costData = null } = {}) {
   const pricing = normalizePricingRules(pricingRules || window.SAMPLE_PRICING_RULES);
   const insurance = pricing.eventInsurance;
-  const eventType = findAnswer(["event type", "type of event"]);
-  const eventPrivacy = findAnswer(["event privacy", "privacy"]);
-  const alcoholOnSite = findAnswer(["alcohol"]);
-  const attendees = window.findGuestCount ? Number(window.findGuestCount(steps, answers) || 0) : 0;
+  const { eventType, eventPrivacy, alcoholOnSite, attendees } = eventContextFromAnswers(steps, answers, pricing.fieldMap);
   const quote = lookupEventInsurance(insurance, { eventType, attendees, alcoholOnSite });
   const taxLabel = insurance.taxLabel || "tax";
   const numbers = {
@@ -17037,7 +17730,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       return (
         <div className="cv-form-group">
           {labelEl}
-          <ClampedNumberInput className="cv-input" placeholder={f.placeholder || ""} value={value ?? ""} onChange={onChange} min={f.min} max={f.max} step={f.step || 1} />
+          <ClampedNumberInput className="cv-input" placeholder={f.placeholder || ""} value={value ?? ""} onChange={onChange} min={f.min} max={f.max} step={f.step || 1} autoComplete={f.autoComplete || undefined} />
           {(f.min != null || f.max != null) && (
             <span className="cv-minmax-hint">
               {f.min != null && f.max != null ? `Between ${f.min} and ${f.max}` : f.min != null ? `Minimum: ${f.min}` : `Maximum: ${f.max}`}
@@ -17056,7 +17749,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
             className="cv-input"
             type="tel"
             inputMode="tel"
-            autoComplete="tel"
+            autoComplete={f.autoComplete || "tel"}
             maxLength={25}
             placeholder={f.placeholder || "(123) 123-1234"}
             value={value || ""}
@@ -17159,6 +17852,9 @@ const SITE_SETTINGS_STORAGE_KEY = "collaburo.admin.siteSettings.v1";
 const PROGRESS_STORAGE_KEY = "collaburo.admin.rentalsProgress.v1";
 const HISTORY_KEY = "collaburo.admin.activityHistory.v1";
 const CLIENT_DRAFT_STORAGE_KEY = "collaburo.client.bookingDraft.v1";
+// Records the mounted public form saved itself; the shell keeps the same mount key and
+// draft for them so a save does not remount the form and jump back to an earlier step.
+const PUBLIC_PREVIEW_SESSION = { key: null, draft: null, ownRecordCodes: new Set() };
 const MAX_STORED_DATA_URL_LENGTH = 180000;
 
 const EMAIL_TEMPLATE_TYPES = [
@@ -17281,6 +17977,14 @@ const SAMPLE_SITE_SETTINGS = {
     dateTimeRequirementMessage: "A booking date and specific time-slot are required to calculate accurate pricing.",
     emailVerificationMessage: "Please provide a valid email to view the final cost breakdown.",
     postSubmissionNote: "Your event blueprint is ready! Our team will contact you shortly.",
+    emailVerificationMode: "link",
+    checkEmailDomain: true,
+    pricesBeforeVerification: { venueTotal: true, noticeAmounts: true, itemPrices: false },
+  },
+  display: {
+    progressToast: true,
+    costSummary: true,
+    stepIntro: true,
   },
   emailSettings: {
     provider: "resend",
@@ -17290,6 +17994,7 @@ const SAMPLE_SITE_SETTINGS = {
   contractSettings: createDefaultContractSettings(),
   fulfillment: {
     deliveryOptions: DEFAULT_DELIVERY_OPTIONS,
+    deliveryNote: DEFAULT_RENTAL_DELIVERY_NOTE,
   },
 };
 
@@ -17571,6 +18276,7 @@ function normalizeWorkflowSteps(steps = []) {
     }));
     const existing = step.checkout || {};
     return {
+      ...existing,
       summaryItems: { ...defaultCheckoutSummaryItems, ...(existing.summaryItems || {}) },
       confirmationMessage: existing.confirmationMessage || "Check all required boxes to submit. You'll receive a confirmation email with a link to edit your request.",
       planningNote: existing.planningNote || "NOTE: This planning tool helps you manage your event budget. Submitting a booking request lets our staff know you're interested in the selected date and space. Details such as floor layout, rentals, and additional services can be updated and finalized later.",
@@ -17638,19 +18344,26 @@ function normalizePricingRules(rules = {}) {
       label: variable.label || "",
       value: Number(variable.value || 0),
     })),
+    fieldMap: {
+      eventTypeFieldId: source.fieldMap?.eventTypeFieldId || "",
+      alcoholFieldId: source.fieldMap?.alcoholFieldId || "",
+      attendeesFieldId: source.fieldMap?.attendeesFieldId || "",
+      privacyFieldId: source.fieldMap?.privacyFieldId || "",
+    },
     discountSettings: {
       maxCombinedDiscount: {
         enabled: !!maxCombined.enabled,
         valueType: maxCombined.valueType === "flat" ? "flat" : "percentage",
         amount: Number(maxCombined.amount || 0),
       },
+      stacking: source.discountSettings?.stacking === "highest_only" ? "highest_only" : "stack",
     },
     discountRules: (source.discountRules || []).map((rule) => ({
       id: rule.id || uid("disc"),
       name: rule.name || rule.label || "New discount",
       valueType: rule.valueType === "flat" ? "flat" : "percentage",
       amount: Number(rule.amount || 0),
-      applyTo: rule.applyTo === "line_items" ? "line_items" : "subtotal",
+      applyTo: ["line_items", "space_rental"].includes(rule.applyTo) ? rule.applyTo : "subtotal",
       targets: Array.isArray(rule.targets) ? rule.targets.filter(Boolean) : [],
       conditionsMode: rule.conditionsMode === "any" ? "any" : "all",
       conditions: (rule.conditions || []).map((condition) => ({
@@ -17699,7 +18412,12 @@ function normalizeSiteSettings(settings = {}) {
       ...(source.validations || {}),
       strictProgression: !!source.validations?.strictProgression,
       emailVerification: source.validations?.emailVerification !== false,
+      emailVerificationMode: source.validations?.emailVerificationMode === "instant" ? "instant" : "link",
+      checkEmailDomain: source.validations?.checkEmailDomain !== false,
+      pricesBeforeVerification: { ...sample.validations.pricesBeforeVerification, ...(source.validations?.pricesBeforeVerification || {}) },
     },
+    display: { ...sample.display, ...(source.display || {}) },
+    migrations: { ...(source.migrations || {}) },
     emailSettings: {
       ...sample.emailSettings,
       ...(source.emailSettings || {}),
@@ -18233,6 +18951,23 @@ function buildClientDraftFromProgressRecord(record, steps = []) {
   };
 }
 
+let PARITY_SEED_STATE = null;
+function paritySeedState() {
+  if (!PARITY_SEED_STATE) {
+    PARITY_SEED_STATE = migrateToOldSiteParity({
+      steps: window.SAMPLE_STEPS,
+      rentalCatalog: window.normalizeRentalCatalog(window.SAMPLE_RENTAL_CATALOG || []),
+      pricingRules: window.SAMPLE_PRICING_RULES,
+      siteSettings: SAMPLE_SITE_SETTINGS,
+    }).state;
+  }
+  return PARITY_SEED_STATE;
+}
+const seedSteps = () => normalizeWorkflowSteps(paritySeedState().steps);
+const seedRentalCatalog = () => window.normalizeRentalCatalog(paritySeedState().rentalCatalog);
+const seedPricingRules = () => normalizePricingRules(paritySeedState().pricingRules);
+const seedSiteSettings = () => normalizeSiteSettings(paritySeedState().siteSettings);
+
 function loadSteps() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -18396,6 +19131,32 @@ function buildAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings
 
 async function buildDatabaseAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState = null) {
   return uploadEmbeddedImages(buildAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState));
+}
+
+// Applies the one-time old-site parity migration to a freshly loaded database
+// state. Draft and published copies are migrated separately so unpublished
+// draft edits never leak into the live form. Returns null when both are current.
+function migrateLoadedStateToParity(draft, live) {
+  // Catalog rows can inherit option groups from the legacy architecture, so the
+  // migration must see the normalized rows it is going to edit.
+  const withNormalizedCatalog = (state) => state && Array.isArray(state.rentalCatalog)
+    ? { ...state, rentalCatalog: window.normalizeRentalCatalog(state.rentalCatalog) }
+    : state;
+  const draftResult = migrateToOldSiteParity(withNormalizedCatalog(draft));
+  const liveResult = live ? migrateToOldSiteParity(withNormalizedCatalog(live)) : { applied: false, changes: [] };
+  if (!draftResult.applied && !liveResult.applied) return null;
+  const normalizeParts = (state) => ({
+    ...state,
+    steps: normalizeWorkflowSteps(state.steps),
+    rentalCatalog: window.normalizeRentalCatalog(state.rentalCatalog),
+    pricingRules: normalizePricingRules(state.pricingRules),
+    siteSettings: normalizeSiteSettings(state.siteSettings),
+  });
+  return {
+    draft: draftResult.applied ? normalizeParts(draftResult.state) : draft,
+    live: liveResult.applied ? normalizeParts(liveResult.state) : live,
+    changes: draftResult.changes.length ? draftResult.changes : liveResult.changes,
+  };
 }
 
 async function buildDatabaseSubmissionRecord(record) {
@@ -18633,7 +19394,10 @@ function PricingRulesView({ rules, steps, onChange }) {
   const discountFields = (steps || [])
     .flatMap((step) => (step.fields || []).map((field) => ({ ...field, stepId: step.id, stepName: step.name || "Step" })))
     .filter((field) => field.visibleToClient !== false && field.type !== "file" && field.type !== "rental_group");
-  const eventTypeField = (steps || []).flatMap((step) => step.fields || []).find((field) => /event type/i.test(field.label || ""));
+  const fieldMap = pricingRules.fieldMap || {};
+  const allPricingFields = (steps || []).flatMap((step) => step.fields || []);
+  const eventTypeField = allPricingFields.find((field) => field.id === fieldMap.eventTypeFieldId)
+    || allPricingFields.find((field) => /event type/i.test(field.label || ""));
   const groupedEventTypes = eventTypeField?.groupOptions ? normalizeGroupedDropdownOptions(eventTypeField.options || []) : [];
   const flatEventTypes = groupedEventTypes.length
     ? groupedEventTypes.flatMap((group) => group.options || []).map((option) => option.label || String(option)).filter(Boolean)
@@ -18807,6 +19571,31 @@ function PricingRulesView({ rules, steps, onChange }) {
 
         <div style={{ display: "grid", gap: 18 }}>
           <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 18 }}>
+            <div style={{ borderBottom: "1px solid var(--line)", paddingBottom: 12, marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>Booking Field Mapping</h2>
+              <p style={{ margin: "4px 0 0", color: "var(--ink-3)", fontSize: 12 }}>Which booking fields drive deposits, insurance and notice amounts. "Auto" finds them by label.</p>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+              {[
+                ["eventTypeFieldId", "Event type"],
+                ["alcoholFieldId", "Alcohol on site"],
+                ["attendeesFieldId", "Number of attendees"],
+                ["privacyFieldId", "Event privacy"],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <label className="lbl">{label}</label>
+                  <select className="select" value={fieldMap[key] || ""} onChange={(e) => update({ fieldMap: { ...fieldMap, [key]: e.target.value } })}>
+                    <option value="">Auto (match by label)</option>
+                    {discountFields.filter((field) => !["separator", "spacer", "instructional"].includes(field.type)).map((field) => (
+                      <option key={field.id} value={field.id}>{field.stepName} · {field.label || field.id}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 18 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottom: "1px solid var(--line)", paddingBottom: 12, marginBottom: 14 }}>
               <h2 style={{ margin: 0, fontSize: 20 }}>Fees & Tax</h2>
               <button className="btn dark sm" onClick={addFee}><Ic.Plus size={13} /> Add</button>
@@ -18861,12 +19650,21 @@ function PricingRulesView({ rules, steps, onChange }) {
                 <input className="input" type="number" min="0" step="0.01" value={maxCombinedDiscount.amount || ""} onChange={(e) => updateMaxCombinedDiscount({ amount: Number(e.target.value || 0) })} />
               </div>
               <div className="rental-muted" style={{ fontSize: 11 }}>Leave off for no global limit.</div>
+              <div style={{ gridColumn: "1 / -1", maxWidth: 360 }}>
+                <label className="lbl">When several discounts apply</label>
+                <select className="select" value={discountSettings.stacking === "highest_only" ? "highest_only" : "stack"} onChange={(e) => updateDiscountSettings({ stacking: e.target.value })}>
+                  <option value="stack">Combine them (stack)</option>
+                  <option value="highest_only">Use only the largest one</option>
+                </select>
+              </div>
             </div>
 
             <div style={{ display: "grid", gap: 14 }}>
               {discounts.map((rule) => {
                 const targetSummary = rule.applyTo === "subtotal"
                   ? "Subtotal"
+                  : rule.applyTo === "space_rental"
+                  ? "Space rental"
                   : (rule.targets || []).map((target) => DISCOUNT_TARGET_OPTIONS.find((option) => option.value === target)?.label || target).join(", ");
                 const isOpen = openDiscountIds.has(rule.id);
                 const amountSummary = rule.valueType === "flat" ? `$${Number(rule.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${Number(rule.amount || 0)}%`;
@@ -18879,7 +19677,7 @@ function PricingRulesView({ rules, steps, onChange }) {
                       </button>
                       <button type="button" onClick={() => toggleDiscountOpen(rule.id)} style={{ border: 0, background: "transparent", padding: 0, textAlign: "left", cursor: "pointer", minWidth: 0 }}>
                         <div style={{ fontWeight: 800, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{rule.name || "New discount"}</div>
-                        <div className="rental-muted" style={{ fontSize: 11 }}>{rule.applyTo === "subtotal" ? "Overall subtotal" : (targetSummary || "No cost lines selected")}</div>
+                        <div className="rental-muted" style={{ fontSize: 11 }}>{rule.applyTo === "subtotal" ? "Overall subtotal" : rule.applyTo === "space_rental" ? "Space rental only" : (targetSummary || "No cost lines selected")}</div>
                       </button>
                       <div style={{ fontWeight: 800 }}>{amountSummary}</div>
                       <div className="rental-muted" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{targetSummary || "No target"}</div>
@@ -18915,12 +19713,15 @@ function PricingRulesView({ rules, steps, onChange }) {
                         <label className="lbl">Apply To</label>
                         <select className="select" value={rule.applyTo || "subtotal"} onChange={(e) => updateDiscount(rule.id, { applyTo: e.target.value })}>
                           <option value="subtotal">Overall subtotal</option>
+                          <option value="space_rental">Space rental only</option>
                           <option value="line_items">Selected cost lines</option>
                         </select>
                       </div>
                       <div>
                         <label className="lbl">Cost Lines</label>
-                        {rule.applyTo === "line_items" ? (
+                        {rule.applyTo === "space_rental" ? (
+                          <div className="rental-muted" style={{ paddingTop: 9 }}>Applies to the venue rental (base rate and extra hours) only.</div>
+                        ) : rule.applyTo === "line_items" ? (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                             {DISCOUNT_TARGET_OPTIONS.map((option) => (
                               <label key={option.value} className="chk" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 6, padding: "7px 9px" }}>
@@ -18977,7 +19778,7 @@ function PricingRulesView({ rules, steps, onChange }) {
                               {DISCOUNT_CONDITION_OPERATORS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                             </select>
                             {needsValue ? (
-                              valueOptions.length > 0 ? (
+                              valueOptions.length > 0 && !["in", "not_in"].includes(condition.operator) ? (
                                 <select className="select" value={condition.value ?? ""} onChange={(e) => updateDiscountCondition(rule.id, condition.id, { value: e.target.value })}>
                                   <option value="">Choose value</option>
                                   {valueOptions.map((option) => <option key={option} value={option}>{option === "true" ? "Yes" : option === "false" ? "No" : option}</option>)}
@@ -19041,7 +19842,13 @@ function PricingRulesView({ rules, steps, onChange }) {
                     {eventPrivacyOptions.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                   <select className="select" value={row.eventType || "All"} onChange={(e) => updateDeposit(row.id, { eventType: e.target.value })}>
-                    {eventTypes.map((option) => <option key={option} value={option}>{option}</option>)}
+                    <option value="All">All</option>
+                    {groupedEventTypes.length > 0 && (
+                      <optgroup label="Event type groups">
+                        {groupedEventTypes.map((group) => group.label).filter(Boolean).map((label) => <option key={`group:${label}`} value={label}>All {label}</option>)}
+                      </optgroup>
+                    )}
+                    {eventTypes.filter((option) => option !== "All").map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                   <select className="select" value={row.alcoholOnSite || "All"} onChange={(e) => updateDeposit(row.id, { alcoholOnSite: e.target.value })}>
                     {alcoholOptions.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -19304,6 +20111,31 @@ function SiteSettingsView({ settings, onChange, onReset, onOpenHistory }) {
                 <span><b>Email Verification</b><span style={{ display: "block", color: "var(--ink-3)", fontSize: 12, marginTop: 2 }}>Require a verified email before showing prices and cost summaries.</span></span>
                 <input type="checkbox" checked={!!validations.emailVerification} onChange={(e) => updateValidations({ emailVerification: e.target.checked })} />
               </label>
+              {validations.emailVerification && (
+                <div style={{ display: "grid", gap: 10, maxWidth: 520, paddingLeft: 12, borderLeft: "2px solid var(--line)" }}>
+                  <div>
+                    <label className="lbl">Verification Method</label>
+                    <select className="select" value={validations.emailVerificationMode === "instant" ? "instant" : "link"} onChange={(e) => updateValidations({ emailVerificationMode: e.target.value })}>
+                      <option value="link">Send verification link by email</option>
+                      <option value="instant">Instant (no email sent)</option>
+                    </select>
+                  </div>
+                  <label className="chk" style={{ justifyContent: "space-between" }}>
+                    <span><b>Check email domain</b><span style={{ display: "block", color: "var(--ink-3)", fontSize: 12, marginTop: 2 }}>Reject addresses whose domain cannot receive mail ("Email does not exist").</span></span>
+                    <input type="checkbox" checked={validations.checkEmailDomain !== false} onChange={(e) => updateValidations({ checkEmailDomain: e.target.checked })} />
+                  </label>
+                  <div className="lbl" style={{ marginTop: 4 }}>Show before verification</div>
+                  {[
+                    ["venueTotal", "Venue rental total", "Total Space Rental on the venue step."],
+                    ["itemPrices", "Item prices", "Prices next to rentals, catering and services."],
+                  ].map(([key, title, help]) => (
+                    <label key={key} className="chk" style={{ justifyContent: "space-between" }}>
+                      <span><b>{title}</b><span style={{ display: "block", color: "var(--ink-3)", fontSize: 12, marginTop: 2 }}>{help}</span></span>
+                      <input type="checkbox" checked={!!validations.pricesBeforeVerification?.[key]} onChange={(e) => updateValidations({ pricesBeforeVerification: { ...(validations.pricesBeforeVerification || {}), [key]: e.target.checked } })} />
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
@@ -19354,6 +20186,30 @@ function SiteSettingsView({ settings, onChange, onReset, onOpenHistory }) {
               ))}
             </div>
             {deliveryOptions.length === 0 && <div className="rental-muted">No delivery options yet.</div>}
+            <div style={{ marginTop: 14 }}>
+              <label className="lbl">Delivery Note</label>
+              <textarea className="textarea" rows={2} value={fulfillment.deliveryNote ?? DEFAULT_RENTAL_DELIVERY_NOTE} onChange={(e) => updateFulfillment({ deliveryNote: e.target.value })} />
+              <p style={{ margin: "4px 0 0", color: "var(--ink-3)", fontSize: 12 }}>Shown under rental items that have "Show delivery note" turned on. Leave blank to hide.</p>
+            </div>
+          </div>
+
+          <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 18 }}>
+            <div style={{ borderBottom: "1px solid var(--line)", paddingBottom: 12, marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>Booking Form Display</h2>
+              <p style={{ margin: "4px 0 0", color: "var(--ink-3)", fontSize: 12 }}>Turn client-facing booking form elements on or off.</p>
+            </div>
+            <div style={{ display: "grid", gap: 12 }}>
+              {[
+                ["progressToast", "Progress saved message", "Show a toast after each step is saved."],
+                ["costSummary", "Cost summary panel", "Show the running cost summary beside the form."],
+                ["stepIntro", "Step introductions", "Show each step's intro text above its fields."],
+              ].map(([key, title, help]) => (
+                <label key={key} className="chk" style={{ justifyContent: "space-between", maxWidth: 520 }}>
+                  <span><b>{title}</b><span style={{ display: "block", color: "var(--ink-3)", fontSize: 12, marginTop: 2 }}>{help}</span></span>
+                  <input type="checkbox" checked={site.display?.[key] !== false} onChange={(e) => update({ display: { ...(site.display || {}), [key]: e.target.checked } })} />
+                </label>
+              ))}
+            </div>
           </div>
 
           <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 18 }}>
@@ -20347,9 +21203,12 @@ function BookingReadOnlyRichOptionDetails({ option, selection, guestCount = 0, d
   const current = selection && typeof selection === "object" && !Array.isArray(selection) ? selection : {};
   const details = [];
   if (option.peopleLinkedToGuests) details.push(["# of people", guestCount || 0]);
-  else if (option.hasPeopleOption) details.push(["# of people", current.__qty_people ?? option.peopleRange?.min ?? 1]);
-  if (option.hasHoursOption) details.push(["# of hours", current.__qty_hours ?? option.hoursRange?.min ?? 1]);
+  else if (option.hasPeopleOption) details.push([option.peopleLabel || "# of people", current.__qty_people ?? (option.peopleRange?.startBlank ? "Not selected" : option.peopleRange?.min ?? 1)]);
+  if (option.hasHoursOption) details.push(["# of hours", current.__qty_hours ?? (option.hoursRange?.startBlank ? "Not selected" : option.hoursRange?.min ?? 1)]);
   if (option.hasSexOption) details.push(["Sex", current.__sex || "Not specified"]);
+  (option.subFields || []).forEach((sub) => {
+    if (sub?.label && String(current.__fields?.[sub.id] ?? "").trim()) details.push([sub.label, current.__fields[sub.id]]);
+  });
   const children = option.subOptions || option.selections || option.specifications || option.options || [];
   const childSource = current.__sub && typeof current.__sub === "object" ? current.__sub : current;
   const configuredChildren = children
@@ -20719,9 +21578,12 @@ function ProgressAdditionalServices({ costs = {}, steps = [], answers = {} }) {
   const detailsFor = (option, selection) => {
     const details = [];
     if (option.peopleLinkedToGuests) details.push(`# of people: ${guestCount || 0}`);
-    else if (option.hasPeopleOption) details.push(`# of people: ${selection.__qty_people || option.peopleRange?.min || 1}`);
-    if (option.hasHoursOption) details.push(`# of hours: ${selection.__qty_hours || option.hoursRange?.min || 1}`);
+    else if (option.hasPeopleOption && (selection.__qty_people || !option.peopleRange?.startBlank)) details.push(`${option.peopleLabel || "# of people"}: ${selection.__qty_people || option.peopleRange?.min || 1}`);
+    if (option.hasHoursOption && (selection.__qty_hours || !option.hoursRange?.startBlank)) details.push(`# of hours: ${selection.__qty_hours || option.hoursRange?.min || 1}`);
     if (option.hasSexOption && selection.__sex) details.push(`Sex: ${selection.__sex}`);
+    (option.subFields || []).forEach((sub) => {
+      if (sub?.label && String(selection.__fields?.[sub.id] ?? "").trim()) details.push(`${sub.label}: ${selection.__fields[sub.id]}`);
+    });
     return details;
   };
   const selectedSubOptions = (option, selection) => {
@@ -21200,15 +22062,15 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const publicMode = forcePublicMode || bookingSummaryMode || ["/", "/book", "/book/"].includes(window.location.pathname) || new URLSearchParams(window.location.search).get("mode") === "public";
 
   // Steps — load from localStorage, fallback to sample
-  const [steps, setSteps] = React.useState(() => loadSteps() || normalizeWorkflowSteps(window.SAMPLE_STEPS));
+  const [steps, setSteps] = React.useState(() => loadSteps() || seedSteps());
   const [rentalCatalog, setRentalCatalog] = React.useState(() => {
-    const initial = loadRentalCatalog() || window.normalizeRentalCatalog(window.SAMPLE_RENTAL_CATALOG);
+    const initial = loadRentalCatalog() || seedRentalCatalog();
     setRecommendedRentalCatalogSnapshot(initial);
     return initial;
   });
-  const [pricingRules, setPricingRules] = React.useState(() => loadPricingRules() || normalizePricingRules(window.SAMPLE_PRICING_RULES));
+  const [pricingRules, setPricingRules] = React.useState(() => loadPricingRules() || seedPricingRules());
   window.__collaburoPricingRules = pricingRules;
-  const [siteSettings, setSiteSettings] = React.useState(() => loadSiteSettings() || normalizeSiteSettings(SAMPLE_SITE_SETTINGS));
+  const [siteSettings, setSiteSettings] = React.useState(() => loadSiteSettings() || seedSiteSettings());
   const [progressRecords, setProgressRecords] = React.useState(() => loadProgressRecords() || normalizeProgressRecords(SAMPLE_PROGRESS_RECORDS));
   const [publicEditRecord, setPublicEditRecord] = React.useState(null);
   const [publicRecordLookupDone, setPublicRecordLookupDone] = React.useState(false);
@@ -21216,7 +22078,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const [submittedAnswersRecordId, setSubmittedAnswersRecordId] = React.useState(null);
   const [adminEditRecordId, setAdminEditRecordId] = React.useState(() => new URLSearchParams(window.location.search).get("edit") || null);
   const [emailDraft, setEmailDraft] = React.useState(null);
-  const [activeStepId, setActiveStepId] = React.useState(() => (loadSteps() || normalizeWorkflowSteps(window.SAMPLE_STEPS))[0]?.id || "s1");
+  const [activeStepId, setActiveStepId] = React.useState(() => (loadSteps() || seedSteps())[0]?.id || "s1");
   const [openFieldId, setOpenFieldId] = React.useState("f1");
   const [activeSection, setActiveSection] = React.useState(() => initialSection || new URLSearchParams(window.location.search).get("section") || "workflow");
   const [isDirty, setIsDirty] = React.useState(false);
@@ -21301,6 +22163,9 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   React.useEffect(() => {
     window.CURRENT_SITE_SETTINGS = siteSettings;
   }, [siteSettings]);
+  React.useEffect(() => {
+    window.CURRENT_WORKFLOW_VENUES = (steps.find((step) => step.stepType === "venue")?.venues || []).filter((venue) => venue?.id);
+  }, [steps]);
   const loadAdminAccounts = React.useCallback(() => {
     if (publicMode) return Promise.resolve();
     return collaburoApi("/api/admin-accounts")
@@ -21337,18 +22202,39 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           });
           return;
         }
-        setSteps(next.steps);
-        setRentalCatalog(next.rentalCatalog);
-        setRecommendedRentalCatalogSnapshot(next.rentalCatalog);
-        setPricingRules(next.pricingRules);
-        setSiteSettings(next.siteSettings);
+        const loadedLive = next.liveState || buildPublicStatePayload(next.steps, next.rentalCatalog, next.pricingRules, next.siteSettings);
+        const parity = publicMode ? null : migrateLoadedStateToParity(next, loadedLive);
+        const draft = parity ? parity.draft : next;
+        const live = parity ? parity.live : loadedLive;
+        setSteps(draft.steps);
+        setRentalCatalog(draft.rentalCatalog);
+        setRecommendedRentalCatalogSnapshot(draft.rentalCatalog);
+        setPricingRules(draft.pricingRules);
+        setSiteSettings(draft.siteSettings);
         setProgressRecords(next.progressRecords);
-        setPublishedState(next.liveState || buildPublicStatePayload(next.steps, next.rentalCatalog, next.pricingRules, next.siteSettings));
-        setActiveStepId(next.steps[0]?.id || "s1");
-        setOpenFieldId(next.steps[0]?.fields?.[0]?.id || null);
+        setPublishedState(live);
+        setActiveStepId(draft.steps[0]?.id || "s1");
+        setOpenFieldId(draft.steps[0]?.fields?.[0]?.id || null);
         setIsDirty(false);
         if (data.updatedAt) setLastSavedAt(new Date(data.updatedAt).getTime());
         if (!publicMode) pushToast({ kind: "success", title: "Loaded database draft", desc: "Admin data was restored from the database." });
+        if (parity) {
+          pushHistoryEntry("Before old-site parity update", next.steps, next.rentalCatalog, next.pricingRules, next.siteSettings, next.progressRecords);
+          buildDatabaseAdminStatePayload(draft.steps, draft.rentalCatalog, draft.pricingRules, draft.siteSettings, next.progressRecords, live)
+            .then((databaseState) => putAdminStateToDatabase(databaseState))
+            .then(() => {
+              if (cancelled) return;
+              pushHistoryEntry(`Old-site parity update (${parity.changes.length} changes)`, draft.steps, draft.rentalCatalog, draft.pricingRules, draft.siteSettings, next.progressRecords);
+              setLastSavedAt(Date.now());
+              console.info("[collaburo] Old-site parity update applied:\n- " + parity.changes.join("\n- "));
+              pushToast({ kind: "success", title: "Old-site settings applied", desc: `${parity.changes.length} booking form settings were updated to match the old site. See History for the previous version.`, duration: 10000 });
+            })
+            .catch((error) => {
+              if (cancelled) return;
+              setIsDirty(true);
+              pushToast({ kind: "danger", title: "Old-site settings not saved", desc: `${error.message || "Unknown error."} Review the changes and click Save.`, duration: 10000 });
+            });
+        }
         if (!publicMode) {
           return collaburoApi("/api/submissions")
             .then((submissionData) => {
@@ -21411,7 +22297,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       setActiveStepId("s_empty");
       setOpenFieldId(null);
     } else {
-      const next = loadSteps() || normalizeWorkflowSteps(window.SAMPLE_STEPS);
+      const next = loadSteps() || seedSteps();
       setSteps(next);
       setActiveStepId(next[0]?.id);
       setOpenFieldId(next[0]?.fields[0]?.id || null);
@@ -22053,11 +22939,11 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
 
   const resetToSample = () => {
     pushHistoryEntry("Before reset to sample", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
-    const sampleSteps = normalizeWorkflowSteps(window.SAMPLE_STEPS);
+    const sampleSteps = seedSteps();
     setSteps(sampleSteps);
-    setRentalCatalog(window.normalizeRentalCatalog(window.SAMPLE_RENTAL_CATALOG));
-    setPricingRules(normalizePricingRules(window.SAMPLE_PRICING_RULES));
-    setSiteSettings(normalizeSiteSettings(SAMPLE_SITE_SETTINGS));
+    setRentalCatalog(seedRentalCatalog());
+    setPricingRules(seedPricingRules());
+    setSiteSettings(seedSiteSettings());
     setProgressRecords(normalizeProgressRecords(SAMPLE_PROGRESS_RECORDS));
     setActiveProgressId(null);
     setActiveStepId(sampleSteps[0].id);
@@ -22081,10 +22967,10 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       return;
     }
     pushHistoryEntry("Before restore saved draft", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
-    const nextSteps = savedSteps || normalizeWorkflowSteps(window.SAMPLE_STEPS);
-    const nextRentals = savedRentals || window.normalizeRentalCatalog(window.SAMPLE_RENTAL_CATALOG);
-    const nextPricing = savedPricing || normalizePricingRules(window.SAMPLE_PRICING_RULES);
-    const nextSite = savedSiteSettings || normalizeSiteSettings(SAMPLE_SITE_SETTINGS);
+    const nextSteps = savedSteps || seedSteps();
+    const nextRentals = savedRentals || seedRentalCatalog();
+    const nextPricing = savedPricing || seedPricingRules();
+    const nextSite = savedSiteSettings || seedSiteSettings();
     const nextProgress = savedProgress || normalizeProgressRecords(SAMPLE_PROGRESS_RECORDS);
     setSteps(nextSteps);
     setRentalCatalog(nextRentals);
@@ -22310,6 +23196,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         ) : activeStep && activeStep.stepType === "checkout" ? (
           <CheckoutEditor
             step={activeStep}
+            allSteps={steps}
             onUpdateStep={updateStep}
             onAddField={addField}
             onAddMultipleFields={addMultipleFields}
@@ -22359,7 +23246,17 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const sidebarCollapsed = t.sidebarCollapsed;
   const clientRecordId = publicMode ? new URLSearchParams(window.location.search).get("record") : "";
   const clientEditRecord = clientRecordId ? (publicEditRecord || progressRecords.find((record) => String(record.id) === String(clientRecordId) || bookingCodeForRecord(record) === String(clientRecordId))) : null;
-  const clientInitialDraft = clientEditRecord ? buildClientDraftFromProgressRecord(clientEditRecord, steps) : (publicMode ? loadClientDraft() : null);
+  let clientInitialDraft = clientEditRecord ? buildClientDraftFromProgressRecord(clientEditRecord, steps) : (publicMode ? loadClientDraft() : null);
+  let clientPreviewKey = clientInitialDraft?.key || "client-public";
+  if (publicMode) {
+    if (clientRecordId && PUBLIC_PREVIEW_SESSION.key && PUBLIC_PREVIEW_SESSION.ownRecordCodes.has(String(clientRecordId))) {
+      clientPreviewKey = PUBLIC_PREVIEW_SESSION.key;
+      clientInitialDraft = PUBLIC_PREVIEW_SESSION.draft;
+    } else {
+      PUBLIC_PREVIEW_SESSION.key = clientPreviewKey;
+      PUBLIC_PREVIEW_SESSION.draft = clientInitialDraft;
+    }
+  }
 
   if (!publicMode && !initialDataLoaded) {
     return <div className="booking-answers-loading" style={{ minHeight: "100vh", display: "grid", placeItems: "center", fontWeight: 700 }}>Loading current Collaburo data…</div>;
@@ -22432,7 +23329,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     return (
       <>
 	        <ClientPreview
-	          key={clientInitialDraft?.key || "client-public"}
+	          key={clientPreviewKey}
 	          steps={steps}
 	          pricingRules={pricingRules}
 	          siteSettings={siteSettings}
