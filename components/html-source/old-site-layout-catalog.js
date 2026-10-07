@@ -1,5 +1,5 @@
 // Auto-generated from collaburo_layout/*.php - do not edit by hand.
-// Regenerate: python scripts/generate-old-site-layout-catalog.py
+// Regenerate: python scripts/generate-old-site-layout-catalog.py [path/to/collaburo_layout]
 // Groups: 9, layouts: 157
 export const OLD_SITE_LAYOUT_GROUPS = [
   {
@@ -3158,7 +3158,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "53 x Other Chairs"
         ],
-        "eventTypes": [],
+        "eventTypes": [
+          "Ceremony / Graduation"
+        ],
         "guestMin": 0,
         "guestMax": 0
       },
@@ -3172,7 +3174,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "58 x Other Chairs"
         ],
-        "eventTypes": [],
+        "eventTypes": [
+          "Ceremony / Graduation"
+        ],
         "guestMin": 0,
         "guestMax": 0
       },
@@ -3186,7 +3190,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "53 x Other Chairs"
         ],
-        "eventTypes": [],
+        "eventTypes": [
+          "Ceremony / Graduation"
+        ],
         "guestMin": 0,
         "guestMax": 0
       },
@@ -3200,7 +3206,9 @@ export const OLD_SITE_LAYOUT_GROUPS = [
         "description": [
           "69 x Other Chairs"
         ],
-        "eventTypes": [],
+        "eventTypes": [
+          "Ceremony / Graduation"
+        ],
         "guestMin": 0,
         "guestMax": 0
       }

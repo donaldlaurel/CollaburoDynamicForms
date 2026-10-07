@@ -9124,6 +9124,21 @@ function guessOldSiteLayoutGroupKey(area, venueName) {
 const oldSiteLayoutExists = (preset, layouts) => (layouts || []).some((layout) =>
   layout.oldSitePresetId === preset.presetId || (layout.name === preset.name && layout.image === preset.image));
 
+// Layouts added by hand carry no oldSitePresetId, so fall back to the venue's presets by name/image.
+function findOldSiteLayoutPreset(layout, venueName) {
+  const allPresets = OLD_SITE_LAYOUT_GROUPS.flatMap((group) => group.layouts);
+  const byId = layout.oldSitePresetId && allPresets.find((preset) => preset.presetId === layout.oldSitePresetId);
+  if (byId) return byId;
+  const venue = (venueName || "").trim().toLowerCase();
+  const venuePresets = OLD_SITE_LAYOUT_GROUPS.filter((group) => group.venue.toLowerCase() === venue).flatMap((group) => group.layouts);
+  const pool = venuePresets.length ? venuePresets : allPresets;
+  const name = (layout.name || "").trim();
+  return pool.find((preset) => preset.name === name && preset.image === layout.image)
+    || (layout.image && pool.find((preset) => preset.image === layout.image))
+    || (name && pool.find((preset) => preset.name === name))
+    || null;
+}
+
 function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSelected, onRefreshRules }) {
   const Ic = window.Icons;
   const [groupKey, setGroupKey] = React.useState(() => guessOldSiteLayoutGroupKey(area, venueName));
@@ -9147,7 +9162,7 @@ function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSe
     setCategoryFilter("all");
     setSelectedIds([]);
   };
-  const importedCount = (existingLayouts || []).filter((layout) => layout.oldSitePresetId).length;
+  const importedCount = (existingLayouts || []).filter((layout) => findOldSiteLayoutPreset(layout, venueName)).length;
 
   return (
     <div className="rental-modal-backdrop" onClick={onClose}>
@@ -9198,8 +9213,8 @@ function OldSiteLayoutModal({ area, venueName, existingLayouts, onClose, onAddSe
         <div className="rental-modal-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           {importedCount > 0 && (
-            <button className="btn" onClick={onRefreshRules} title="Reset event types, guest range and seating on already-imported layouts to the old site's values">
-              Reset rules on {importedCount} imported
+            <button className="btn" onClick={onRefreshRules} title="Reset event types, guest range and seating on layouts that match an old-site layout to the old site's values">
+              Reset rules on {importedCount} matching
             </button>
           )}
           <button className="btn rental-add-btn" onClick={() => onAddSelected(selected)} disabled={selected.length === 0}>
@@ -9391,13 +9406,13 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
     setVL(vid, { layouts: [...getVL(vid).layouts, ...imported] });
     setOldSiteLayoutArea(null);
   };
-  const refreshOldSiteLayoutRules = (vid) => {
-    const presets = new Map(OLD_SITE_LAYOUT_GROUPS.flatMap((group) => group.layouts).map((preset) => [preset.presetId, preset]));
-    setVL(vid, {
-      layouts: getVL(vid).layouts.map((layout) => {
-        const preset = presets.get(layout.oldSitePresetId);
+  const refreshOldSiteLayoutRules = (area) => {
+    const venueName = allVenues.find((v) => v.id === area.venueId)?.name || "";
+    setVL(area.id, {
+      layouts: getVL(area.id).layouts.map((layout) => {
+        const preset = findOldSiteLayoutPreset(layout, venueName);
         return preset
-          ? { ...layout, capacityMin: preset.guestMin, capacityMax: preset.guestMax, applicableEventTypes: [...preset.eventTypes], recommendedFor: preset.recommendedFor }
+          ? { ...layout, oldSitePresetId: preset.presetId, capacityMin: preset.guestMin, capacityMax: preset.guestMax, applicableEventTypes: [...preset.eventTypes], recommendedFor: preset.recommendedFor }
           : layout;
       }),
     });
@@ -10015,7 +10030,7 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
           existingLayouts={getVL(oldSiteLayoutArea.id).layouts}
           onClose={() => setOldSiteLayoutArea(null)}
           onAddSelected={(presets) => addOldSiteLayouts(oldSiteLayoutArea.id, presets)}
-          onRefreshRules={() => refreshOldSiteLayoutRules(oldSiteLayoutArea.id)}
+          onRefreshRules={() => refreshOldSiteLayoutRules(oldSiteLayoutArea)}
         />
       )}
       {previewAsset && (
@@ -11347,8 +11362,9 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
       if ((lab.includes("attendee") || lab.includes("number of guest") || lab.includes("number of attendees")) && answers[f.id]) {
         guestCount = parseInt(answers[f.id], 10) || 0;
       }
-      if ((lab.includes("event type") || lab.includes("type of event")) && typeof answers[f.id] === "string" && answers[f.id]) {
-        eventType = answers[f.id];
+      const eventTypeAnswer = answers[f.id] && typeof answers[f.id] === "object" ? answers[f.id].__selected : answers[f.id];
+      if ((lab.includes("event type") || lab.includes("type of event")) && typeof eventTypeAnswer === "string" && eventTypeAnswer) {
+        eventType = eventTypeAnswer;
       }
     });
   });

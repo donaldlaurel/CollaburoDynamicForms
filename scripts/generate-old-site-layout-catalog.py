@@ -8,10 +8,11 @@ repeat the same layouts, so entries are de-duplicated by label + image.
 """
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "collaburo_layout"
+SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "collaburo_layout"
 OUT = ROOT / "components" / "html-source" / "old-site-layout-catalog.js"
 IMAGE_BASE = "https://collaburo.space/"
 
@@ -30,6 +31,12 @@ CATEGORY_LABELS = {
 EVENT_TYPE_NAMES = {
     "Other (B)": "Other - Business and non-alcoholic events",
     "Other": "Other - Social and/or alcoholic events",
+}
+
+# Categories drawn on a space page but missing from its $options_dict were never
+# shown by the old site; an empty list would show them for every event type here.
+UNMAPPED_CATEGORY_EVENT_TYPES = {
+    "ceremony": ["Ceremony / Graduation"],
 }
 
 STR = r'"((?:[^"\\]|\\.)*)"'
@@ -136,7 +143,8 @@ def parse_floor_layouts(text: str, mapping_var: str, options_var: str, tier_boun
         key = (label, img)
         if key not in by_key:
             by_key[key] = (layout(m.group("id"), label, CATEGORY_LABELS[category], img, capacity,
-                                  lines_of(includes, chairs), event_types.get(category, [])), set())
+                                  lines_of(includes, chairs),
+                                  event_types.get(category) or UNMAPPED_CATEGORY_EVENT_TYPES.get(category, [])), set())
             out.append(by_key[key][0])
         by_key[key][1].add(max(tier, 0))
     for entry, tiers in by_key.values():
@@ -211,7 +219,7 @@ def main() -> None:
     total = sum(len(g["layouts"]) for g in groups)
     OUT.write_text(
         "// Auto-generated from collaburo_layout/*.php - do not edit by hand.\n"
-        "// Regenerate: python scripts/generate-old-site-layout-catalog.py\n"
+        "// Regenerate: python scripts/generate-old-site-layout-catalog.py [path/to/collaburo_layout]\n"
         f"// Groups: {len(groups)}, layouts: {total}\n"
         "export const OLD_SITE_LAYOUT_GROUPS = "
         + json.dumps(groups, indent=2, ensure_ascii=False)
