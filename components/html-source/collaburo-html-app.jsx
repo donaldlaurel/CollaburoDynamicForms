@@ -316,7 +316,7 @@ const SAMPLE_RENTAL_CATALOG = [
   { id: "ra_wireless_headsets", name: "Wireless Headsets", category: "AV / Tech", priceText: "$25 first, $10 additional", unit: "each", priceKey: "space_tech_wireless_headsets", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "$25 for one, $10 for each additional one.", clientSelectable: true, hideBaseQuantity: true },
   { id: "ra_powerpoint_clicker", name: "Powerpoint Presentation Clicker", category: "AV / Tech", priceText: "$10 each", unit: "each", priceKey: "space_tech_powerpoint_clicker", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "", clientSelectable: true, hideBaseQuantity: true },
   { id: "ra_it_labour", name: "Labour Time - IT Tech", category: "AV / Tech", priceText: "$60/hour for 1 person", unit: "hour", priceKey: "space_other_labourtimeittech", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "", clientSelectable: true, minUnits: 1, maxUnits: 12, increment: 1 },
-  { id: "ra_tech_setup_questions", name: "Tech setup questions", category: "AV / Tech", priceText: "Included", unit: "flat", priceKey: "space_tech_setup_questions", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5 questions", notes: "Non-priced questions that help the team prepare AV setup.", clientSelectable: false, hideBaseQuantity: true },
+  { id: "ra_tech_setup_questions", name: "Tech setup questions", category: "AV / Tech", priceText: "Included", unit: "flat", priceKey: "space_tech_setup_questions", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5 questions", notes: "To make sure we have the tech ready for you, please help us understand what you plan to do:", clientSelectable: false, alwaysShowInGroup: true, hideBaseQuantity: true },
 
   { id: "ro_podium", name: "Podium", category: "Decor / Other", priceText: "$30", unit: "flat", priceKey: "space_other_podium", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "", clientSelectable: true, hideBaseQuantity: true },
   { id: "ro_disco_lights", name: "Disco Lights", category: "Decor / Other", priceText: "Free", unit: "flat", priceKey: "space_other_disco_lights", deliveryClass: "small", clientVisible: true, active: true, source: "Old site Step 5", notes: "", clientSelectable: true, hideBaseQuantity: true },
@@ -355,6 +355,28 @@ const RENTAL_QUANTITY_SOURCES = [
   { value: "fixed", label: "Fixed package quantity" },
   { value: "custom_override", label: "Inherit, allow override" },
 ];
+
+function techOption(id, label) {
+  return { id, label, pricingModel: "included", unitPrice: 0 };
+}
+
+function techRuleSets(...sets) {
+  return { mode: "conditional", ruleSets: sets.map((conditions) => ({ conditions })) };
+}
+
+function techItemSelected(itemId) {
+  return { source: "item", itemId, operator: "selected" };
+}
+
+function techAnswer(sourceGroupId, operator, valueOrValues) {
+  return Array.isArray(valueOrValues)
+    ? { source: "question", sourceGroupId, operator, values: valueOrValues }
+    : { source: "question", sourceGroupId, operator, value: valueOrValues, values: [valueOrValues] };
+}
+
+function techNotBringing(equipmentId) {
+  return techAnswer("external_av_equipment", "not_in", [equipmentId]);
+}
 
 const LEGACY_RENTAL_ARCHITECTURE = {
   rt_rect6: {
@@ -859,22 +881,19 @@ const LEGACY_RENTAL_ARCHITECTURE = {
     hideBaseQuantity: true,
     packageBehavior: {
       type: "editable_preset",
-      includedItemsRemovable: true,
       includedItemPricing: "included_by_package",
-      allowIndividualExtras: true,
+      lockIncludedItems: true,
       includedItems: [
-        { itemId: "ra_ptz", label: "PTZ camera", removable: true },
-        { itemId: "ra_wireless_mic", label: "Wireless Mics", removable: true },
-        { itemId: "ra_powerpoint_clicker", label: "Powerpoint Presentation Clicker", removable: true },
-        { itemId: "ra_it_labour", label: "Labour Time - IT Tech", removable: true },
-      ],
-      upgrades: [
-        { id: "add_projector", label: "Projector / Projector Screen", pricingModel: "flat_fee", unitPrice: 100 },
+        { itemId: "ra_projector", label: "Projector / Projector Screen" },
+        { itemId: "ra_ptz", label: "PTZ camera" },
+        { itemId: "ra_wireless_mic", label: "Wireless Mics", presetAnswers: { wireless_mic_count: "two" } },
+        { itemId: "ra_powerpoint_clicker", label: "Powerpoint Presentation Clicker" },
+        { itemId: "ra_it_labour", label: "Labour Time - IT Tech", quantity: 2 },
       ],
     },
     migrationNotes: [
-      "Old site checks included AV items when AV Deluxe is selected.",
-      "Model this as an editable preset package: included items auto-appear, but admin can still sell items individually.",
+      "Old site checks and locks the included AV items when AV Deluxe is selected.",
+      "Included items are free while the package is selected; extra paid options on them (like the suspended projector) still charge.",
     ],
   },
   ra_projector: {
@@ -886,12 +905,15 @@ const LEGACY_RENTAL_ARCHITECTURE = {
     hideBaseQuantity: true,
     optionGroups: [
       {
-        id: "projector_suspend",
-        label: "Projector setup",
-        type: "checkbox",
+        id: "projector_position",
+        label: "Projector position",
+        type: "radio",
+        required: true,
         quantitySource: "fixed",
         options: [
-          { id: "suspended_middle_stage", label: "Suspended middle stage projector", pricingModel: "flat_fee", priceEnabled: true, unitPrice: 25, quantitySource: "fixed" },
+          { id: "middle_stage", label: "Middle of Stage", pricingModel: "included", unitPrice: 0, quantitySource: "fixed" },
+          { id: "right_side_stage", label: "Right Side of Stage", pricingModel: "included", unitPrice: 0, quantitySource: "fixed" },
+          { id: "suspended_middle_stage", label: "Suspended Middle of Stage ($25 extra)", pricingModel: "flat_fee", priceEnabled: true, unitPrice: 25, quantitySource: "fixed" },
         ],
       },
     ],
@@ -955,8 +977,21 @@ const LEGACY_RENTAL_ARCHITECTURE = {
     unitPrice: 0,
     quantitySource: "fixed",
     clientSelectable: false,
+    alwaysShowInGroup: true,
     hideBaseQuantity: true,
     optionGroups: [
+      {
+        id: "projector_display",
+        label: "You have selected the projector option from above, what will display on the screen?",
+        type: "radio",
+        required: true,
+        quantitySource: "fixed",
+        visibility: techRuleSets([techItemSelected("ra_projector")]),
+        options: [
+          techOption("visuals_only", "I plan to display only visuals on the projector screen (slides, images, video with no sound)"),
+          techOption("with_audio", "I plan to have audio with the visuals displayed on the projector screen (video with sound, music with slides, Zoom call)"),
+        ],
+      },
       {
         id: "sound_system_plan",
         label: "Do you plan to use Collaburo's sound system?",
@@ -964,22 +999,63 @@ const LEGACY_RENTAL_ARCHITECTURE = {
         required: true,
         quantitySource: "fixed",
         options: [
-          { id: "bluetooth", label: "Yes, via Bluetooth", pricingModel: "included", unitPrice: 0 },
-          { id: "laptop_hdmi", label: "Yes, via laptop using HDMI", pricingModel: "included", unitPrice: 0 },
-          { id: "not_using", label: "No, not using Collaburo's sound system", pricingModel: "included", unitPrice: 0 },
+          techOption("bluetooth", "Yes, I plan to use Collaburo's sound system via Bluetooth"),
+          techOption("laptop_hdmi", "Yes, I plan to use Collaburo's sound system via laptop (using HDMI)"),
+          techOption("not_using", "No, I am not using Collaburo's sound system for this event"),
         ],
       },
       {
         id: "external_av_equipment",
-        label: "Will anyone bring any Audio/Video equipment?",
+        label: "Will you (or someone) be bringing any Audio/Video equipment (sound system, projector, microphone, receivers, mixers, cameras, webcams, etc.)? Check all that applies:",
         type: "checkbox",
-        required: true,
         quantitySource: "fixed",
         options: [
-          { id: "sound_system", label: "Bringing a sound system from outside", pricingModel: "included", unitPrice: 0 },
-          { id: "projector_screen", label: "Bringing a projector and projector screen", pricingModel: "included", unitPrice: 0 },
-          { id: "cameras_webcams", label: "Bringing cameras and/or webcams", pricingModel: "included", unitPrice: 0 },
-          { id: "none", label: "None", pricingModel: "included", unitPrice: 0 },
+          techOption("sound_system", "Myself or someone will bring a sound system from outside (speakers, bass, microphone, receiver, mixer, cables, etc.)"),
+          techOption("projector_screen", "Myself or someone will bring a projector and projector screen"),
+          techOption("cameras_webcams", "Myself or someone will bring cameras and/or webcams"),
+          techOption("none", "None"),
+        ],
+      },
+      {
+        id: "second_audio_device",
+        label: "Do you plan to use Collaburo's sound system using a different device than the one connected to the projector at any point during the event?",
+        type: "radio",
+        required: true,
+        quantitySource: "fixed",
+        visibility: techRuleSets(
+          [techItemSelected("ra_projector"), techAnswer("projector_display", "equals", "with_audio")],
+          [techItemSelected("ra_projector"), techAnswer("sound_system_plan", "equals", "laptop_hdmi")],
+        ),
+        options: [
+          techOption("bluetooth_device", "Yes, I plan to use a phone/tablet to connect to Collaburo's sound system via Bluetooth"),
+          techOption("other_laptop_hdmi", "Yes, I plan to use a different laptop than the one connected to projector to connect to Collaburo's sound system via HDMI (Not Recommended)"),
+          techOption("same_laptop", "No, I will use the same laptop connected to the projector for all my audio/video needs (Recommended)"),
+        ],
+      },
+      {
+        id: "online_platform",
+        label: "Will you be connecting to an online conference platform (such as Zoom, MS Team, etc.)?",
+        type: "radio",
+        required: true,
+        quantitySource: "fixed",
+        visibility: techRuleSets([techItemSelected("ra_projector")]),
+        options: [
+          techOption("listen_only", "Yes, there will be online attendees that will just be listening (and possibly seeing shared screen)"),
+          techOption("participate", "Yes, there will be online attendees that will participate by speaking to the in-room and online attendees (and possibly share screen on call)"),
+          techOption("in_room_only", "No, all attendees will be in the room."),
+        ],
+      },
+      {
+        id: "online_see_room",
+        label: "Will online attendees see anyone in the room?",
+        type: "radio",
+        required: true,
+        quantitySource: "fixed",
+        visibility: techRuleSets([techItemSelected("ra_projector"), techAnswer("online_platform", "in", ["listen_only", "participate"])]),
+        options: [
+          techOption("see_mc", "Yes, online attendees must see the MC/facilitator."),
+          techOption("see_mc_and_room", "Yes, online attendees must see the MC/facilitator and the in-person attendees in the room."),
+          techOption("no_video", "No, online attendees will not see anyone in the room."),
         ],
       },
       {
@@ -988,23 +1064,97 @@ const LEGACY_RENTAL_ARCHITECTURE = {
         type: "radio",
         required: true,
         quantitySource: "fixed",
+        visibility: techRuleSets([techAnswer("online_platform", "not_in", ["listen_only", "participate"])]),
         options: [
-          { id: "stage", label: "Yes, for speaking from the stage", pricingModel: "included", unitPrice: 0 },
-          { id: "different_spots", label: "Yes, for speaking from different spots in the room", pricingModel: "included", unitPrice: 0 },
-          { id: "no", label: "No microphone needed", pricingModel: "included", unitPrice: 0 },
+          techOption("stage", "Yes, I need a microphone/headset/lavalier to speak to the attendees from the stage."),
+          techOption("different_spots", "Yes, I need a microphone/headset/lavalier to speak to the attendees from different spots in the room."),
+          techOption("no", "No, it's not needed."),
         ],
       },
       {
-        id: "microphone_followup",
-        label: "Microphone setup notes",
-        type: "select",
+        id: "late_night_sound",
+        label: "Your event runs past 11:00 PM. Will you have an AV company or a DJ/band at this event?",
+        type: "radio",
+        required: true,
         quantitySource: "fixed",
-        placeholder: "Select setup style",
-        visibility: { mode: "conditional", sourceGroupId: "microphone_need", operator: "in", values: ["stage", "different_spots"] },
-        options: ["Handheld mic", "Headset / lavalier", "Not sure yet"],
+        visibility: techRuleSets([{ source: "booking", operator: "ends_late", value: "23:00" }]),
+        options: [
+          techOption("dj_band", "Yes, I will have a DJ/band perform at this event"),
+          techOption("av_company", "Yes, I will get a professional AV company to run this event"),
+          techOption("dj_and_av", "Yes, I will have a DJ/band as well as a professional AV company to take care of all my Audio/Video needs."),
+          techOption("small_system", "No, I will get a sound system for small audio related needs."),
+        ],
+      },
+      {
+        id: "sound_policy_confirmation",
+        label: "Sound and Bass Control Policy - please confirm your agreement to these terms.",
+        type: "checkbox",
+        required: true,
+        quantitySource: "fixed",
+        infoText: "The Organizer is responsible for ensuring that sound and bass levels after 11:00 PM do not cause disturbance to neighbouring properties. Collaburo will provide a decibel meter for reference and recommends that sound levels do not exceed 90 dB, with all exterior doors and windows kept closed. Bass levels are not measured by the decibel meter; the Organizer remains fully responsible for managing bass levels after 11:00 PM, including informing any DJ, band, or AV company. If a by-law officer or police issues a noise ticket, the Organizer is solely responsible for any fines, which may be deducted from the security deposit, and future booking requests may be declined.",
+        visibility: techRuleSets([{ source: "booking", operator: "ends_late", value: "23:00" }]),
+        options: [techOption("agree", "I agree to the Sound and Bass Control Policy")],
       },
     ],
-    migrationNotes: ["These are planning questions, not priced rentals, but they belong with Tech because they change setup requirements."],
+    recommendationHeading: "Based on your answers above, the minimum tech required are:",
+    recommendationAddLabel: "Yes, add the missing tech items",
+    recommendations: [
+      { id: "rs_projector", label: "Projector / Projector Screen", itemIds: ["ra_projector"], visibility: techRuleSets([techItemSelected("ra_projector")]) },
+      {
+        id: "rs_sound_system",
+        label: "Sound System",
+        itemIds: ["ra_sound_system"],
+        visibility: techRuleSets(
+          [techAnswer("projector_display", "equals", "with_audio"), techNotBringing("sound_system")],
+          [techAnswer("sound_system_plan", "in", ["bluetooth", "laptop_hdmi"]), techNotBringing("sound_system")],
+          [techAnswer("online_platform", "in", ["listen_only", "participate"]), techNotBringing("sound_system")],
+          [techAnswer("microphone_need", "in", ["stage", "different_spots"]), techNotBringing("sound_system")],
+        ),
+      },
+      {
+        id: "rs_headset",
+        label: "At least 1 wireless microphone or headset is required for online participants to hear the facilitator",
+        itemIds: ["ra_wireless_mic", "ra_wireless_headsets"],
+        visibility: techRuleSets([techAnswer("online_platform", "in", ["listen_only", "participate"]), techNotBringing("sound_system")]),
+      },
+      {
+        id: "rs_wireless_room",
+        label: "A wireless microphone or headset is required to speak from different spots in the room",
+        itemIds: ["ra_wireless_mic", "ra_wireless_headsets"],
+        visibility: techRuleSets([techAnswer("microphone_need", "equals", "different_spots"), techNotBringing("sound_system")]),
+      },
+      {
+        id: "rs_microphone",
+        label: "A wired microphone or wireless microphone/headset is required for in-room attendees to hear. Wireless microphone is recommended as sound projects from 4 speakers as opposed to 1 speaker for wired microphone.",
+        itemIds: ["ra_wired_mic", "ra_wireless_mic", "ra_wireless_headsets"],
+        visibility: techRuleSets([techAnswer("microphone_need", "equals", "stage"), techNotBringing("sound_system")]),
+      },
+      {
+        id: "rs_bluetooth",
+        label: "You will be required to change the \"source\" on the sound mixer from Bluetooth to HDMI and vice versa depending on what needs to be heard on speakers.",
+        itemIds: [],
+        visibility: techRuleSets([techAnswer("second_audio_device", "equals", "bluetooth_device")]),
+      },
+      {
+        id: "rs_hdmi",
+        label: "You will be required to change the HDMI cord from one laptop to another which will impact the projector screen, and in-person attendees will see the new laptop's screen instead. A better solution to this, is to rent the \"Mobile TV\" and connect it separately with another laptop.",
+        itemIds: ["ra_mobile_tv"],
+        visibility: techRuleSets([techAnswer("second_audio_device", "equals", "other_laptop_hdmi"), techNotBringing("projector_screen")]),
+      },
+      {
+        id: "rs_webcam",
+        label: "Web conference Camera or PTZ camera",
+        itemIds: ["ra_web_conference_camera", "ra_ptz"],
+        visibility: techRuleSets([techAnswer("online_see_room", "equals", "see_mc"), techNotBringing("cameras_webcams")]),
+      },
+      {
+        id: "rs_ptzcam",
+        label: "PTZ camera",
+        itemIds: ["ra_ptz"],
+        visibility: techRuleSets([techAnswer("online_see_room", "equals", "see_mc_and_room"), techNotBringing("cameras_webcams")]),
+      },
+    ],
+    migrationNotes: ["Mirrors the old site's Main Hall tech questions (Q1-Q8) and the \"minimum tech required\" summary."],
   },
   ro_helper_labour: {
     schemaVersion: 1,
@@ -1071,6 +1221,9 @@ function withRentalArchitecture(item) {
     optionGroups,
     migrationNotes: item.migrationNotes ?? legacy.migrationNotes ?? [],
     packageBehavior: item.packageBehavior ?? legacy.packageBehavior,
+    // Seeded recommendations reference seeded question ids, so they only apply
+    // while the item still uses the seeded questions.
+    recommendations: item.recommendations ?? (item.optionGroups ? [] : legacy.recommendations || []),
     groupSelectionRule: item.groupSelectionRule || legacy.groupSelectionRule || "optional",
     groupOrder: item.groupOrder ?? legacy.groupOrder ?? RENTAL_CATEGORIES.indexOf(item.category),
     clientSelectable: item.clientSelectable ?? legacy.clientSelectable ?? (item.category === "Dinnerware" && item.source === "Old site Step 5"),
@@ -1191,7 +1344,7 @@ function rentalItemForVenue(item, venueId = "") {
   while (changed) {
     changed = false;
     groups = groups.map((group) => {
-      if (group && group.visibility?.mode === "conditional" && droppedGroupIds.has(group.visibility.sourceGroupId)) {
+      if (group && rentalVisibilityDependsOnDroppedGroups(group.visibility, droppedGroupIds)) {
         if (group.id) droppedGroupIds.add(group.id);
         changed = true;
         return null;
@@ -1413,7 +1566,7 @@ function RentalOptionsDemo({ item }) {
 
 function RentalCatalogArchitectureSummary({ rows }) {
   const richItems = rows.filter((r) => (r.optionGroups || []).length > 0).length;
-  const packages = rows.filter((r) => r.packageBehavior).length;
+  const packages = rows.filter((r) => rentalPackageIncludes(r).length > 0).length;
   const hourly = rows.filter((r) => /hour/.test(r.pricingModel || "")).length;
   return (
     <div className="rental-architecture">
@@ -1437,7 +1590,7 @@ function RentalCatalogArchitectureSummary({ rows }) {
 
 function RentalSchemaPanel({ item, onPatch }) {
   const optionGroups = item.optionGroups || [];
-  const packageBehavior = item.packageBehavior;
+  const packageBehavior = rentalPackageIncludes(item).length > 0 ? item.packageBehavior : null;
   return (
     <div className="rental-schema-box">
       <div className="rental-schema-head">
@@ -2000,85 +2153,248 @@ function rentalParentVisibilitySource(item) {
   };
 }
 
-function RentalVisibilityEditor({ group, allGroups, parentItem, onChange }) {
-  const visibility = group.visibility || { mode: "always" };
-  const groupKey = group.id || group._reorderId;
-  const parentSource = rentalParentVisibilitySource(parentItem);
-  const candidates = [parentSource, ...(allGroups || []).filter((g) => (g.id || g._reorderId) !== groupKey)];
-  const source = candidates.find((g) => (g.id || g._reorderId) === visibility.sourceGroupId) || candidates[0];
-  const sourceOptions = (source?.options || []).map(normalizeRentalChoiceOption);
-  const mode = visibility.mode || "always";
-  const operator = visibility.operator || (sourceOptions.length > 0 ? "equals" : "has_value");
-  const values = visibility.values || (visibility.value ? [visibility.value] : []);
-  const patchVisibility = (patch) => onChange({ ...group, visibility: { ...visibility, ...patch } });
+const RENTAL_RULE_SOURCES = [
+  { value: "question", label: "Answer in this item" },
+  { value: "item", label: "Another rental item" },
+  { value: "item_question", label: "Answer in another item" },
+  { value: "booking", label: "Event end time" },
+];
+
+function rentalGroupKey(group, index = 0) {
+  return group?.id || group?._reorderId || "option_group_" + index;
+}
+
+function rentalAnswerOperatorChoices(hasOptions) {
+  return hasOptions
+    ? [["equals", "is"], ["not_equals", "is not"], ["in", "is any of"], ["not_in", "is none of"], ["answered", "is answered"], ["not_answered", "is not answered"]]
+    : [["has_value", "has a value"], ["answered", "is answered"], ["not_answered", "is not answered"]];
+}
+
+function rentalAnswerConditionFor(sourceGroup) {
+  const options = (sourceGroup?.options || []).map(normalizeRentalChoiceOption);
+  const firstId = options[0]?.id || "";
+  return options.length > 0
+    ? { operator: "equals", value: firstId, values: firstId ? [firstId] : [] }
+    : { operator: "has_value", value: "", values: [] };
+}
+
+function defaultRentalCondition(source, localGroups = [], parentItem = null, catalogRows = []) {
+  const otherRows = (catalogRows || []).filter((row) => row.id !== parentItem?.id);
+  if (source === "item") return { source, itemId: otherRows[0]?.id || "", operator: "selected" };
+  if (source === "booking") return { source, operator: "ends_late", value: "23:00" };
+  if (source === "item_question") {
+    const row = otherRows.find((candidate) => (candidate.optionGroups || []).length > 0);
+    const group = row?.optionGroups?.[0];
+    return { source, itemId: row?.id || "", sourceGroupId: group ? rentalGroupKey(group) : "", ...rentalAnswerConditionFor(group) };
+  }
+  const group = localGroups[0];
+  return { source: "question", sourceGroupId: group ? rentalGroupKey(group) : "", ...rentalAnswerConditionFor(group) };
+}
+
+function RentalCatalogItemSelect({ value, rows, onChange, filter = () => true, placeholder = "Choose item" }) {
+  const candidates = (rows || []).filter(filter);
+  const categories = Array.from(new Set(candidates.map((row) => row.category || "Other")));
   return (
-    <details className="rental-accordion">
-      <summary>Show / hide rules</summary>
-      <div className="rental-accordion-body">
-      <div className="rental-editor-grid">
+    <select className="select" value={value || ""} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{placeholder}</option>
+      {categories.map((category) => (
+        <optgroup key={category} label={category}>
+          {candidates.filter((row) => (row.category || "Other") === category).map((row) => <option key={row.id} value={row.id}>{row.name || row.id}</option>)}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
+function RentalConditionAnswerPicker({ condition, sourceGroup, onPatch }) {
+  const options = (sourceGroup?.options || []).map(normalizeRentalChoiceOption);
+  const operator = condition.operator || (options.length ? "equals" : "has_value");
+  const values = condition.values || (condition.value ? [condition.value] : []);
+  return (
+    <>
+      <div>
+        <label className="lbl">Condition</label>
+        <select className="select" value={operator} onChange={(e) => onPatch({ operator: e.target.value })}>
+          {rentalAnswerOperatorChoices(options.length > 0).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </div>
+      {["equals", "not_equals"].includes(operator) && options.length > 0 && (
         <div>
-          <label className="lbl">Visibility</label>
-          <select className="select" value={mode} onChange={(e) => {
-            const nextOperator = sourceOptions.length > 0 ? "equals" : "has_value";
-            e.target.value === "always" ? onChange({ ...group, visibility: { mode: "always" } }) : patchVisibility({ mode: "conditional", sourceGroupId: source ? (source.id || source._reorderId) : "", operator: nextOperator, value: sourceOptions[0]?.id || "", values: sourceOptions[0]?.id ? [sourceOptions[0].id] : [] });
-          }}>
-            <option value="always">Always show</option>
-            <option value="conditional">Only when...</option>
+          <label className="lbl">Answer</label>
+          <select className="select" value={condition.value || ""} onChange={(e) => onPatch({ value: e.target.value, values: [e.target.value] })}>
+            <option value="">Choose answer</option>
+            {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
         </div>
-        {mode === "conditional" && (
-          <>
-            <div>
-              <label className="lbl">Question</label>
-              <select className="select" value={visibility.sourceGroupId || (source ? (source.id || source._reorderId) : "")} onChange={(e) => {
-                const nextSource = candidates.find((candidate) => (candidate.id || candidate._reorderId) === e.target.value);
-                const nextOptions = (nextSource?.options || []).map(normalizeRentalChoiceOption);
-                patchVisibility({ sourceGroupId: e.target.value, operator: nextOptions.length > 0 ? "equals" : "has_value", value: nextOptions[0]?.id || "", values: nextOptions[0]?.id ? [nextOptions[0].id] : [] });
-              }} disabled={candidates.length === 0}>
-                {candidates.length === 0 && <option value="">Add another choice first</option>}
-                {candidates.map((candidate) => <option key={candidate.id || candidate._reorderId} value={candidate.id || candidate._reorderId}>{candidate.label || candidate.id || candidate._reorderId}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="lbl">Condition</label>
-              <select className="select" value={operator} onChange={(e) => patchVisibility({ operator: e.target.value })}>
-                {sourceOptions.length > 0 && <option value="equals">is</option>}
-                {sourceOptions.length > 0 && <option value="not_equals">is not</option>}
-                {sourceOptions.length > 0 && <option value="in">is any of</option>}
-                <option value="has_value">has a value</option>
-                <option value="answered">is answered</option>
-              </select>
-            </div>
-            {operator !== "answered" && operator !== "has_value" && operator !== "in" && sourceOptions.length > 0 && (
-              <div>
-                <label className="lbl">Answer</label>
-                <select className="select" value={visibility.value || ""} onChange={(e) => patchVisibility({ value: e.target.value, values: [e.target.value] })}>
-                  <option value="">Choose answer</option>
-                  {sourceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                </select>
-              </div>
-            )}
-            {operator !== "answered" && operator !== "has_value" && sourceOptions.length === 0 && (
-              <div className="rental-muted" style={{ alignSelf: "end", paddingBottom: 8 }}>
-                This question has no answer options, so visibility can use whether it has a value.
-              </div>
-            )}
-          </>
-        )}
-      </div>
-      {mode === "conditional" && operator === "in" && sourceOptions.length > 0 && (
-        <div className="rental-visibility-checks">
-          {sourceOptions.map((option) => (
+      )}
+      {["in", "not_in"].includes(operator) && options.length > 0 && (
+        <div className="full rental-visibility-checks">
+          {options.map((option) => (
             <label key={option.id}>
               <input
                 type="checkbox"
                 checked={values.includes(option.id)}
-                onChange={(e) => patchVisibility({ values: e.target.checked ? [...values, option.id] : values.filter((id) => id !== option.id), value: "" })}
+                onChange={(e) => onPatch({ values: e.target.checked ? [...values, option.id] : values.filter((id) => id !== option.id), value: "" })}
               /> {option.label}
             </label>
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+function RentalConditionRow({ condition, localGroups, parentItem, catalogRows, onChange, onRemove }) {
+  const Ic = window.Icons;
+  const source = condition.source || "question";
+  const patch = (next) => onChange({ ...condition, ...next });
+  const otherRows = (catalogRows || []).filter((row) => row.id !== parentItem?.id);
+  const localSource = localGroups.find((group, index) => rentalGroupKey(group, index) === condition.sourceGroupId);
+  const targetItem = otherRows.find((row) => row.id === condition.itemId);
+  const targetGroups = (targetItem?.optionGroups || []).map((group, index) => ({ ...group, id: rentalGroupKey(group, index) }));
+  const targetGroup = targetGroups.find((group) => group.id === condition.sourceGroupId);
+  return (
+    <div className="rental-rule-condition">
+      <div className="rental-editor-grid">
+        <div>
+          <label className="lbl">Based on</label>
+          <select className="select" value={source} onChange={(e) => onChange(defaultRentalCondition(e.target.value, localGroups, parentItem, catalogRows))}>
+            {RENTAL_RULE_SOURCES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </div>
+        {source === "question" && (
+          <>
+            <div>
+              <label className="lbl">Question</label>
+              <select className="select" value={condition.sourceGroupId || ""} onChange={(e) => {
+                const next = localGroups.find((group, index) => rentalGroupKey(group, index) === e.target.value);
+                patch({ sourceGroupId: e.target.value, ...rentalAnswerConditionFor(next) });
+              }}>
+                {localGroups.length === 0 && <option value="">Add another choice first</option>}
+                {localGroups.map((group, index) => <option key={rentalGroupKey(group, index)} value={rentalGroupKey(group, index)}>{group.label || rentalGroupKey(group, index)}</option>)}
+              </select>
+            </div>
+            <RentalConditionAnswerPicker condition={condition} sourceGroup={localSource} onPatch={patch} />
+          </>
+        )}
+        {source === "item" && (
+          <>
+            <div>
+              <label className="lbl">Rental item</label>
+              <RentalCatalogItemSelect value={condition.itemId} rows={otherRows} onChange={(itemId) => patch({ itemId })} />
+            </div>
+            <div>
+              <label className="lbl">Condition</label>
+              <select className="select" value={condition.operator || "selected"} onChange={(e) => patch({ operator: e.target.value })}>
+                <option value="selected">is selected</option>
+                <option value="not_selected">is not selected</option>
+              </select>
+            </div>
+          </>
+        )}
+        {source === "item_question" && (
+          <>
+            <div>
+              <label className="lbl">Rental item</label>
+              <RentalCatalogItemSelect value={condition.itemId} rows={otherRows} filter={(row) => (row.optionGroups || []).length > 0} onChange={(itemId) => {
+                const row = otherRows.find((candidate) => candidate.id === itemId);
+                const group = row?.optionGroups?.[0];
+                patch({ itemId, sourceGroupId: group ? rentalGroupKey(group) : "", ...rentalAnswerConditionFor(group) });
+              }} />
+            </div>
+            <div>
+              <label className="lbl">Question</label>
+              <select className="select" value={condition.sourceGroupId || ""} onChange={(e) => patch({ sourceGroupId: e.target.value, ...rentalAnswerConditionFor(targetGroups.find((group) => group.id === e.target.value)) })}>
+                {targetGroups.length === 0 && <option value="">Choose an item with questions</option>}
+                {targetGroups.map((group) => <option key={group.id} value={group.id}>{group.label || group.id}</option>)}
+              </select>
+            </div>
+            <RentalConditionAnswerPicker condition={condition} sourceGroup={targetGroup} onPatch={patch} />
+          </>
+        )}
+        {source === "booking" && (
+          <>
+            <div>
+              <label className="lbl">Condition</label>
+              <select className="select" value={condition.operator || "ends_late"} onChange={(e) => patch({ operator: e.target.value })}>
+                <option value="ends_late">ends at or after</option>
+                <option value="not_ends_late">ends before</option>
+              </select>
+            </div>
+            <div>
+              <label className="lbl">Time</label>
+              <input className="input" type="time" value={condition.value || "23:00"} onChange={(e) => patch({ value: e.target.value })} />
+            </div>
+            <div className="full rental-muted">Overnight and multi-day bookings count as ending late.</div>
+          </>
+        )}
+      </div>
+      <button type="button" className="btn icon sm danger-ghost" title="Remove condition" onClick={onRemove}><Ic.Trash size={12} /></button>
+    </div>
+  );
+}
+
+function RentalRuleSetsEditor({ visibility, localGroups = [], parentItem = null, catalogRows = [], onChange }) {
+  const Ic = window.Icons;
+  const sets = rentalVisibilityRuleSets(visibility);
+  const write = (nextSets) => onChange(nextSets.length ? { mode: "conditional", ruleSets: nextSets } : { mode: "always" });
+  const newCondition = () => defaultRentalCondition("question", localGroups, parentItem, catalogRows);
+  const updateCondition = (setIndex, conditionIndex, next) => write(sets.map((set, i) => i !== setIndex ? set : { conditions: set.conditions.map((c, j) => j === conditionIndex ? next : c) }));
+  const removeCondition = (setIndex, conditionIndex) => write(sets
+    .map((set, i) => i !== setIndex ? set : { conditions: set.conditions.filter((_, j) => j !== conditionIndex) })
+    .filter((set) => set.conditions.length > 0));
+  return (
+    <div className="rental-rule-sets">
+      {sets.map((set, setIndex) => (
+        <React.Fragment key={setIndex}>
+          {setIndex > 0 && <div className="rental-rule-or">or</div>}
+          <div className="rental-rule-set">
+            <div className="rental-rule-set-head">Show when all of these are true:</div>
+            {set.conditions.map((condition, conditionIndex) => (
+              <RentalConditionRow
+                key={conditionIndex}
+                condition={condition}
+                localGroups={localGroups}
+                parentItem={parentItem}
+                catalogRows={catalogRows}
+                onChange={(next) => updateCondition(setIndex, conditionIndex, next)}
+                onRemove={() => removeCondition(setIndex, conditionIndex)}
+              />
+            ))}
+            <button type="button" className="btn sm" onClick={() => write(sets.map((s, i) => i === setIndex ? { conditions: [...s.conditions, newCondition()] } : s))}><Ic.Plus size={12} /> And</button>
+          </div>
+        </React.Fragment>
+      ))}
+      <button type="button" className="btn sm" onClick={() => write([...sets, { conditions: [newCondition()] }])}><Ic.Plus size={12} /> Or another set of conditions</button>
+    </div>
+  );
+}
+
+function RentalVisibilityEditor({ group, allGroups, parentItem, catalogRows = [], onChange }) {
+  const groupKey = group.id || group._reorderId;
+  const localGroups = [rentalParentVisibilitySource(parentItem), ...(allGroups || []).filter((g) => (g.id || g._reorderId) !== groupKey)];
+  const mode = group.visibility?.mode === "conditional" ? "conditional" : "always";
+  return (
+    <details className="rental-accordion">
+      <summary>Show / hide rules</summary>
+      <div className="rental-accordion-body">
+        <div className="rental-editor-grid">
+          <div>
+            <label className="lbl">Visibility</label>
+            <select className="select" value={mode} onChange={(e) => onChange({
+              ...group,
+              visibility: e.target.value === "always"
+                ? { mode: "always" }
+                : { mode: "conditional", ruleSets: [{ conditions: [defaultRentalCondition("question", localGroups, parentItem, catalogRows)] }] },
+            })}>
+              <option value="always">Always show</option>
+              <option value="conditional">Only when...</option>
+            </select>
+          </div>
+        </div>
+        {mode === "conditional" && (
+          <RentalRuleSetsEditor visibility={group.visibility} localGroups={localGroups} parentItem={parentItem} catalogRows={catalogRows} onChange={(visibility) => onChange({ ...group, visibility })} />
+        )}
       </div>
     </details>
   );
@@ -2281,7 +2597,7 @@ function RentalVenuePriceFields({ venues = [], basePrice = 0, venuePrices = {}, 
   );
 }
 
-function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], parentItem = null, venues = [], dragHandlers = {}, dropHandlers = {}, isDragging = false, overPosition = null }) {
+function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], parentItem = null, catalogRows = [], venues = [], dragHandlers = {}, dropHandlers = {}, isDragging = false, overPosition = null }) {
   const Ic = window.Icons;
   const type = group.type || "radio";
   const options = (group.options || []).map(normalizeRentalChoiceOption);
@@ -2425,7 +2741,7 @@ function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], p
 
       <RentalTooltipFields value={group} onChange={(next) => onChange({ ...group, infoText: next.infoText, infoImageUrl: next.infoImageUrl, infoImageUrls: next.infoImageUrls || [] })} />
 
-      <RentalVisibilityEditor group={group} allGroups={allGroups} parentItem={parentItem} onChange={onChange} />
+      <RentalVisibilityEditor group={group} allGroups={allGroups} parentItem={parentItem} catalogRows={catalogRows} onChange={onChange} />
 
       <div className="rental-choice-help">{rentalChoiceTypeHelp(type)}</div>
       {pricedStyleOptionsUseItemQuantity && (
@@ -2587,27 +2903,168 @@ function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], p
   );
 }
 
-function RentalPackageSummary({ item }) {
-  const behavior = item.packageBehavior;
-  if (!behavior) return null;
+const RENTAL_PRESET_GROUP_TYPES = ["radio", "select", "checkbox", "quantity", "number"];
+
+function RentalPackageEditor({ item, rows = [], onPatch }) {
+  const Ic = window.Icons;
+  const behavior = item.packageBehavior || {};
+  const included = behavior.includedItems || [];
+  const candidates = rows.filter((row) => row.id !== item.id);
+  const patchBehavior = (patch) => onPatch({ packageBehavior: { ...behavior, ...patch } });
+  const setIncluded = (next) => patchBehavior({ includedItems: next });
+  const updateIncluded = (index, patch) => setIncluded(included.map((entry, i) => i === index ? { ...entry, ...patch } : entry));
+  const setPreset = (index, groupId, answer) => {
+    const presetAnswers = { ...(included[index]?.presetAnswers || {}) };
+    if (answer === "" || answer === null || answer === undefined) delete presetAnswers[groupId];
+    else presetAnswers[groupId] = answer;
+    updateIncluded(index, { presetAnswers });
+  };
+  const addIncluded = () => {
+    const first = candidates.find((row) => !included.some((entry) => entry.itemId === row.id)) || candidates[0];
+    if (first) setIncluded([...included, { itemId: first.id, label: first.name || "" }]);
+  };
   return (
-    <div className="rental-simple-card">
-      <div className="rental-simple-card-head"><b>Package contents</b><span className="field-type-pill">Editable preset</span></div>
-      <div className="rental-simple-card-body">
-        {(behavior.includedItems || []).map((it) => (
-          <div className="rental-quick-row" key={it.itemId}>
-            <span><b>{it.label}</b><span>{it.removable ? "Client can remove it" : "Always included"}</span></span>
-            <span className="rental-pill ok">Included</span>
+    <details className="rental-accordion no-summary-indicator" open={included.length > 0}>
+      <summary>
+        <span>Package: auto-select other items <span className="count">{included.length}</span></span>
+      </summary>
+      <div className="rental-accordion-body">
+        <div className="rental-muted" style={{ marginBottom: 10 }}>
+          When a client checks this item, the items below are checked automatically (like the AV Deluxe Package). Unchecking it removes only the items it added.
+        </div>
+        {included.length > 0 && (
+          <div className="rental-editor-grid" style={{ marginBottom: 10 }}>
+            <div>
+              <label className="lbl">Included item pricing</label>
+              <select className="select" value={behavior.includedItemPricing || "included_by_package"} onChange={(e) => patchBehavior({ includedItemPricing: e.target.value })}>
+                <option value="included_by_package">Included in this package (no charge)</option>
+                <option value="charge_normally">Charge each item normally</option>
+              </select>
+            </div>
+            <div>
+              <label className="lbl">Client changes</label>
+              <label className="chk"><input type="checkbox" checked={behavior.lockIncludedItems !== false} onChange={(e) => patchBehavior({ lockIncludedItems: e.target.checked })} /> Lock included items and preset answers</label>
+            </div>
           </div>
-        ))}
-        {(behavior.upgrades || []).map((up) => (
-          <div className="rental-quick-row" key={up.id}>
-            <span><b>{up.label}</b><span>Optional upgrade</span></span>
-            <strong>${Number(up.unitPrice || 0).toFixed(2)}</strong>
-          </div>
-        ))}
+        )}
+        {included.map((entry, index) => {
+          const target = rows.find((row) => row.id === entry.itemId);
+          const presetGroups = (target?.optionGroups || []).filter((group) => group.id && RENTAL_PRESET_GROUP_TYPES.includes(group.type || "radio"));
+          const showQuantity = target && !rentalUsesFixedBaseQuantity(target) && (rentalOptionGroupsNeedParentQuantity(target) || !target.hideBaseQuantity);
+          return (
+            <div className="rental-rule-condition" key={index}>
+              <div className="rental-editor-grid">
+                <div>
+                  <label className="lbl">Included item</label>
+                  <RentalCatalogItemSelect value={entry.itemId} rows={candidates} onChange={(itemId) => updateIncluded(index, { itemId, label: rows.find((row) => row.id === itemId)?.name || "", quantity: "", presetAnswers: {} })} />
+                </div>
+                {showQuantity && (
+                  <div>
+                    <label className="lbl">Preset quantity</label>
+                    <input className="input" type="number" min="0" placeholder="Client chooses" value={entry.quantity ?? ""} onChange={(e) => updateIncluded(index, { quantity: e.target.value === "" ? "" : Number(e.target.value) })} />
+                  </div>
+                )}
+                {presetGroups.map((group) => {
+                  const options = (group.options || []).map(normalizeRentalChoiceOption);
+                  const current = (entry.presetAnswers || {})[group.id];
+                  return (
+                    <div key={group.id}>
+                      <label className="lbl">Preset: {group.label || group.id}</label>
+                      {["quantity", "number"].includes(group.type) ? (
+                        <input className="input" type="number" min="0" placeholder="Client chooses" value={current ?? ""} onChange={(e) => setPreset(index, group.id, e.target.value === "" ? "" : Number(e.target.value))} />
+                      ) : (
+                        <select className="select" value={Array.isArray(current) ? current[0] || "" : current || ""} onChange={(e) => setPreset(index, group.id, e.target.value)}>
+                          <option value="">Client chooses</option>
+                          {options.map((option) => <option key={option.id || option.label} value={option.id || option.label}>{option.label}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <button type="button" className="btn icon sm danger-ghost" title="Remove included item" onClick={() => setIncluded(included.filter((_, i) => i !== index))}><Ic.Trash size={12} /></button>
+            </div>
+          );
+        })}
+        <button type="button" className="btn sm rental-add-btn" onClick={addIncluded} disabled={candidates.length === 0}><Ic.Plus size={12} /> Add included item</button>
       </div>
-    </div>
+    </details>
+  );
+}
+
+function RentalRecommendationsEditor({ item, rows = [], onPatch }) {
+  const Ic = window.Icons;
+  const recommendations = item.recommendations || [];
+  const localGroups = [rentalParentVisibilitySource(item), ...(item.optionGroups || []).map((group, index) => ({ ...group, id: rentalGroupKey(group, index) }))];
+  const candidates = rows.filter((row) => row.id !== item.id);
+  const setRecommendations = (next) => onPatch({ recommendations: next });
+  const updateRecommendation = (index, patch) => setRecommendations(recommendations.map((rec, i) => i === index ? { ...rec, ...patch } : rec));
+  const addRecommendation = () => setRecommendations([
+    ...recommendations,
+    { id: "rec_" + Date.now(), label: "", itemIds: [], visibility: { mode: "conditional", ruleSets: [{ conditions: [defaultRentalCondition("question", localGroups, item, rows)] }] } },
+  ]);
+  return (
+    <details className="rental-accordion no-summary-indicator" open={recommendations.length > 0}>
+      <summary>
+        <span>Minimum required items <span className="count">{recommendations.length}</span></span>
+      </summary>
+      <div className="rental-accordion-body">
+        <div className="rental-muted" style={{ marginBottom: 10 }}>
+          Shows a checklist under this item's questions when the client's answers call for certain items. Items that aren't selected are flagged "Not Selected", with a button that adds them.
+        </div>
+        <div className="rental-editor-grid" style={{ marginBottom: 10 }}>
+          <div>
+            <label className="lbl">Checklist heading</label>
+            <input className="input" value={item.recommendationHeading || ""} placeholder="Based on your answers above, the minimum items required are:" onChange={(e) => onPatch({ recommendationHeading: e.target.value })} />
+          </div>
+          <div>
+            <label className="lbl">Add button label</label>
+            <input className="input" value={item.recommendationAddLabel || ""} placeholder="Add the missing items" onChange={(e) => onPatch({ recommendationAddLabel: e.target.value })} />
+          </div>
+        </div>
+        {recommendations.map((rec, index) => (
+          <div className="rental-rule-set" key={rec.id || index}>
+            <div className="rental-rule-condition">
+              <div className="rental-editor-grid">
+                <div className="full">
+                  <label className="lbl">Client sees</label>
+                  <input className="input" value={rec.label || ""} placeholder="Example: Sound System" onChange={(e) => updateRecommendation(index, { label: e.target.value })} />
+                </div>
+                <div className="full">
+                  <label className="lbl">Satisfied when any of these items is selected (leave empty for an info-only line)</label>
+                  <div className="rental-visibility-checks" style={{ marginTop: 0 }}>
+                    {(rec.itemIds || []).map((itemId) => (
+                      <label key={itemId}>
+                        {rows.find((row) => row.id === itemId)?.name || itemId}{" "}
+                        <button type="button" className="btn icon sm danger-ghost" title="Remove item" onClick={() => updateRecommendation(index, { itemIds: (rec.itemIds || []).filter((id) => id !== itemId) })}><Ic.Close size={10} /></button>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 6, maxWidth: 320 }}>
+                    <RentalCatalogItemSelect
+                      value=""
+                      rows={candidates}
+                      filter={(row) => !(rec.itemIds || []).includes(row.id)}
+                      placeholder="Add item..."
+                      onChange={(itemId) => itemId && updateRecommendation(index, { itemIds: [...(rec.itemIds || []), itemId] })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="btn icon sm danger-ghost" title="Remove requirement" onClick={() => setRecommendations(recommendations.filter((_, i) => i !== index))}><Ic.Trash size={12} /></button>
+            </div>
+            <RentalRuleSetsEditor
+              visibility={rec.visibility?.mode === "conditional" ? rec.visibility : { mode: "conditional", ruleSets: [] }}
+              localGroups={localGroups}
+              parentItem={item}
+              catalogRows={rows}
+              onChange={(visibility) => updateRecommendation(index, { visibility })}
+            />
+          </div>
+        ))}
+        <button type="button" className="btn sm rental-add-btn" onClick={addRecommendation}><Ic.Plus size={12} /> Add requirement</button>
+      </div>
+    </details>
   );
 }
 
@@ -2710,25 +3167,97 @@ function rentalQuestionHasValue(group, values) {
   return !!value;
 }
 
-function isRentalQuestionVisible(group, allGroups, values, seen = new Set()) {
-  const visibility = group.visibility || { mode: "always" };
-  if (!visibility || visibility.mode !== "conditional") return true;
-  const groupKey = group.id || group._reorderId || group.label || "choice";
-  if (seen.has(groupKey)) return true;
-  const source = (allGroups || []).find((candidate, index) => (candidate.id || candidate._reorderId || "option_group_" + index) === visibility.sourceGroupId);
-  if (!source) return true;
-  if (!isRentalQuestionVisible(source, allGroups, values, new Set([...seen, groupKey]))) return false;
-  const selected = selectedAnswerIdsForPreview(source, values);
-  const hasSelection = selected.length > 0;
-  if (visibility.operator === "has_value") return rentalQuestionHasValue(source, values);
-  if (visibility.operator === "answered") return hasSelection;
-  if (visibility.operator === "not_equals") return hasSelection && !selected.includes(visibility.value);
-  if (visibility.operator === "in") return selected.some((id) => (visibility.values || []).includes(id));
-  return selected.includes(visibility.value);
+// Visibility is either the legacy single condition ({ sourceGroupId, operator, value })
+// or { ruleSets: [{ conditions: [...] }] }: visible when every condition in any one set holds.
+function rentalVisibilityRuleSets(visibility) {
+  if (!visibility || visibility.mode !== "conditional") return [];
+  if (Array.isArray(visibility.ruleSets)) {
+    return visibility.ruleSets.map((set) => ({ conditions: Array.isArray(set?.conditions) ? set.conditions : [] }));
+  }
+  return [{ conditions: [{ source: "question", sourceGroupId: visibility.sourceGroupId, operator: visibility.operator, value: visibility.value, values: visibility.values }] }];
 }
 
-function visibleRentalQuestionsForPreview(groups, values) {
-  return (groups || []).filter((group) => isRentalQuestionVisible(group, groups, values));
+function rentalVisibilityDependsOnDroppedGroups(visibility, droppedGroupIds) {
+  const sets = rentalVisibilityRuleSets(visibility);
+  if (sets.length === 0 || droppedGroupIds.size === 0) return false;
+  return sets.every((set) => set.conditions.some((condition) => (condition.source || "question") === "question" && droppedGroupIds.has(condition.sourceGroupId)));
+}
+
+function rentalAnswerConditionMatches(condition, selected, hasValue) {
+  const operator = condition.operator || "equals";
+  const values = condition.values || (condition.value ? [condition.value] : []);
+  if (operator === "has_value") return hasValue;
+  if (operator === "answered") return selected.length > 0;
+  if (operator === "not_answered") return selected.length === 0;
+  if (operator === "not_equals") return selected.length > 0 && !selected.includes(condition.value);
+  if (operator === "in") return selected.some((id) => values.includes(id));
+  if (operator === "not_in") return !selected.some((id) => values.includes(id));
+  return selected.includes(condition.value);
+}
+
+function rentalTimeToMinutes(value) {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+function rentalBookingEndsLate(booking, threshold = "23:00") {
+  if (!booking) return false;
+  if (booking.startDate && booking.endDate && booking.endDate > booking.startDate) return true;
+  const end = rentalTimeToMinutes(booking.endTime);
+  const limit = rentalTimeToMinutes(threshold || "23:00");
+  if (end === null || limit === null) return false;
+  const start = rentalTimeToMinutes(booking.startTime);
+  if (start !== null && end < start) return true;
+  return end >= limit;
+}
+
+function rentalFirstBooking(venueBookings) {
+  return Object.values(venueBookings || {}).find((booking) => booking && (booking.endTime || booking.endDate)) || null;
+}
+
+function rentalConditionMet(condition, allGroups, values, seen, cross) {
+  const source = condition?.source || "question";
+  if (source === "item") {
+    if (!cross) return true;
+    const selected = cross.selected.has(condition.itemId);
+    return condition.operator === "not_selected" ? !selected : selected;
+  }
+  if (source === "booking") {
+    if (!cross) return true;
+    const late = rentalBookingEndsLate(cross.booking, condition.value);
+    return condition.operator === "not_ends_late" ? !late : late;
+  }
+  if (source === "item_question") {
+    if (!cross) return true;
+    const target = rentalCrossItemQuestionState(cross, condition.itemId);
+    const sourceGroup = target?.groups.find((candidate) => candidate.id === condition.sourceGroupId);
+    const seenKey = "item:" + condition.itemId + ":" + condition.sourceGroupId;
+    const answerable = sourceGroup && !seen.has(seenKey) && isRentalQuestionVisible(sourceGroup, target.groups, target.values, new Set([...seen, seenKey]), cross);
+    return answerable
+      ? rentalAnswerConditionMatches(condition, selectedAnswerIdsForPreview(sourceGroup, target.values), rentalQuestionHasValue(sourceGroup, target.values))
+      : rentalAnswerConditionMatches(condition, [], false);
+  }
+  const sourceGroup = (allGroups || []).find((candidate, index) => (candidate.id || candidate._reorderId || "option_group_" + index) === condition.sourceGroupId);
+  if (!sourceGroup) return true;
+  // A hidden question counts as unanswered, so "is not any of" still passes.
+  if (!isRentalQuestionVisible(sourceGroup, allGroups, values, seen, cross)) return rentalAnswerConditionMatches(condition, [], false);
+  return rentalAnswerConditionMatches(condition, selectedAnswerIdsForPreview(sourceGroup, values), rentalQuestionHasValue(sourceGroup, values));
+}
+
+function rentalRuleSetsMet(visibility, allGroups, values, seen, cross) {
+  const sets = rentalVisibilityRuleSets(visibility);
+  if (sets.length === 0) return true;
+  return sets.some((set) => set.conditions.every((condition) => rentalConditionMet(condition, allGroups, values, seen, cross)));
+}
+
+function isRentalQuestionVisible(group, allGroups, values, seen = new Set(), cross = null) {
+  const groupKey = group.id || group._reorderId || group.label || "choice";
+  if (seen.has(groupKey)) return true;
+  return rentalRuleSetsMet(group.visibility, allGroups, values, new Set([...seen, groupKey]), cross);
+}
+
+function visibleRentalQuestionsForPreview(groups, values, cross = null) {
+  return (groups || []).filter((group) => isRentalQuestionVisible(group, groups, values, new Set(), cross));
 }
 
 function previewMultiplierForQuantitySource(source, fallbackQty, context = {}) {
@@ -2974,13 +3503,13 @@ function RentalClientPreviewPanel({ item }) {
             </div>
             {item.notes && <small>{item.notes}</small>}
             {itemChecked && showBaseQuantity && <input className="input" type="number" min={item.minUnits ?? 0} max={item.maxUnits || undefined} step={item.increment || 1} value={baseQty} onChange={(e) => setBaseQty(Math.max(Number(item.minUnits || 0), Number(e.target.value || 0)))} />}
-            {itemChecked && item.packageBehavior && (
+            {itemChecked && rentalPackageIncludes(item).length > 0 && (
               <div className="rental-client-included">
                 <b>Included with package</b>
-                {(item.packageBehavior.includedItems || []).map((included) => (
+                {rentalPackageIncludes(item).map((included) => (
                   <label key={included.itemId}>
                     <input type="checkbox" checked readOnly />
-                    <span>{included.label}</span>
+                    <span>{included.label || included.itemId}</span>
                   </label>
                 ))}
               </div>
@@ -2989,15 +3518,15 @@ function RentalClientPreviewPanel({ item }) {
           {itemChecked && ((item.optionGroups || []).length > 0 ? visibleRentalQuestionsForPreview(
             [rentalParentVisibilitySource(item), ...(item.optionGroups || [])],
             { ...values, __parent_quantity__: effectiveQty }
-          ).filter((group) => group.id !== "__parent_quantity__").map((group) => <RentalClientChoicePreview key={group.id || group.label} group={group} values={values} onValueChange={updateValue} />) : item.packageBehavior ? null : (
+          ).filter((group) => group.id !== "__parent_quantity__").map((group) => <RentalClientChoicePreview key={group.id || group.label} group={group} values={values} onValueChange={updateValue} />) : rentalPackageIncludes(item).length > 0 ? null : (
             <div className="rental-muted">No extra choices. Client only sees the rental quantity and price.</div>
           ))}
         </div>
         <div className="rental-client-summary">
           <h4>Example price</h4>
           {showBasePriceLine && <div className="rental-client-summary-row"><span>{item.name || "Base rental"}</span><strong>${Number(base.total || 0).toFixed(2)}</strong></div>}
-          {itemChecked && item.packageBehavior && (item.packageBehavior.includedItems || []).map((included) => (
-            <div className="rental-client-summary-row" key={included.itemId}><span>{included.label}</span><strong>Included</strong></div>
+          {itemChecked && rentalPackageIncludes(item).map((included) => (
+            <div className="rental-client-summary-row" key={included.itemId}><span>{included.label || included.itemId}</span><strong>{item.packageBehavior?.includedItemPricing === "charge_normally" ? "Added" : "Included"}</strong></div>
           ))}
           {selectedOptions.map((line, index) => (
             <div className="rental-client-summary-row" key={line.label + index}><span>{line.label}</span><strong>{line.quote ? "Quote" : "$" + Number(line.total || 0).toFixed(2)}</strong></div>
@@ -3046,6 +3575,20 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
   };
   const setDeliveryRequired = (checked) => onPatch({ deliveryRequired: checked, deliveryOptionId: checked ? (item.deliveryOptionId || activeDeliveryOptions[0]?.id || "") : "" });
   const itemVenues = venues.filter((venue) => venue?.id && rentalAvailableForVenue(item, venue.id));
+  const legacySetup = LEGACY_RENTAL_ARCHITECTURE[item.id];
+  const canRestoreSetup = !!legacySetup && !!(legacySetup.optionGroups || legacySetup.packageBehavior || legacySetup.recommendations);
+  const restoreSetup = () => {
+    if (!window.confirm("Replace this item's choices, package contents and minimum-item rules with the default setup? Your edits to these sections will be lost.")) return;
+    const patch = { alwaysShowInGroup: !!legacySetup.alwaysShowInGroup };
+    if (legacySetup.optionGroups) patch.optionGroups = JSON.parse(JSON.stringify(legacySetup.optionGroups));
+    if (legacySetup.packageBehavior) patch.packageBehavior = JSON.parse(JSON.stringify(legacySetup.packageBehavior));
+    if (legacySetup.recommendations) {
+      patch.recommendations = JSON.parse(JSON.stringify(legacySetup.recommendations));
+      patch.recommendationHeading = legacySetup.recommendationHeading || "";
+      patch.recommendationAddLabel = legacySetup.recommendationAddLabel || "";
+    }
+    onPatch(patch);
+  };
   return (
     <div className="editor-col">
       <div className="editor-inner">
@@ -3054,9 +3597,12 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
             <div className="editor-head-tag">Rental Item</div>
             <h1>{item.name || "Untitled rental"}</h1>
             <p>Keep this simple: name the rental, choose how it is priced, then add any choices the client must answer.</p>
+            {canRestoreSetup && (
+              <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={restoreSetup}>Restore default setup</button>
+            )}
           </div>
           <div className="rental-pill-row">
-            {item.packageBehavior && <span className="rental-pill accent">Package</span>}
+            {rentalPackageIncludes(item).length > 0 && <span className="rental-pill accent">Package</span>}
             {requiresDelivery && <span className="rental-pill accent" title="Delivery required"><Ic.Truck size={11} /></span>}
           </div>
         </div>
@@ -3213,6 +3759,7 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
                 <label className="chk"><input type="checkbox" checked={item.active !== false} onChange={(e) => onPatch({ active: e.target.checked })} /> Available</label>
                 <label className="chk"><input type="checkbox" checked={item.clientVisible !== false} onChange={(e) => onPatch({ clientVisible: e.target.checked })} /> Show to client</label>
                 <label className="chk"><input type="checkbox" checked={rentalLayoutRecommendationEnabled(item)} onChange={(e) => onPatch({ layoutRecommendationEnabled: e.target.checked })} /> Use in layout recommendations</label>
+                <label className="chk"><input type="checkbox" checked={!!item.alwaysShowInGroup} onChange={(e) => onPatch({ alwaysShowInGroup: e.target.checked })} /> Show without checkbox when its group is selected</label>
               </div>
             </div>
 
@@ -3247,6 +3794,7 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
                   group={group}
                   allGroups={optionGroups}
                   parentItem={item}
+                  catalogRows={rows}
                   venues={itemVenues}
                   dragHandlers={choiceDnd.sourceHandlers(group)}
                   dropHandlers={choiceDnd.targetHandlers(group)}
@@ -3260,7 +3808,8 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
           </div>
         </details>
 
-        <RentalPackageSummary item={item} />
+        <RentalPackageEditor item={item} rows={rows} onPatch={onPatch} />
+        <RentalRecommendationsEditor item={item} rows={rows} onPatch={onPatch} />
 
         <div className="section-bar"><h2>Client preview</h2></div>
         <RentalClientPreviewPanel item={item} />
@@ -11878,12 +12427,16 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
   const pricesVisible = useClientPricingVisible();
   // The same item can render once per selected venue; a shared radio name would link them.
   const radioName = `${item.id}_${group.id}_${React.useId()}`;
+  const cross = React.useContext(RentalCrossContext)?.cross || null;
   const groupValues = itemValue.optionGroups || {};
   const current = groupValues[group.id];
   const visibilityGroups = [rentalParentVisibilitySource(item), ...(allGroups || item.optionGroups || [])];
   const visibilityValues = rentalOptionGroupVisibilityValues(visibilityGroups, itemValue);
-  if (!isRentalQuestionVisible(group, visibilityGroups, visibilityValues)) return null;
-  const setGroup = (value) => onItemValue({ ...itemValue, optionGroups: { ...groupValues, [group.id]: value } });
+  if (!isRentalQuestionVisible(group, visibilityGroups, visibilityValues, new Set(), cross)) return null;
+  const locked = rentalLockedPresetGroupIds(cross, item.id).includes(group.id);
+  const setGroup = (value) => {
+    if (!locked) onItemValue({ ...itemValue, optionGroups: { ...groupValues, [group.id]: value } });
+  };
   const options = (group.options || []).map(normalizeRentalChoiceOption);
   const groupPrice = previewChoicePriceLabel(group);
   const groupLabel = (fallback) => (
@@ -11900,7 +12453,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
     return (
       <div>
         {groupLabel(item.name)}
-        <select className="cv-input cv-select" value={current ?? ""} onChange={(e) => setGroup(Number(e.target.value))}>
+        <select className="cv-input cv-select" value={current ?? ""} disabled={locked} onChange={(e) => setGroup(Number(e.target.value))}>
           <option value="">Select one</option>
           {rentalCountOptions(group.min || 0, group.max || 99, group.step || 1).map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
@@ -11919,6 +12472,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
           step={group.step ?? group.stepCount ?? 1}
           value={current ?? ""}
           placeholder={group.placeholder || ""}
+          disabled={locked}
           onChange={(raw) => setGroup(raw === "" ? "" : Number(raw))}
         />
       </div>
@@ -11929,7 +12483,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
     return (
       <div>
         {groupLabel("Select option")}
-        <select className="cv-input cv-select cv-rental-inline-select" value={current || ""} onChange={(e) => setGroup(e.target.value)}>
+        <select className="cv-input cv-select cv-rental-inline-select" value={current || ""} disabled={locked} onChange={(e) => setGroup(e.target.value)}>
           <option value="">{group.placeholder || "Select one"}</option>
           {options.map((opt) => <option key={opt.id || opt.label} value={opt.id || opt.label}>{opt.label}</option>)}
         </select>
@@ -11957,10 +12511,33 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
                 <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} />
                 :{pricesVisible && rentalOptionPriceLabel(opt) && <span className="cv-rental-price">({rentalOptionPriceLabel(opt)} each)</span>}
               </span>
-              <select className="cv-input cv-select cv-rental-inline-select" value={val} onChange={(e) => setGroup({ ...(current || {}), [optId]: Number(e.target.value) })}>
+              <select className="cv-input cv-select cv-rental-inline-select" value={val} disabled={locked} onChange={(e) => setGroup({ ...(current || {}), [optId]: Number(e.target.value) })}>
                 <option value="">Select one</option>
                 {rentalCountOptions(opt.minCount || 0, opt.maxCount || 99, opt.stepCount || 1).map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
+            </label>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (group.type === "checkbox") {
+    const checkedIds = Array.isArray(current) ? current : [];
+    return (
+      <div>
+        {groupLabel("Select options")}
+        {options.map((opt) => {
+          const optId = opt.id || opt.label;
+          const checked = checkedIds.includes(optId);
+          return (
+            <label className="cv-rental-option-row" key={optId}>
+              <input type="checkbox" checked={checked} disabled={locked} onChange={() => setGroup(checked ? checkedIds.filter((id) => id !== optId) : [...checkedIds, optId])} />
+              <span>
+                {opt.label}
+                <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} />
+                {pricesVisible && rentalOptionPriceLabel(opt) && <span className="cv-rental-price">({rentalOptionPriceLabel(opt)})</span>}
+              </span>
             </label>
           );
         })}
@@ -11976,7 +12553,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
         const selected = (typeof current === "object" ? current?.value : current) === optId;
         return (
           <label className="cv-rental-option-row" key={optId}>
-            <input type="radio" name={radioName} checked={selected} onChange={() => setGroup({ value: optId, label: opt.label })} />
+            <input type="radio" name={radioName} checked={selected} disabled={locked} onChange={() => setGroup({ value: optId, label: opt.label })} />
             <span>
               {opt.label}
               <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} />
@@ -11992,9 +12569,12 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
 function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCount }) {
   const Ic = window.Icons;
   const pricesVisible = useClientPricingVisible();
+  const cross = React.useContext(RentalCrossContext)?.cross || null;
+  const inclusion = rentalActiveInclusion(cross, item.id);
+  const quantityLocked = rentalLockedPresetQuantity(cross, item.id);
   const itemValue = value || {};
   const hasOptionGroups = (item.optionGroups || []).length > 0;
-  const priceLabel = workflowRentalPriceLabel(item);
+  const priceLabel = inclusion && inclusion.waivePrice ? "Included" : workflowRentalPriceLabel(item);
   const needsParentQuantity = rentalOptionGroupsNeedParentQuantity(item);
   const showBaseQuantity = !rentalUsesFixedBaseQuantity(item) && (needsParentQuantity || !item.hideBaseQuantity);
   const applyRecommendedQuantity = () => {
@@ -12035,12 +12615,13 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
               <span># of {item.name}</span>
               {pricesVisible && previewItemPriceLabel(item) && <span className="cv-rental-field-price">{previewItemPriceLabel(item)}</span>}
             </div>
-            <select className="cv-input cv-select" value={itemValue.quantity ?? ""} onChange={(e) => onChange({ ...itemValue, quantity: Number(e.target.value) })}>
+            <select className="cv-input cv-select" value={itemValue.quantity ?? ""} disabled={quantityLocked} onChange={(e) => onChange({ ...itemValue, quantity: Number(e.target.value) })}>
               <option value="">Select one</option>
               {rentalCountOptions(item.minUnits || 0, item.maxUnits || 99, item.increment || 1).map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </div>
         )}
+        {!grouped && inclusion && <p className="cv-rental-included-note">Included in {inclusion.packageName}</p>}
         {hasOptionGroups ? (
           (item.optionGroups || []).map((group) => (
             <RentalOptionGroupPreview key={group.id} item={item} group={group} allGroups={item.optionGroups || []} itemValue={itemValue} onItemValue={onChange} />
@@ -12048,7 +12629,218 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
         ) : (
           !grouped && pricesVisible && <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{workflowRentalPriceLabel(item)}</div>
         )}
+        <RentalRecommendationsBox item={item} itemValue={itemValue} />
       </div>
+    </div>
+  );
+}
+
+const RentalCrossContext = React.createContext(null);
+
+function rentalPackageIncludes(item) {
+  return (item?.packageBehavior?.includedItems || []).filter((included) => included && included.itemId && included.itemId !== item.id);
+}
+
+function rentalItemAlwaysShown(item) {
+  return item?.alwaysShowInGroup === true;
+}
+
+function rentalFieldSelectedItemIds(field, fieldState = {}, items = []) {
+  const mode = rentalGroupDisplayMode(field);
+  if (mode === "repeatable_rows") {
+    if (!fieldState.groupSelected || !Array.isArray(fieldState.rows)) return [];
+    return Array.from(new Set(fieldState.rows.filter((row) => row.itemId && Number(row.quantity || 0) > 0).map((row) => String(row.itemId))));
+  }
+  // Grouped rentals only count while their parent group is checked. This
+  // also protects totals from stale nested selections in older saved drafts.
+  const ids = new Set(mode === "separate_items" || fieldState.groupSelected ? Object.keys(fieldState.selectedItems || {}) : []);
+  if (mode === "grouped" && fieldState.groupSelected) {
+    if (items.length === 1) ids.add(items[0].id);
+    items.filter(rentalItemAlwaysShown).forEach((item) => ids.add(item.id));
+  }
+  return Array.from(ids);
+}
+
+// Selection state across every rental group of one step/venue, so questions and
+// packages can depend on items that live in other groups.
+function buildRentalCrossContext(fields = [], rentalState = {}, venueId = "", booking = null) {
+  const itemsById = {};
+  const fieldOfItem = {};
+  const itemValues = {};
+  const selected = new Set();
+  (fields || []).forEach((field) => {
+    const fieldState = rentalState?.[field.id] || {};
+    const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
+    items.forEach((item) => {
+      if (itemsById[item.id]) return;
+      itemsById[item.id] = item;
+      fieldOfItem[item.id] = field.id;
+    });
+    rentalFieldSelectedItemIds(field, fieldState, items).forEach((id) => {
+      selected.add(id);
+      itemValues[id] = (fieldState.itemValues || {})[id] || {};
+    });
+  });
+  const includedBy = {};
+  selected.forEach((packageId) => {
+    const pkg = itemsById[packageId];
+    rentalPackageIncludes(pkg).forEach((included) => {
+      if (includedBy[included.itemId] || !itemsById[included.itemId]) return;
+      includedBy[included.itemId] = {
+        packageId,
+        packageName: pkg.name || "package",
+        include: included,
+        waivePrice: (pkg.packageBehavior?.includedItemPricing || "included_by_package") !== "charge_normally",
+        locked: pkg.packageBehavior?.lockIncludedItems !== false,
+      };
+    });
+  });
+  return { selected, itemsById, fieldOfItem, itemValues, includedBy, booking: booking || null };
+}
+
+function rentalCrossItemQuestionState(cross, itemId) {
+  const item = cross?.itemsById?.[itemId];
+  if (!item) return null;
+  const groups = [rentalParentVisibilitySource(item), ...(item.optionGroups || [])];
+  const itemValue = cross.selected.has(itemId) ? cross.itemValues[itemId] || {} : {};
+  return { groups, values: rentalOptionGroupVisibilityValues(groups, itemValue) };
+}
+
+function rentalActiveInclusion(cross, itemId) {
+  const inclusion = cross?.includedBy?.[itemId];
+  return inclusion && cross.selected.has(itemId) ? inclusion : null;
+}
+
+function rentalLockedPresetGroupIds(cross, itemId) {
+  const inclusion = rentalActiveInclusion(cross, itemId);
+  return inclusion && inclusion.locked ? Object.keys(inclusion.include.presetAnswers || {}) : [];
+}
+
+function rentalLockedPresetQuantity(cross, itemId) {
+  const inclusion = rentalActiveInclusion(cross, itemId);
+  const quantity = inclusion?.include?.quantity;
+  return inclusion && inclusion.locked && quantity !== undefined && quantity !== null && quantity !== "";
+}
+
+function applyRentalIncludePreset(item, itemValue = {}, included = {}) {
+  const next = { ...itemValue, optionGroups: { ...(itemValue.optionGroups || {}) } };
+  if (included.quantity !== undefined && included.quantity !== null && included.quantity !== "") next.quantity = Number(included.quantity);
+  Object.entries(included.presetAnswers || {}).forEach(([groupId, answer]) => {
+    const group = (item?.optionGroups || []).find((candidate) => candidate.id === groupId);
+    if (!group || answer === "" || answer === undefined || answer === null) return;
+    if (["quantity", "number"].includes(group.type)) next.optionGroups[groupId] = Number(answer);
+    else if (group.type === "select") next.optionGroups[groupId] = answer;
+    else if (group.type === "checkbox") next.optionGroups[groupId] = Array.isArray(answer) ? answer : [answer];
+    else {
+      const option = (group.options || []).map(normalizeRentalChoiceOption).find((candidate) => String(candidate.id || candidate.label) === String(answer));
+      next.optionGroups[groupId] = { value: answer, label: option?.label || "" };
+    }
+  });
+  return next;
+}
+
+// Checking a package adds its included items (with presets); unchecking it removes
+// only the items it added, leaving items the client had already picked.
+function reconcileRentalPackageIncludes(prevState = {}, nextState = {}, fields = [], venueId = "") {
+  const prevCross = buildRentalCrossContext(fields, prevState, venueId);
+  const nextCross = buildRentalCrossContext(fields, nextState, venueId);
+  let state = nextState;
+  const patchField = (fieldId, update) => {
+    state = { ...state, [fieldId]: update(state[fieldId] || {}) };
+  };
+  (fields || []).forEach((field) => {
+    Object.entries((state[field.id] || {}).autoIncluded || {}).forEach(([itemId, info]) => {
+      if (info && nextCross.selected.has(info.packageId)) return;
+      patchField(field.id, (fieldState) => {
+        const autoIncluded = { ...(fieldState.autoIncluded || {}) };
+        delete autoIncluded[itemId];
+        if (info?.wasSelected) return { ...fieldState, autoIncluded };
+        const selectedItems = { ...(fieldState.selectedItems || {}) };
+        const itemValues = { ...(fieldState.itemValues || {}) };
+        delete selectedItems[itemId];
+        delete itemValues[itemId];
+        return { ...fieldState, autoIncluded, selectedItems, itemValues };
+      });
+    });
+  });
+  nextCross.selected.forEach((packageId) => {
+    if (prevCross.selected.has(packageId)) return;
+    rentalPackageIncludes(nextCross.itemsById[packageId]).forEach((included) => {
+      const fieldId = nextCross.fieldOfItem[included.itemId];
+      const field = (fields || []).find((candidate) => candidate.id === fieldId);
+      if (!field || rentalGroupDisplayMode(field) === "repeatable_rows") return;
+      const separate = rentalGroupDisplayMode(field) === "separate_items";
+      patchField(fieldId, (fieldState) => {
+        const autoIncluded = fieldState.autoIncluded || {};
+        const wasSelected = !!fieldState.selectedItems?.[included.itemId] && (separate || !!fieldState.groupSelected);
+        return {
+          ...fieldState,
+          groupSelected: separate ? fieldState.groupSelected : true,
+          selectedItems: { ...(fieldState.selectedItems || {}), [included.itemId]: true },
+          itemValues: { ...(fieldState.itemValues || {}), [included.itemId]: applyRentalIncludePreset(nextCross.itemsById[included.itemId], (fieldState.itemValues || {})[included.itemId] || {}, included) },
+          autoIncluded: { ...autoIncluded, [included.itemId]: autoIncluded[included.itemId] || { packageId, wasSelected } },
+        };
+      });
+    });
+  });
+  return state;
+}
+
+function selectRentalItemsInState(state = {}, fields = [], venueId = "", itemIds = []) {
+  const cross = buildRentalCrossContext(fields, state, venueId);
+  let next = state;
+  itemIds.forEach((itemId) => {
+    const fieldId = cross.fieldOfItem[itemId];
+    const field = (fields || []).find((candidate) => candidate.id === fieldId);
+    if (!field || rentalGroupDisplayMode(field) === "repeatable_rows") return;
+    const fieldState = next[fieldId] || {};
+    next = {
+      ...next,
+      [fieldId]: {
+        ...fieldState,
+        groupSelected: rentalGroupDisplayMode(field) === "separate_items" ? fieldState.groupSelected : true,
+        selectedItems: { ...(fieldState.selectedItems || {}), [itemId]: true },
+      },
+    };
+  });
+  return next;
+}
+
+function activeRentalRecommendations(item, itemValue = {}, cross = null) {
+  const recommendations = item?.recommendations || [];
+  if (!recommendations.length) return [];
+  const groups = [rentalParentVisibilitySource(item), ...(item.optionGroups || [])];
+  const values = rentalOptionGroupVisibilityValues(groups, itemValue);
+  return recommendations
+    .filter((rec) => rec && rec.label && rentalRuleSetsMet(rec.visibility, groups, values, new Set(), cross))
+    .map((rec) => {
+      const itemIds = (rec.itemIds || []).filter((id) => !cross || cross.itemsById[id]);
+      const satisfied = itemIds.length === 0 || !cross || itemIds.some((id) => cross.selected.has(id));
+      return { ...rec, itemIds, satisfied };
+    });
+}
+
+function RentalRecommendationsBox({ item, itemValue }) {
+  const ctx = React.useContext(RentalCrossContext);
+  const active = activeRentalRecommendations(item, itemValue, ctx?.cross || null);
+  if (!active.length) return null;
+  const missing = active.filter((rec) => !rec.satisfied);
+  return (
+    <div className="cv-rental-recommendations">
+      <strong>{item.recommendationHeading || "Based on your answers above, the minimum items required are:"}</strong>
+      <ul>
+        {active.map((rec) => (
+          <li key={rec.id || rec.label}>
+            {rec.label}
+            {!rec.satisfied && <i className="cv-rental-not-selected"> (Not Selected)</i>}
+          </li>
+        ))}
+      </ul>
+      {missing.length > 0 && ctx?.selectItems && (
+        <button type="button" className="cv-rental-recommend-add" onClick={() => ctx.selectItems(missing.map((rec) => rec.itemIds[0]).filter(Boolean))}>
+          {item.recommendationAddLabel || "Add the missing items"}
+        </button>
+      )}
     </div>
   );
 }
@@ -12056,7 +12848,8 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
 function rentalItemNeedsDetail(item) {
   if (!item) return false;
   if ((item.optionGroups || []).length > 0) return true;
-  if (item.packageBehavior) return true;
+  if (rentalPackageIncludes(item).length > 0) return true;
+  if ((item.recommendations || []).length > 0) return true;
   if (rentalOptionGroupsNeedParentQuantity(item) || (!item.hideBaseQuantity && !rentalUsesFixedBaseQuantity(item))) return true;
   return false;
 }
@@ -12088,15 +12881,23 @@ function rentalOptionCharge(option, quantity, parentQty) {
   return { label: option.label || "Rental option", unitPrice, quantity: multiplier, total: unitPrice * multiplier };
 }
 
-function rentalOptionGroupsCost(item, itemValue = {}, parentQty = 1) {
+function rentalOptionGroupsCost(item, itemValue = {}, parentQty = 1, cross = null, waivedGroupIds = []) {
   const lines = [];
   const values = itemValue.optionGroups || {};
   const visibilityGroups = [rentalParentVisibilitySource(item), ...(item.optionGroups || [])];
   const visibilityValues = rentalOptionGroupVisibilityValues(visibilityGroups, itemValue, parentQty);
-  visibleRentalQuestionsForPreview(visibilityGroups, visibilityValues).filter((group) => group.id !== "__parent_quantity__").forEach((group) => {
+  visibleRentalQuestionsForPreview(visibilityGroups, visibilityValues, cross).filter((group) => group.id !== "__parent_quantity__" && !waivedGroupIds.includes(group.id)).forEach((group) => {
     const options = (group.options || []).map((opt) => typeof opt === "string" ? { id: opt, label: opt } : opt);
     const current = values[group.id];
     if (!current) return;
+    if (group.type === "checkbox") {
+      if (!Array.isArray(current)) return;
+      options.filter((option) => current.includes(option.id || option.label)).forEach((option) => {
+        const charge = rentalOptionCharge({ ...option, quantitySource: option.quantitySource || group.quantitySource || "fixed" }, 1, parentQty);
+        if (charge) lines.push({ ...charge, parentLabel: group.label || "" });
+      });
+      return;
+    }
     if (["quantity", "number"].includes(group.type)) {
       const charge = rentalOptionCharge({ ...group, label: group.label || item.name, quantitySource: group.quantitySource || "own" }, Number(current || 0), parentQty);
       if (charge) lines.push({ ...charge, parentLabel: item.name || "" });
@@ -12137,14 +12938,19 @@ function rentalOptionGroupsCost(item, itemValue = {}, parentQty = 1) {
   return { lines, total: lines.reduce((sum, line) => sum + Number(line.total || 0), 0) };
 }
 
-function rentalItemCostLine(item, itemValue = {}) {
+// Items included by a selected package are free, along with their preset answers;
+// other paid choices on them (e.g. a suspended projector) still charge.
+function rentalItemCostLine(item, itemValue = {}, cross = null) {
   const qty = rentalSelectedQuantity(item, itemValue);
+  const inclusion = rentalActiveInclusion(cross, item.id);
+  const waived = !!(inclusion && inclusion.waivePrice);
   const base = computeRentalQuoteLine(item, qty, { hours: qty, guests: qty });
-  const optionCost = rentalOptionGroupsCost(item, itemValue, qty);
+  const optionCost = rentalOptionGroupsCost(item, itemValue, qty, cross, waived ? Object.keys(inclusion.include.presetAnswers || {}) : []);
+  const baseTotal = waived ? 0 : Number(base.total || 0);
   const lines = [];
-  if (base.total > 0) lines.push({ label: base.multiplier > 1 ? item.name + " x " + base.multiplier : item.name, total: base.total });
+  if (baseTotal > 0) lines.push({ label: base.multiplier > 1 ? item.name + " x " + base.multiplier : item.name, total: baseTotal });
   optionCost.lines.forEach((line) => lines.push(line));
-  return { label: item.name, total: base.total + optionCost.total, lines };
+  return { label: item.name, total: baseTotal + optionCost.total, lines };
 }
 
 function bookingAdditionalDates(booking = {}) {
@@ -12169,21 +12975,16 @@ function costDaysSuffix(costs = {}) {
   return days > 1 ? ` x ${days} days` : "";
 }
 
-function computeRentalFieldsCost(step, stepState = {}, venue = null) {
+function computeRentalFieldsCost(step, stepState = {}, venue = null, booking = null) {
   const groups = [];
   const venueId = venue?.id || "";
-  (step.fields || []).filter((field) => field.type === "rental_group" && field.visibleToClient !== false).forEach((field) => {
+  const rentalFields = (step.fields || []).filter((field) => field.type === "rental_group" && field.visibleToClient !== false);
+  const cross = buildRentalCrossContext(rentalFields, stepState, venueId, booking);
+  rentalFields.forEach((field) => {
     const fieldState = stepState[field.id] || {};
     const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
     const mode = rentalGroupDisplayMode(field);
-    // Grouped rentals only count while their parent group is checked. This
-    // also protects totals from stale nested selections in older saved drafts.
-    const selectedIds = new Set(
-      mode === "separate_items" || fieldState.groupSelected
-        ? Object.keys(fieldState.selectedItems || {})
-        : []
-    );
-    if (mode === "grouped" && fieldState.groupSelected && items.length === 1) selectedIds.add(items[0].id);
+    const selectedIds = new Set(rentalFieldSelectedItemIds(field, fieldState, items));
     const lines = [];
     const deliveryItems = [];
     if (mode === "repeatable_rows" && Array.isArray(fieldState.rows)) {
@@ -12191,14 +12992,14 @@ function computeRentalFieldsCost(step, stepState = {}, venue = null) {
         fieldState.rows.forEach((row) => {
           const item = items.find((candidate) => String(candidate.id) === String(row.itemId));
           if (!item || !Number(row.quantity || 0)) return;
-          rentalItemCostLine(item, rentalRepeatRowValue(item, row)).lines.forEach((line) => lines.push(line));
+          rentalItemCostLine(item, rentalRepeatRowValue(item, row), cross).lines.forEach((line) => lines.push(line));
           if (rentalRequiresDelivery(item) && !deliveryItems.some((entry) => entry.itemId === item.id)) {
             deliveryItems.push({ itemId: item.id, label: item.name, deliveryOptionId: item.deliveryOptionId });
           }
         });
       }
     } else items.filter((item) => selectedIds.has(item.id)).forEach((item) => {
-      const result = rentalItemCostLine(item, (fieldState.itemValues || {})[item.id] || {});
+      const result = rentalItemCostLine(item, (fieldState.itemValues || {})[item.id] || {}, cross);
       result.lines.forEach((line) => lines.push(line));
       if (rentalRequiresDelivery(item)) deliveryItems.push({ itemId: item.id, label: item.name, deliveryOptionId: item.deliveryOptionId });
     });
@@ -12217,17 +13018,17 @@ function computeRentalFieldsCost(step, stepState = {}, venue = null) {
   return groups;
 }
 
-function computeWorkflowRentalCost(steps, rentalAnswers = {}) {
+function computeWorkflowRentalCost(steps, rentalAnswers = {}, venueBookings = {}) {
   const groups = [];
   (steps || []).forEach((step) => {
     const stepState = rentalAnswers[step.id] || {};
     if (stepState.__byVenue && typeof stepState.__byVenue === "object") {
       Object.entries(stepState.__byVenue).forEach(([venueId, venueState]) => {
         const venueName = stepState.__venueNames?.[venueId] || "";
-        groups.push(...computeRentalFieldsCost(step, venueState || {}, { id: venueId, name: venueName }));
+        groups.push(...computeRentalFieldsCost(step, venueState || {}, { id: venueId, name: venueName }, venueBookings?.[venueId] || null));
       });
     } else {
-      groups.push(...computeRentalFieldsCost(step, stepState, null));
+      groups.push(...computeRentalFieldsCost(step, stepState, null, rentalFirstBooking(venueBookings)));
     }
   });
   return groups;
@@ -12304,10 +13105,15 @@ function summaryDiscountRows(costs = {}) {
   ];
 }
 
-function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecommendations, venueId = "" }) {
+function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecommendations, venueId = "", booking = null }) {
   const Ic = window.Icons;
   const pricesVisible = useClientPricingVisible();
   const rentalState = value || {};
+  const cross = buildRentalCrossContext(fields, rentalState, venueId, booking);
+  const commitState = (nextState) => onChange(reconcileRentalPackageIncludes(rentalState, nextState, fields, venueId));
+  const crossContextValue = { cross, selectItems: (itemIds) => commitState(selectRentalItemsInState(rentalState, fields, venueId, itemIds)) };
+  const isLockedInclude = (itemId) => !!rentalActiveInclusion(cross, itemId)?.locked;
+  const itemPriceLabel = (item) => rentalActiveInclusion(cross, item.id)?.waivePrice ? "Included" : workflowRentalPriceLabel(item);
   const allTiles = [];
   fields.forEach((field) => {
     const mode = rentalGroupDisplayMode(field);
@@ -12322,7 +13128,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
     const fieldState = rentalState[tile.field.id] || {};
     return tile.type === "group" ? !!fieldState.groupSelected : !!fieldState.selectedItems?.[tile.item.id];
   };
-  const setFieldState = (fieldId, nextFieldState) => onChange({ ...rentalState, [fieldId]: nextFieldState });
+  const setFieldState = (fieldId, nextFieldState) => commitState({ ...rentalState, [fieldId]: nextFieldState });
   const toggleTile = (tile) => {
     const fieldState = rentalState[tile.field.id] || {};
     if (tile.type === "group") {
@@ -12339,6 +13145,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
     }
     const selectedItems = { ...(fieldState.selectedItems || {}) };
     const itemValues = { ...(fieldState.itemValues || {}) };
+    if (selectedItems[tile.item.id] && isLockedInclude(tile.item.id)) return;
     if (selectedItems[tile.item.id]) {
       delete selectedItems[tile.item.id];
       delete itemValues[tile.item.id];
@@ -12350,6 +13157,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
   const heading = title || fields[0]?.rentalPreviewHeading || "Rental Groups";
   if (allTiles.length === 0) return null;
   return (
+    <RentalCrossContext.Provider value={crossContextValue}>
     <div className="rental-client-preview cv-rental-groups">
       <div className="rental-client-preview-head">
         <div>
@@ -12430,14 +13238,32 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                   <div className="cv-rental-detail-body">
                     <div className="cv-rental-group-list">
                       {items.map((item) => {
+                        if (rentalItemAlwaysShown(item)) {
+                          return (
+                            <div className="cv-rental-group-item cv-rental-always-shown" key={item.id}>
+                              <div className="cv-rental-subline">{item.name}</div>
+                              <RentalItemDetailPreview
+                                item={item}
+                                grouped
+                                recommendedCount={layoutRecommendationCountForItem(item, layoutRecommendations)}
+                                value={(fieldState.itemValues || {})[item.id]}
+                                onChange={(nextItem) => setFieldState(field.id, { ...fieldState, itemValues: { ...(fieldState.itemValues || {}), [item.id]: nextItem } })}
+                              />
+                            </div>
+                          );
+                        }
                         const itemOn = !!fieldState.selectedItems?.[item.id];
+                        const inclusion = itemOn ? rentalActiveInclusion(cross, item.id) : null;
+                        const lockedOn = !!inclusion?.locked;
                         return (
                           <div className="cv-rental-group-item" key={item.id}>
                             <label className="cv-rental-option-row" style={{ margin: 0 }}>
                               <input
                                 type="checkbox"
                                 checked={itemOn}
+                                disabled={lockedOn}
                                 onChange={() => {
+                                  if (lockedOn) return;
                                   const selectedItems = { ...(fieldState.selectedItems || {}) };
                                   const itemValues = { ...(fieldState.itemValues || {}) };
                                   if (selectedItems[item.id]) {
@@ -12453,8 +13279,9 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                                 <strong>{item.name}</strong>
                                 <RentalInfoIcon text={item.infoText} imageUrl={item.infoImageUrl} images={rentalTooltipImages(item)} />
                                 {rentalRequiresDelivery(item) && <DeliveryIndicator />}
+                                {inclusion && <span className="cv-rental-included-note">Included in {inclusion.packageName}</span>}
                               </RentalItemNameWithImage>
-                              {pricesVisible && <span>{workflowRentalPriceLabel(item)}</span>}
+                              {pricesVisible && <span>{itemPriceLabel(item)}</span>}
                             </label>
                         {itemOn && rentalItemNeedsDetail(item) && (
                           <RentalItemDetailPreview
@@ -12477,10 +13304,11 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
         </div>
       </div>
     </div>
+    </RentalCrossContext.Provider>
   );
 }
 
-function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layoutRecommendations, venues = [] }) {
+function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layoutRecommendations, venues = [], venueBookings = {} }) {
   const rentalValue = value || {};
   const scopedVenues = (venues || []).filter((venue) => venue && venue.id);
   if (scopedVenues.length === 0) {
@@ -12491,6 +13319,7 @@ function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layout
         onChange={onChange}
         title={title}
         layoutRecommendations={layoutRecommendations}
+        booking={rentalFirstBooking(venueBookings)}
       />
     );
   }
@@ -12521,6 +13350,7 @@ function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layout
               title={title}
               layoutRecommendations={venueRecommendations}
               venueId={venue.id}
+              booking={venueBookings?.[venue.id] || null}
             />
           </section>
         );
@@ -13239,7 +14069,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const venueDayCounts = Object.fromEntries((Array.isArray(venueCost?.venueCosts) ? venueCost.venueCosts : (venueCost ? [venueCost] : []))
       .map((item) => [String(item.venueId || ""), Math.max(1, Number(item.dayCount || 1))]));
     const spaceDayCount = Math.max(1, ...Object.values(venueDayCounts));
-    const rentalCost = computeWorkflowRentalCost(list, answers.__rentalGroups || {}).map((group) => {
+    const rentalCost = computeWorkflowRentalCost(list, answers.__rentalGroups || {}, answers._venueBookings || {}).map((group) => {
       const days = group.venueId ? (venueDayCounts[String(group.venueId)] || 1) : spaceDayCount;
       if (days <= 1) return group;
       return {
@@ -14172,6 +15002,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                           title={rentalGroupFields[0]?.rentalPreviewHeading || "Space Contents"}
                           layoutRecommendations={layoutRecommendations}
                           venues={selectedRentalVenues}
+                          venueBookings={answers._venueBookings || {}}
                         />
                         {renderRentalGroupErrors()}
                       </>
@@ -14210,6 +15041,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                           title={rentalGroupFields[0]?.rentalPreviewHeading || "Space Contents"}
                           layoutRecommendations={layoutRecommendations}
                           venues={selectedRentalVenues}
+                          venueBookings={answers._venueBookings || {}}
                         />
                         {renderRentalGroupErrors()}
                       </>
@@ -14253,6 +15085,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                               title={rentalGroupFields[0]?.rentalPreviewHeading || "Rental Groups"}
                               layoutRecommendations={layoutRecommendations}
                               venues={selectedRentalVenues}
+                              venueBookings={answers._venueBookings || {}}
                             />
                             {renderRentalGroupErrors()}
                           </>
@@ -19455,15 +20288,17 @@ function BookingReadOnlyVenue({ step, answers }) {
   );
 }
 
-function BookingReadOnlyRentalDetail({ item, value = {} }) {
+function BookingReadOnlyRentalDetail({ item, value = {}, cross = null }) {
   const optionGroups = item.optionGroups || [];
   const groupValues = value.optionGroups || {};
   const visibilityValues = rentalOptionGroupVisibilityValues([rentalParentVisibilitySource(item), ...optionGroups], value);
   const showBaseQuantity = !rentalUsesFixedBaseQuantity(item) && (rentalOptionGroupsNeedParentQuantity(item) || !item.hideBaseQuantity);
+  const inclusion = rentalActiveInclusion(cross, item.id);
   return <div className="booking-rental-detail">
+    {inclusion && <div className="booking-rental-control"><label>Included in {inclusion.packageName}</label></div>}
     {showBaseQuantity && <div className="booking-rental-control"><label># of {item.name}</label><div className="booking-rental-select">{value.quantity ?? rentalSelectedQuantity(item, value) ?? ""}</div></div>}
     {optionGroups.map((group) => {
-      if (!isRentalQuestionVisible(group, [rentalParentVisibilitySource(item), ...optionGroups], visibilityValues)) return null;
+      if (!isRentalQuestionVisible(group, [rentalParentVisibilitySource(item), ...optionGroups], visibilityValues, new Set(), cross)) return null;
       const current = groupValues[group.id];
       const options = (group.options || []).map(normalizeRentalChoiceOption);
       if (["quantity", "number", "select"].includes(group.type)) {
@@ -19478,7 +20313,7 @@ function BookingReadOnlyRentalDetail({ item, value = {} }) {
       }
       const selectedId = current && typeof current === "object" ? current.value : current;
       return <div className="booking-rental-control-group" key={group.id}><label>{group.label || "Select option"}</label>{options.map((option) => {
-        const selected = selectedId === (option.id || option.label);
+        const selected = Array.isArray(current) ? current.includes(option.id || option.label) : selectedId === (option.id || option.label);
         return <div className={`booking-rental-radio${selected ? " selected" : ""}`} key={option.id || option.label}><span className={`booking-readonly-choice${selected ? " selected" : ""}`}>{selected ? "✓" : ""}</span><span>{option.label}</span></div>;
       })}</div>;
     })}
@@ -19517,12 +20352,14 @@ function BookingReadOnlyRentals({ step, answers, showHeading = true }) {
         const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
         const selectedIds = Object.keys(current.selectedItems || {});
         if (current.groupSelected && selectedIds.length === 0 && items.length === 1) selectedIds.push(items[0].id);
-        return items.map((item) => ({ item, current, selected: selectedIds.includes(item.id), key: `${venueId}:${item.id}` }));
+        if (current.groupSelected && rentalGroupDisplayMode(field) === "grouped") items.filter(rentalItemAlwaysShown).forEach((item) => selectedIds.push(item.id));
+        const cross = buildRentalCrossContext(fields, state || {}, venueId, venueId ? answers._venueBookings?.[venueId] : rentalFirstBooking(answers._venueBookings));
+        return items.map((item) => ({ item, current, cross, selected: selectedIds.includes(item.id), key: `${venueId}:${item.id}` }));
       });
       const selectedItems = itemRows.filter((row) => row.selected);
       return <div className="booking-readonly-rental-group" key={field.id}>
         <h3>{field.label}</h3>{field.fieldDescription && <p>{field.fieldDescription}</p>}
-        <div className="booking-readonly-rental-grid">{itemRows.map(({ item, current, selected, key }) => {
+        <div className="booking-readonly-rental-grid">{itemRows.map(({ item, current, cross, selected, key }) => {
           const image = rentalItemImage(item);
           const hasDetail = selected && rentalItemNeedsDetail(item);
           return <article className={`booking-readonly-rental-card${selected ? " selected" : ""}`} key={key}>
@@ -19532,7 +20369,7 @@ function BookingReadOnlyRentals({ step, answers, showHeading = true }) {
               <div><strong>{item.name}</strong>{item.description && <p>{item.description}</p>}</div>
               <span className="booking-rental-card-price">{workflowRentalPriceLabel(item)}</span>
             </div>
-            {hasDetail && <BookingReadOnlyRentalDetail item={item} value={current.itemValues?.[item.id] || {}} />}
+            {hasDetail && <BookingReadOnlyRentalDetail item={item} value={current.itemValues?.[item.id] || {}} cross={cross} />}
           </article>;
         })}</div>
         {!selectedItems.length && <div className="booking-readonly-empty">No items selected.</div>}
