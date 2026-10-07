@@ -154,9 +154,45 @@ async function sendVerificationEmail(email, link) {
   return { ok: true, id: data.id || null };
 }
 
+// Returns false only when DNS positively reports the domain has no mail servers;
+// lookup failures count as "exists" so a DNS outage never blocks a booking.
+async function emailDomainAcceptsMail(email) {
+  const domain = String(email || "").split("@").pop()?.trim().toLowerCase() || "";
+  if (!domain) return false;
+  const lookup = async (type) => {
+    const response = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=${type}`, {
+      headers: { accept: "application/dns-json" },
+    });
+    if (!response.ok) throw new Error("DNS lookup failed");
+    return response.json();
+  };
+  try {
+    const mx = await lookup("MX");
+    if (mx.Status === 3) return false;
+    if ((mx.Answer || []).some((answer) => answer.type === 15)) return true;
+    const a = await lookup("A");
+    return (a.Answer || []).some((answer) => answer.type === 1);
+  } catch {
+    return true;
+  }
+}
+
+function safeReturnPath(value) {
+  const path = String(value || "");
+  return path === "/" || path === "/book" ? path : "/book";
+}
+
 export async function POST(request) {
   const body = await request.json().catch(() => null);
   const action = String(body?.action || "send");
+
+  if (action === "check-domain") {
+    const email = String(body?.email || "").trim().toLowerCase();
+    if (!emailLooksValid(email)) {
+      return NextResponse.json({ ok: false, exists: false, error: "Enter a valid email address first." }, { status: 400 });
+    }
+    return NextResponse.json({ ok: true, exists: await emailDomainAcceptsMail(email) });
+  }
 
   if (action === "verify") {
     try {
@@ -174,6 +210,9 @@ export async function POST(request) {
   }
 
   try {
+    if (body?.checkDomain !== false && !(await emailDomainAcceptsMail(email))) {
+      return NextResponse.json({ ok: false, error: "Email does not exist" }, { status: 400 });
+    }
     if (emailVerificationTestMode()) {
       return NextResponse.json({
         ok: true,
@@ -185,7 +224,7 @@ export async function POST(request) {
     }
     const token = await createToken(email);
     const origin = new URL(request.url).origin;
-    const link = `${origin}/book?verify_email=${encodeURIComponent(token)}`;
+    const link = `${origin}${safeReturnPath(body?.returnPath)}?verify_email=${encodeURIComponent(token)}`;
     const sent = await sendVerificationEmail(email, link);
     if (!sent.ok) {
       return NextResponse.json({ ok: false, error: sent.error }, { status: sent.status || 500 });
