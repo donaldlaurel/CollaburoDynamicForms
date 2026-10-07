@@ -8579,6 +8579,22 @@ function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDel
                   <input type="checkbox" checked={venue.allowCopyBookingAbove !== false} onChange={(e) => set({ allowCopyBookingAbove: e.target.checked })} />
                   Show "Copy date and time above" button
                 </label>
+                <label className="chk" style={{ marginTop: 4 }}>
+                  <input type="checkbox" checked={!!venue.allowMultipleDates} onChange={(e) => set({ allowMultipleDates: e.target.checked })} />
+                  Allow multiple dates <span className="hint">client can add extra dates; space rental and rentals are charged per date</span>
+                </label>
+                {venue.allowMultipleDates && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
+                    <div>
+                      <label className="lbl">Checkbox label</label>
+                      <input className="input" value={venue.multipleDatesLabel || ""} placeholder="Multiple Dates" onChange={(e) => set({ multipleDatesLabel: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="lbl">Max additional dates <span className="hint">0 = unlimited</span></label>
+                      <input className="input" type="number" min="0" step="1" value={venue.maxAdditionalDates || 0} onChange={(e) => set({ maxAdditionalDates: Math.max(0, parseInt(e.target.value, 10) || 0) })} />
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="lbl">Visible to User</label>
@@ -10647,8 +10663,8 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
   const rec = getRecommendation();
 
   // --- Price calculator (auto-select best plan) ---
-  const calcPriceForVenue = (venue) => {
-    const booking = bookingByVenue[venue.id] || {};
+  const calcPriceForVenue = (venue) => calcPriceForBooking(venue, bookingByVenue[venue.id] || {});
+  const calcPriceForBooking = (venue, booking = {}) => {
     const { startDate, startTime, endDate, endTime } = booking;
     if (!venue || !startDate || !startTime || !endDate || !endTime) return null;
     const start = new Date(`${startDate}T${startTime}`);
@@ -10776,6 +10792,56 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
       endTime: clampTime(targetVenue, sourceBooking.endTime || "", sourceBooking.endDate),
     });
   };
+  const maxAdditionalDatesForVenue = (venue) => Math.max(0, Number(venue?.maxAdditionalDates || 0));
+  const newAdditionalDate = () => ({ id: "date_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), startDate: "", startTime: "", endDate: "", endTime: "" });
+  const setMultipleDates = (venue, enabled) => {
+    const booking = bookingByVenue[venue.id] || {};
+    const existing = Array.isArray(booking.additionalDates) ? booking.additionalDates : [];
+    setVenueBooking(venue.id, {
+      multipleDates: !!enabled,
+      additionalDates: enabled && existing.length === 0 ? [newAdditionalDate()] : existing,
+    });
+  };
+  const addAdditionalDate = (venue) => {
+    const booking = bookingByVenue[venue.id] || {};
+    const existing = Array.isArray(booking.additionalDates) ? booking.additionalDates : [];
+    const max = maxAdditionalDatesForVenue(venue);
+    if (max > 0 && existing.length >= max) return;
+    setVenueBooking(venue.id, { additionalDates: [...existing, newAdditionalDate()] });
+  };
+  const removeAdditionalDate = (venue, dateId) => {
+    const booking = bookingByVenue[venue.id] || {};
+    const remaining = (booking.additionalDates || []).filter((d) => d.id !== dateId);
+    setVenueBooking(venue.id, { additionalDates: remaining, ...(remaining.length === 0 ? { multipleDates: false } : {}) });
+  };
+  const closedDayMessage = (venue, val) => {
+    const d = new Date(val + "T00:00:00");
+    return `This venue is closed on ${dayNames[DAY_KEYS[d.getDay()]] || "this day"}. Please pick another date.`;
+  };
+  const updateAdditionalDate = (venue, dateId, patch) => {
+    const booking = bookingByVenue[venue.id] || {};
+    const current = (booking.additionalDates || []).find((d) => d.id === dateId) || {};
+    let nextPatch = patch;
+    if (patch.startDate !== undefined) {
+      if (patch.startDate && isDateClosed(venue, patch.startDate)) {
+        setVenueWarning(venue.id, closedDayMessage(venue, patch.startDate));
+        nextPatch = { startDate: "", startTime: "" };
+      } else {
+        setVenueWarning(venue.id, "");
+        nextPatch = { startDate: patch.startDate, ...(current.endDate && patch.startDate > current.endDate ? { endDate: patch.startDate } : {}) };
+      }
+    } else if (patch.endDate !== undefined) {
+      if (patch.endDate && isDateClosed(venue, patch.endDate)) {
+        setVenueWarning(venue.id, closedDayMessage(venue, patch.endDate));
+        nextPatch = { endDate: "", endTime: "" };
+      } else {
+        setVenueWarning(venue.id, "");
+      }
+    }
+    setVenueBooking(venue.id, {
+      additionalDates: (booking.additionalDates || []).map((d) => (d.id === dateId ? { ...d, ...nextPatch } : d)),
+    });
+  };
   const buildVenueQuote = (venue) => {
     const price = calcPriceForVenue(venue);
     const basePrice = venue.pricing[0] ? venue.pricing[0].basePrice : 0;
@@ -10790,6 +10856,24 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
     const setup = price ? (price.setup || 0) : 0;
     const cleanup = price ? (price.cleanup || 0) : 0;
     const venueBase = price ? price.venueBase : basePrice;
+    const additionalDateQuotes = !price ? [] : venueAdditionalBookingDates(venue, bookingByVenue[venue.id] || {})
+      .map((date) => ({ date, price: calcPriceForBooking(venue, date) }))
+      .filter((entry) => entry.price)
+      .map(({ date, price: datePrice }) => ({
+        id: date.id,
+        booking: { startDate: date.startDate, startTime: date.startTime, endDate: date.endDate, endTime: date.endTime },
+        planLabel: datePrice.planLabel,
+        totalHours: datePrice.totalHours,
+        billableHours: datePrice.billableHours,
+        venueBase: datePrice.venueBase,
+        setup: datePrice.setup || 0,
+        cleanup: datePrice.cleanup || 0,
+        subCost: datePrice.subCost || 0,
+        total: datePrice.venueBase + (datePrice.setup || 0) + (datePrice.cleanup || 0) + (datePrice.subCost || 0),
+      }));
+    const additionalDatesTotal = additionalDateQuotes.reduce((sum, item) => sum + item.total, 0);
+    const total = venueBase + setup + cleanup + subCost + additionalDatesTotal;
+    const securityDeposit = price ? (price.deposit || 0) : (adv.securityDeposit || 0);
     return {
       venueId: venue.id,
       venueName: venue.name,
@@ -10809,9 +10893,11 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
       cleanup,
       subCost,
       subName,
-      securityDeposit: price ? (price.deposit || 0) : (adv.securityDeposit || 0),
-      total: venueBase + setup + cleanup + subCost,
-      totalWithDeposit: venueBase + setup + cleanup + subCost + (price ? (price.deposit || 0) : (adv.securityDeposit || 0)),
+      securityDeposit,
+      additionalDateQuotes,
+      dayCount: 1 + additionalDateQuotes.length,
+      total,
+      totalWithDeposit: total + securityDeposit,
       hasBooking: !!price,
       price,
     };
@@ -10841,6 +10927,7 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
       securityDeposit: venueCosts.reduce((sum, item) => sum + Number(item.securityDeposit || 0), 0),
       total: venueCosts.reduce((sum, item) => sum + Number(item.total || 0), 0),
       hasBooking: venueCosts.some((item) => item.hasBooking),
+      dayCount: Math.max(1, ...venueCosts.map((item) => Number(item.dayCount || 1))),
       venueCosts,
     });
   }, [selectedIds.join(","), JSON.stringify(bookingByVenue), JSON.stringify(subSpaceByVenue)]);
@@ -11094,6 +11181,63 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                     <input className="cv-input" type="time" value={booking.endTime || ""} min={endHours && endHours !== "closed" ? endHours.open : undefined} max={endHours && endHours !== "closed" ? endHours.close : undefined} onInput={(e) => setVenueBooking(selected.id, { endTime: clampTime(selected, e.target.value, booking.endDate) })} onChange={(e) => setVenueBooking(selected.id, { endTime: clampTime(selected, e.target.value, booking.endDate) })} disabled={!booking.endDate} />
                   </div>
                 </div>
+                {selected.allowMultipleDates && (
+                  <div style={{ marginTop: 12 }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                      <input type="checkbox" checked={!!booking.multipleDates} onChange={(e) => setMultipleDates(selected, e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--accent)" }} />
+                      {selected.multipleDatesLabel || "Multiple Dates"}
+                    </label>
+                    {booking.multipleDates && (() => {
+                      const additionalDates = venueAdditionalBookingDates(selected, booking);
+                      const maxAdditional = maxAdditionalDatesForVenue(selected);
+                      const canAddMore = !maxAdditional || additionalDates.length < maxAdditional;
+                      return (
+                        <div style={{ marginTop: 8 }}>
+                          {additionalDates.map((date, dateIndex) => {
+                            const dStartHours = getHoursForDate(selected, date.startDate);
+                            const dEndHours = getHoursForDate(selected, date.endDate);
+                            const dateQuote = (quote.additionalDateQuotes || []).find((item) => item.id === date.id);
+                            return (
+                              <div key={date.id} style={{ borderTop: "1px dashed var(--line)", paddingTop: 12, marginTop: 12 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                  <strong style={{ fontSize: 12 }}>Additional Date {dateIndex + 1}</strong>
+                                  <button type="button" className="btn sm ghost" style={{ color: "var(--accent)" }} onClick={() => removeAdditionalDate(selected, date.id)}>Remove</button>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                  <div>
+                                    <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>Start Date</label>
+                                    <input className="cv-input" type="date" value={date.startDate || ""} onChange={(e) => updateAdditionalDate(selected, date.id, { startDate: e.target.value })} />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>Start Time{dStartHours && dStartHours !== "closed" ? ` (${dStartHours.open} – ${dStartHours.close})` : ""}</label>
+                                    <input className="cv-input" type="time" value={date.startTime || ""} min={dStartHours && dStartHours !== "closed" ? dStartHours.open : undefined} max={dStartHours && dStartHours !== "closed" ? dStartHours.close : undefined} onChange={(e) => updateAdditionalDate(selected, date.id, { startTime: clampTime(selected, e.target.value, date.startDate) })} disabled={!date.startDate} />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>End Date</label>
+                                    <input className="cv-input" type="date" value={date.endDate || ""} min={date.startDate || undefined} onChange={(e) => updateAdditionalDate(selected, date.id, { endDate: e.target.value })} />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: 11, color: "var(--ink-3)", display: "block", marginBottom: 3 }}>End Time{dEndHours && dEndHours !== "closed" ? ` (${dEndHours.open} – ${dEndHours.close})` : ""}</label>
+                                    <input className="cv-input" type="time" value={date.endTime || ""} min={dEndHours && dEndHours !== "closed" ? dEndHours.open : undefined} max={dEndHours && dEndHours !== "closed" ? dEndHours.close : undefined} onChange={(e) => updateAdditionalDate(selected, date.id, { endTime: clampTime(selected, e.target.value, date.endDate) })} disabled={!date.endDate} />
+                                  </div>
+                                </div>
+                                {pricesVisible && dateQuote && (
+                                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12, color: "var(--ink-2)" }}>
+                                    <span>Total space rental for this date (including set-up and clean-up)</span>
+                                    <strong>{fmt(dateQuote.total)}</strong>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {canAddMore && (
+                            <button type="button" className="btn sm" style={{ marginTop: 12 }} onClick={() => addAdditionalDate(selected)}>+ Add another date</button>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
                 {pricesVisible && price && (
                   <div style={{ marginTop: 16, padding: 14, background: "var(--surface-2)", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span>{selected.name} — {price.planLabel}</span><span>{fmt(price.venueBase)}</span></div>
@@ -11115,8 +11259,11 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                     {price.subCost > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>{price.subName}</span><span>{fmt(price.subCost)}</span></div>}
                     {price.setup > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Set up fee</span><span>{fmt(price.setup)}</span></div>}
                     {price.cleanup > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Clean up fee</span><span>{fmt(price.cleanup)}</span></div>}
+                    {(quote.additionalDateQuotes || []).map((dateQuote, dateIndex) => (
+                      <div key={dateQuote.id} style={{ display: "flex", justifyContent: "space-between" }}><span>Additional date {dateIndex + 1} ({dateQuote.booking.startDate})</span><span>{fmt(dateQuote.total)}</span></div>
+                    ))}
                     {price.deposit > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Security deposit</span><span>{fmt(price.deposit)}</span></div>}
-                    <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--line)", marginTop: 8, paddingTop: 8, fontWeight: 700, fontSize: 15 }}><span>Estimated Total</span><span>{fmt(price.total)}</span></div>
+                    <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--line)", marginTop: 8, paddingTop: 8, fontWeight: 700, fontSize: 15 }}><span>Estimated Total{quote.dayCount > 1 ? ` (${quote.dayCount} days)` : ""}</span><span>{fmt(quote.totalWithDeposit)}</span></div>
                   </div>
                 )}
                 {pricesVisible && !price && (
@@ -11798,6 +11945,28 @@ function rentalItemCostLine(item, itemValue = {}) {
   return { label: item.name, total: base.total + optionCost.total, lines };
 }
 
+function bookingAdditionalDates(booking = {}) {
+  return booking?.multipleDates && Array.isArray(booking.additionalDates) ? booking.additionalDates : [];
+}
+
+function venueAdditionalBookingDates(venue, booking = {}) {
+  if (!venue?.allowMultipleDates) return [];
+  const dates = bookingAdditionalDates(booking);
+  const max = Math.max(0, Number(venue.maxAdditionalDates || 0));
+  return max > 0 ? dates.slice(0, max) : dates;
+}
+
+function bookingRangeText(booking = {}) {
+  const start = [booking.startDate, booking.startTime].filter(Boolean).join(" ");
+  const end = [booking.endDate, booking.endTime].filter(Boolean).join(" ");
+  return `${start}${end ? ` - ${end}` : ""}`;
+}
+
+function costDaysSuffix(costs = {}) {
+  const days = Number(costs.spaceDayCount || 1);
+  return days > 1 ? ` x ${days} days` : "";
+}
+
 function computeRentalFieldsCost(step, stepState = {}, venue = null) {
   const groups = [];
   const venueId = venue?.id || "";
@@ -12213,7 +12382,7 @@ function CheckoutPreviewBody({ step, costData, value, onChange, onBreakdown, sum
               <div className="cv-cost-row" key={key}>
                 <span className="cv-cost-bullet">
                   <span className="cv-cost-bullet-dot">•</span>
-                  <button className="cv-cost-link" type="button" onClick={() => onBreakdown(label, amount, lines || [])}>{label}</button>
+                  <button className="cv-cost-link" type="button" onClick={() => onBreakdown(label, amount, lines || [])}>{label}{(key === "spaceRental" || key === "spaceContentRentals") && costDaysSuffix(costData) && <span className="cv-cost-days">{costDaysSuffix(costData)}</span>}</button>
                 </span>
                 <span>{fmt(amount)}</span>
               </div>
@@ -12841,7 +13010,19 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         return { ...fc, lines: pricedLines, total: pricedLines.reduce((sum, ln) => sum + Number(ln.price || 0), 0) };
       })
       .filter((fc) => fc.lines.length > 0);
-    const rentalCost = computeWorkflowRentalCost(list, answers.__rentalGroups || {});
+    const venueDayCounts = Object.fromEntries((Array.isArray(venueCost?.venueCosts) ? venueCost.venueCosts : (venueCost ? [venueCost] : []))
+      .map((item) => [String(item.venueId || ""), Math.max(1, Number(item.dayCount || 1))]));
+    const spaceDayCount = Math.max(1, ...Object.values(venueDayCounts));
+    const rentalCost = computeWorkflowRentalCost(list, answers.__rentalGroups || {}).map((group) => {
+      const days = group.venueId ? (venueDayCounts[String(group.venueId)] || 1) : spaceDayCount;
+      if (days <= 1) return group;
+      return {
+        ...group,
+        days,
+        total: Number(group.total || 0) * days,
+        lines: (group.lines || []).map((ln) => ({ ...ln, days, dailyTotal: Number(ln.total || 0), total: Number(ln.total || 0) * days })),
+      };
+    });
     const rentalExtrasFromAnswers = rentalExtrasLinesFromAnswers(list, answers);
     const savedRentalExtrasAmount = Math.max(0, Number(costAdminAdjustments.rentalExtras || 0));
     const rentalExtrasLines = rentalExtrasFromAnswers.length > 0
@@ -12925,7 +13106,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const flattenRentalGroups = (groups) => groups.flatMap((fc) => (fc.lines || []).map((ln) => ({
       label: withParentLabel(ln.parentLabel, ln.label),
       group: fc.venueName ? `${fc.venueName} Rentals` : fc.fieldLabel,
-      meta: "",
+      meta: ln.days > 1 ? `${fmt(ln.dailyTotal)} x ${ln.days} days` : "",
       quantity: Number(ln.quantity || String(ln.label || "").match(/\sx\s(\d+)$/i)?.[1] || 1),
       total: Number(ln.total || 0),
     })));
@@ -13101,6 +13282,22 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       ...(item.subCost > 0 ? [{ label: item.subName || "Optional extension", group: item.venueName, meta: "Sub-space", quantity: 1, total: item.subCost }] : []),
       ...(item.setup > 0 ? [{ label: "Set up fee", group: item.venueName, meta: "", quantity: 1, total: item.setup }] : []),
       ...(item.cleanup > 0 ? [{ label: "Clean up fee", group: item.venueName, meta: "", quantity: 1, total: item.cleanup }] : []),
+      ...(item.additionalDateQuotes || []).flatMap((dateQuote, dateIndex) => {
+        const dateLabel = `Additional date ${dateIndex + 1}`;
+        const range = bookingRangeText(dateQuote.booking || {});
+        return [
+          {
+            label: `${item.venueName || "Selected venue"} — ${dateLabel}${dateQuote.planLabel ? ` (${dateQuote.planLabel})` : ""}`,
+            group: item.venueName || "Venue",
+            meta: [range, dateQuote.totalHours ? `Duration: ${dateQuote.totalHours} hr${dateQuote.totalHours === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "),
+            quantity: 1,
+            total: dateQuote.venueBase || 0,
+          },
+          ...(dateQuote.subCost > 0 ? [{ label: `${item.subName || "Optional extension"} (${dateLabel})`, group: item.venueName, meta: "Sub-space", quantity: 1, total: dateQuote.subCost }] : []),
+          ...(dateQuote.setup > 0 ? [{ label: `Set up fee (${dateLabel})`, group: item.venueName, meta: "", quantity: 1, total: dateQuote.setup }] : []),
+          ...(dateQuote.cleanup > 0 ? [{ label: `Clean up fee (${dateLabel})`, group: item.venueName, meta: "", quantity: 1, total: dateQuote.cleanup }] : []),
+        ];
+      }),
     ]);
     const spaceContentLines = [...flattenRentalGroups(rentalCost), ...resolvedDeliveryLines, ...rentalExtrasLines];
     const cateringLines = flattenOptionGroups(cateringGroups);
@@ -13108,7 +13305,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const eventLines = flattenOptionGroups(eventGroups);
     const cleanupLines = flattenOptionGroups(cleanupGroups);
     return {
-      optionsCost, rentalCost, spaceRentalTotal, spaceContentTotal, cateringTotal,
+      optionsCost, rentalCost, spaceRentalTotal, spaceContentTotal, spaceDayCount, cateringTotal,
       setupTotal, eventTotal, cleanupTotal, deliveryTotal, rentalExtrasTotal, subtotal, discountLines, discountTotal, discountedSubtotal, tax, feeLines, feesTotal, total,
       securityDeposit, totalWithDeposit: total + securityDeposit,
       spaceLines, spaceContentLines, cateringLines, setupLines, eventLines, cleanupLines, deliveryLines: resolvedDeliveryLines,
@@ -13212,7 +13409,13 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       ...(Array.isArray(beforeAnswers._selectedVenueIds) ? beforeAnswers._selectedVenueIds : beforeAnswers._selectedVenueId ? [beforeAnswers._selectedVenueId] : []),
       ...(Array.isArray(answers._selectedVenueIds) ? answers._selectedVenueIds : answers._selectedVenueId ? [answers._selectedVenueId] : []),
     ]);
-    bookingVenueIds.forEach((venueId) => Object.entries(bookingLabels).forEach(([key, label]) => add(venueStep?.name || "Venue", `${venueName(venueId)} — ${label}`, beforeBookings[venueId]?.[key], afterBookings[venueId]?.[key])));
+    bookingVenueIds.forEach((venueId) => {
+      Object.entries(bookingLabels).forEach(([key, label]) => add(venueStep?.name || "Venue", `${venueName(venueId)} — ${label}`, beforeBookings[venueId]?.[key], afterBookings[venueId]?.[key]));
+      const extraRanges = (booking) => bookingAdditionalDates(booking || {}).map(bookingRangeText).filter(Boolean);
+      const beforeExtras = extraRanges(beforeBookings[venueId]);
+      const afterExtras = extraRanges(afterBookings[venueId]);
+      if (beforeExtras.length || afterExtras.length) add(venueStep?.name || "Venue", `${venueName(venueId)} — Additional dates`, beforeExtras, afterExtras);
+    });
 
     const rentalDisplay = (field, fieldState = {}, venueId = "") => {
       const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
@@ -13466,11 +13669,11 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         return next;
       });
     };
-    const quoteLine = (label, amount, lines, { editableRentalExtras = false } = {}) => (
+    const quoteLine = (label, amount, lines, { editableRentalExtras = false, suffix = "" } = {}) => (
       <div className="cv-cost-row" key={label}>
         <span className="cv-cost-bullet">
           <span className="cv-cost-bullet-dot">•</span>
-          <button className="cv-cost-link" type="button" onClick={() => openBreakdown(label, amount, lines)}>{label}</button>
+          <button className="cv-cost-link" type="button" onClick={() => openBreakdown(label, amount, lines)}>{label}{suffix && <span className="cv-cost-days">{suffix}</span>}</button>
           {adminEditMode && editableRentalExtras && !rentalExtrasEditing && (
             <button type="button" className="btn sm" style={{ padding: "3px 7px", minHeight: 0, fontSize: 10 }} onClick={() => setRentalExtrasEditing(true)}>Edit</button>
           )}
@@ -13517,8 +13720,8 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         ) : (
           <>
             <div className="cv-cost-section-title">Total Quote:</div>
-            {quoteLine("Space Rental", checkoutCostData.spaceRentalTotal, checkoutCostData.spaceLines)}
-            {quoteLine("Space Content Rentals", splitContent.rentalsTotal, splitContent.rentalLines)}
+            {quoteLine("Space Rental", checkoutCostData.spaceRentalTotal, checkoutCostData.spaceLines, { suffix: costDaysSuffix(checkoutCostData) })}
+            {quoteLine("Space Content Rentals", splitContent.rentalsTotal, splitContent.rentalLines, { suffix: costDaysSuffix(checkoutCostData) })}
             {quoteLine("Space Extra Costs", splitContent.extrasTotal, splitContent.extrasLines, { editableRentalExtras: true })}
             {quoteLine("Catering Cost", checkoutCostData.cateringTotal, checkoutCostData.cateringLines)}
             {quoteLine("Set up Service Cost", checkoutCostData.setupTotal, checkoutCostData.setupLines)}
@@ -16524,9 +16727,8 @@ function createProgressRecordFromSubmission(payload = {}) {
     .filter((item) => item.booking?.startDate || item.booking?.endDate)
     .map((item) => {
       const booking = item.booking || {};
-      const start = [booking.startDate, booking.startTime].filter(Boolean).join(" ");
-      const end = [booking.endDate, booking.endTime].filter(Boolean).join(" ");
-      return `${item.venueName || "Venue"}: ${start}${end ? ` - ${end}` : ""}`;
+      const extraRanges = bookingAdditionalDates(booking).filter((d) => d.startDate || d.endDate).map(bookingRangeText);
+      return `${item.venueName || "Venue"}: ${[bookingRangeText(booking), ...extraRanges].join(", ")}`;
     })
     .join("; ");
   const firstName = findByLabel(["client first name", "first name"]);
@@ -16741,6 +16943,7 @@ function buildClientDraftFromProgressRecord(record, steps = []) {
       total,
       totalWithDeposit: total + securityDeposit,
       hasBooking: !!(booking.startDate && booking.startTime && booking.endDate && booking.endTime),
+      dayCount: 1 + venueAdditionalBookingDates(venue, booking).filter((d) => d.startDate && d.startTime && d.endDate && d.endTime).length,
       _restoreIndex: index,
     };
   });
@@ -18413,7 +18616,7 @@ function ProgressCostSummary({ costs = {}, onOpenBreakdown, onChange, showTitle 
           return (
             <div className="cv-cost-row" key={label} style={{ alignItems: "center" }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                <button className="cv-cost-link" type="button" onClick={() => onOpenBreakdown?.({ title: label, amount, lines })}>{label}</button>
+                <button className="cv-cost-link" type="button" onClick={() => onOpenBreakdown?.({ title: label, amount, lines })}>{label}{(label === "Space Rental" || label === "Space Content Rentals") && costDaysSuffix(costs) && <span className="cv-cost-days">{costDaysSuffix(costs)}</span>}</button>
                 {editableRentalExtras && !rentalExtrasEditing && <button type="button" className="btn sm" style={{ padding: "3px 7px", minHeight: 0, fontSize: 10 }} onClick={() => setRentalExtrasEditing(true)}>Edit</button>}
               </span>
               {editableRentalExtras && rentalExtrasEditing ? (
@@ -18529,7 +18732,7 @@ function ProgressRequestCostSummary({ costs = {} }) {
     <section style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 6, overflow: "hidden", fontSize: 13 }}>
       <div style={{ background: "var(--canvas, #f7f5f2)", borderBottom: "1px solid var(--line)", fontWeight: 800, fontSize: 14, padding: "7px 10px" }}>Summary of Cost</div>
       <div style={{ display: "grid", gap: 4, padding: "8px 10px" }}>
-        {rows.map(([label, value]) => <div className="cv-cost-row" key={label}><span>{label}</span><b>{fmt(value)}</b></div>)}
+        {rows.map(([label, value]) => <div className="cv-cost-row" key={label}><span>{label}{(label === "Space Rental" || label === "Space Content Rentals") && costDaysSuffix(costs)}</span><b>{fmt(value)}</b></div>)}
         <div className="cv-cost-row" style={{ borderTop: "1px solid var(--line)", marginTop: 3, paddingTop: 7 }}><b>Total</b><b>{fmt(costs.total)}</b></div>
         <div className="cv-cost-row"><span>Security Deposit (refundable)</span><b>{fmt(costs.securityDeposit)}</b></div>
         <div className="cv-cost-row" style={{ fontWeight: 800 }}><b>Total with Security Deposit</b><b>{fmt(costs.totalWithDeposit)}</b></div>
@@ -19007,6 +19210,9 @@ function BookingReadOnlyVenue({ step, answers }) {
               <div className="booking-readonly-venue-meta">
                 <span>Start: {[booking.startDate, booking.startTime].filter(Boolean).join(" ") || "Not provided"}</span>
                 <span>End: {[booking.endDate, booking.endTime].filter(Boolean).join(" ") || "Not provided"}</span>
+                {bookingAdditionalDates(booking).filter((d) => d.startDate || d.endDate).map((d, index) => (
+                  <span key={d.id || index}>Additional date {index + 1}: {bookingRangeText(d)}</span>
+                ))}
               </div>
             </div>
           </article>;
@@ -19091,7 +19297,7 @@ function BookingReadOnlyCostSummary({ costs = {} }) {
     ["Catering Cost", costs.cateringTotal], ["Set up Service Cost", costs.setupTotal], ["Event Service Cost", costs.eventTotal], ["Clear up Service Cost", costs.cleanupTotal],
   ];
   return <section className="booking-readonly-costs"><h2>Summary of Cost</h2>
-    {rows.map(([label, value]) => <div className="booking-readonly-cost-row" key={label}><span>{label}</span><strong>{fmt(value)}</strong></div>)}
+    {rows.map(([label, value]) => <div className="booking-readonly-cost-row" key={label}><span>{label}{(label === "Space Rental" || label === "Space Content Rentals") && costDaysSuffix(costs)}</span><strong>{fmt(value)}</strong></div>)}
     {summaryDiscountRows(costs).map((row) => <div className="booking-readonly-cost-row" key={row.id}><span>{row.label}</span><strong>{fmt(row.total)}</strong></div>)}
     <div className="booking-readonly-cost-row subtotal"><span>Subtotal</span><strong>{fmt(costSubtotalForDisplay(costs))}</strong></div>
     {(costs.feeLines || []).map((fee) => <div className="booking-readonly-cost-row" key={fee.id || fee.label}><span>{fee.displayLabel || fee.label}</span><strong>{fmt(fee.total)}</strong></div>)}
