@@ -4255,6 +4255,7 @@ function RentalGroupFieldEditor({ field, onChange }) {
           <select className="select" value={field.rentalDisplayMode || (selectedGroup === "Tables" ? "separate_items" : "grouped")} onChange={(e) => set({ rentalDisplayMode: e.target.value })}>
             <option value="grouped">One group</option>
             <option value="separate_items">Individual items</option>
+            <option value="repeatable_rows">Repeatable rows (Add button)</option>
           </select>
         </div>
         <div>
@@ -4262,6 +4263,53 @@ function RentalGroupFieldEditor({ field, onChange }) {
           <input className="input" value={field.rentalPreviewHeading || ""} placeholder="Example: Space Contents" onChange={(e) => set({ rentalPreviewHeading: e.target.value })} />
         </div>
       </div>
+      {rentalGroupDisplayMode({ ...field, rentalGroup: selectedGroup }) === "repeatable_rows" && (
+        <>
+          <div className="field-grid">
+            <div>
+              <label className="lbl">Add button label</label>
+              <input className="input" value={field.repeatAddLabel || ""} placeholder={rentalRepeatDefaults(field).addLabel} onChange={(e) => set({ repeatAddLabel: e.target.value })} />
+            </div>
+            <div>
+              <label className="lbl">Maximum rows</label>
+              <input className="input" type="number" min={1} value={field.repeatMaxRows ?? ""} placeholder="No limit" onChange={(e) => set({ repeatMaxRows: e.target.value === "" ? "" : Math.max(1, Number(e.target.value)) })} />
+            </div>
+          </div>
+          <div className="field-grid">
+            <div>
+              <label className="lbl">Quantity label</label>
+              <input className="input" value={field.repeatQuantityLabel || ""} placeholder={rentalRepeatDefaults(field).quantityLabel} onChange={(e) => set({ repeatQuantityLabel: e.target.value })} />
+            </div>
+            <div>
+              <label className="lbl">Type label</label>
+              <input className="input" value={field.repeatTypeLabel || ""} placeholder={rentalRepeatDefaults(field).typeLabel} onChange={(e) => set({ repeatTypeLabel: e.target.value })} />
+            </div>
+          </div>
+          <div className="field-grid">
+            <div>
+              <label className="lbl">Quantity minimum</label>
+              <input className="input" type="number" min={0} value={field.repeatQuantityMin ?? ""} placeholder="1" onChange={(e) => set({ repeatQuantityMin: e.target.value === "" ? "" : Math.max(0, Number(e.target.value)) })} />
+            </div>
+            <div>
+              <label className="lbl">Quantity maximum</label>
+              <input className="input" type="number" min={1} value={field.repeatQuantityMax ?? ""} placeholder="200" onChange={(e) => set({ repeatQuantityMax: e.target.value === "" ? "" : Math.max(1, Number(e.target.value)) })} />
+            </div>
+          </div>
+          <div className="field-grid">
+            <div>
+              <label className="lbl">Quantity step</label>
+              <input className="input" type="number" min={1} value={field.repeatQuantityStep ?? ""} placeholder="1" onChange={(e) => set({ repeatQuantityStep: e.target.value === "" ? "" : Math.max(1, Number(e.target.value)) })} />
+            </div>
+            <div>
+              <label className="lbl">Type info tooltip</label>
+              <input className="input" value={field.repeatTypeInfo || ""} placeholder="Optional help shown next to the type label" onChange={(e) => set({ repeatTypeInfo: e.target.value })} />
+            </div>
+          </div>
+          <div className="rental-help" style={{ marginBottom: 10 }}>
+            Clients add as many rows as they need. Each row picks a quantity and one item from this rental group. Rows that use the same item are added together for pricing.
+          </div>
+        </>
+      )}
       <div className="workflow-rental-box">
         <div className="workflow-rental-head">
           <b>{selectedGroup}</b>
@@ -11638,6 +11686,86 @@ function rentalGroupDisplayMode(field) {
   return field.rentalDisplayMode || ((field.rentalGroup || field.label) === "Tables" ? "separate_items" : "grouped");
 }
 
+function rentalRepeatDefaults(field = {}) {
+  const groupName = field.rentalGroup || field.label || "Items";
+  const singular = groupName.replace(/s$/i, "");
+  return {
+    addLabel: "Add " + groupName.toLowerCase(),
+    quantityLabel: /chair/i.test(groupName) ? "# of Seats:" : "Quantity:",
+    typeLabel: "Type of " + groupName + ":",
+    singular,
+  };
+}
+
+function newRentalRepeatRow(items = []) {
+  return { id: "row_" + Math.random().toString(36).slice(2, 10), quantity: "", itemId: items.length === 1 ? items[0].id : "" };
+}
+
+// Repeatable rows are mirrored into selectedItems/itemValues (quantities summed
+// per item) so pricing, summaries and admin views read them like any other mode.
+function rentalRepeatFieldState(fieldState = {}, rows = []) {
+  const selectedItems = {};
+  const itemValues = {};
+  rows.forEach((row) => {
+    if (!row.itemId) return;
+    const qty = Number(row.quantity || 0);
+    selectedItems[row.itemId] = true;
+    itemValues[row.itemId] = { quantity: Number(itemValues[row.itemId]?.quantity || 0) + qty };
+  });
+  return { ...fieldState, groupSelected: true, rows, selectedItems, itemValues };
+}
+
+function ClientRentalRepeatRows({ field, items, fieldState, onChange }) {
+  const pricesVisible = useClientPricingVisible();
+  const defaults = rentalRepeatDefaults(field);
+  const rows = Array.isArray(fieldState.rows) && fieldState.rows.length ? fieldState.rows : [newRentalRepeatRow(items)];
+  const maxRows = Number(field.repeatMaxRows || 0);
+  const canAdd = !maxRows || rows.length < maxRows;
+  const quantityOptions = rentalCountOptions(field.repeatQuantityMin ?? 1, field.repeatQuantityMax || 200, field.repeatQuantityStep || 1);
+  const setRows = (nextRows) => onChange(rentalRepeatFieldState(fieldState, nextRows));
+  const updateRow = (rowId, patch) => setRows(rows.map((row) => row.id === rowId ? { ...row, ...patch } : row));
+  return (
+    <div className="cv-rental-detail cv-rental-group-panel cv-rental-repeat">
+      <div className="cv-rental-detail-head cv-rental-repeat-head">
+        <span>{field.label}</span>
+        {canAdd && (
+          <button type="button" className="cv-rental-repeat-add" onClick={() => setRows([...rows, newRentalRepeatRow(items)])}>
+            {field.repeatAddLabel || defaults.addLabel}
+          </button>
+        )}
+      </div>
+      <div className="cv-rental-detail-body cv-rental-repeat-body">
+        {field.fieldDescription && <p className="cv-rental-detail-desc">{field.fieldDescription}</p>}
+        {rows.map((row, index) => (
+          <div className="cv-rental-repeat-row" key={row.id}>
+            {index > 0 && (
+              <div className="cv-rental-repeat-row-actions">
+                <button type="button" className="cv-rental-repeat-remove" onClick={() => setRows(rows.filter((candidate) => candidate.id !== row.id))}>Remove</button>
+              </div>
+            )}
+            <div className="cv-rental-field-label">{field.repeatQuantityLabel || defaults.quantityLabel}</div>
+            <select className="cv-input cv-select" value={row.quantity ?? ""} onChange={(e) => updateRow(row.id, { quantity: e.target.value === "" ? "" : Number(e.target.value) })}>
+              <option value="">Select one</option>
+              {quantityOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <div className="cv-rental-field-label">
+              {field.repeatTypeLabel || defaults.typeLabel}
+              {field.repeatTypeInfo && <RentalInfoIcon text={field.repeatTypeInfo} />}
+            </div>
+            <select className="cv-input cv-select" value={row.itemId || ""} onChange={(e) => updateRow(row.id, { itemId: e.target.value })}>
+              <option value="">Select one</option>
+              {items.map((item) => {
+                const price = pricesVisible ? workflowRentalPriceLabel(item) : "";
+                return <option key={item.id} value={item.id}>{item.name}{price ? " - " + price : ""}</option>;
+              })}
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function rentalItemImage(item) {
   return item?.imageUrl || item?.rentalImageUrl || item?.rentalImage || item?.image || "";
 }
@@ -12132,7 +12260,9 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
       if (fieldState.groupSelected) {
         // Deselecting a group is a full reset: nested item checks, quantities,
         // and client-choice answers must not survive in the cost summary.
-        setFieldState(tile.field.id, { ...fieldState, groupSelected: false, selectedItems: {}, itemValues: {} });
+        setFieldState(tile.field.id, { ...fieldState, groupSelected: false, selectedItems: {}, itemValues: {}, rows: [] });
+      } else if (rentalGroupDisplayMode(tile.field) === "repeatable_rows") {
+        setFieldState(tile.field.id, rentalRepeatFieldState(fieldState, [newRentalRepeatRow(tile.items)]));
       } else {
         setFieldState(tile.field.id, { ...fieldState, groupSelected: true });
       }
@@ -12202,6 +12332,17 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                 ));
               }
               if (!fieldState.groupSelected) return null;
+              if (mode === "repeatable_rows") {
+                return (
+                  <ClientRentalRepeatRows
+                    key={field.id}
+                    field={field}
+                    items={items}
+                    fieldState={fieldState}
+                    onChange={(next) => setFieldState(field.id, next)}
+                  />
+                );
+              }
               const singleGroupedItem = mode === "grouped" && items.length === 1 ? items[0] : null;
               if (singleGroupedItem) {
                 return (
