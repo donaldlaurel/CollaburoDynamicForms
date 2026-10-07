@@ -14630,6 +14630,11 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     );
   };
   const missingRequiredFields = getMissingRequiredFields(step);
+  const missingRequiredFieldIds = new Set(missingRequiredFields.map((f) => f.id));
+  const fieldWrapClassName = (fieldId, fieldError) => {
+    if (fieldError) return "cv-field-has-error";
+    return missingRequiredFieldIds.has(fieldId) ? "cv-field-pending" : "";
+  };
   const emailField = findFieldByLabel(["email"]);
   const emailAnswer = findAnswerByLabel(["email"]);
   const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAnswer);
@@ -15783,7 +15788,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                             <div
                               key={f.id}
                               data-cv-field-id={f.id}
-                              className={fieldError ? "cv-field-has-error" : ""}
+                              className={fieldWrapClassName(f.id, fieldError)}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
                               <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
@@ -15822,7 +15827,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                             <div
                               key={f.id}
                               data-cv-field-id={f.id}
-                              className={fieldError ? "cv-field-has-error" : ""}
+                              className={fieldWrapClassName(f.id, fieldError)}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
                               <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
@@ -15861,7 +15866,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                             <div
                               key={f.id}
                               data-cv-field-id={f.id}
-                              className={fieldError ? "cv-field-has-error" : ""}
+                              className={fieldWrapClassName(f.id, fieldError)}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
                               <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
@@ -15905,7 +15910,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 	                                <div
 	                                  key={f.id}
 	                                  data-cv-field-id={f.id}
-	                                  className={fieldError ? "cv-field-has-error" : ""}
+	                                  className={fieldWrapClassName(f.id, fieldError)}
 	                                  style={wide ? { gridColumn: "1 / -1" } : {}}
 	                                >
 	                                  <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
