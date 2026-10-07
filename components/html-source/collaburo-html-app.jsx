@@ -4306,7 +4306,7 @@ function RentalGroupFieldEditor({ field, onChange }) {
             </div>
           </div>
           <div className="rental-help" style={{ marginBottom: 10 }}>
-            Clients add as many rows as they need. Each row picks a quantity and one item from this rental group. Rows that use the same item are added together for pricing.
+            Clients add as many rows as they need. Each row picks a quantity and a type. The type dropdown lists each item's first radio/select client choice (for example chair styles); items without one are listed by name. Each row is priced separately.
           </div>
         </>
       )}
@@ -11697,20 +11697,70 @@ function rentalRepeatDefaults(field = {}) {
   };
 }
 
-function newRentalRepeatRow(items = []) {
-  return { id: "row_" + Math.random().toString(36).slice(2, 10), quantity: "", itemId: items.length === 1 ? items[0].id : "" };
+function newRentalRepeatRow() {
+  return { id: "row_" + Math.random().toString(36).slice(2, 10), quantity: "", itemId: "", optionId: "" };
 }
 
-// Repeatable rows are mirrored into selectedItems/itemValues (quantities summed
-// per item) so pricing, summaries and admin views read them like any other mode.
-function rentalRepeatFieldState(fieldState = {}, rows = []) {
+function rentalRepeatTypeGroup(item) {
+  return (item?.optionGroups || []).find((group) => ["radio", "select"].includes(group.type) && (group.options || []).length > 0) || null;
+}
+
+// The "type" dropdown lists each item's first radio/select choice group (e.g.
+// the chair styles); items without one are offered as a single choice.
+function rentalRepeatChoices(items = []) {
+  const choices = [];
+  items.forEach((item) => {
+    const group = rentalRepeatTypeGroup(item);
+    if (!group) {
+      choices.push({ key: String(item.id), itemId: item.id, optionId: "", label: item.name, priceLabel: workflowRentalPriceLabel(item) });
+      return;
+    }
+    (group.options || []).map(normalizeRentalChoiceOption).forEach((option) => {
+      if (rentalChoiceValueHiddenForVenue(group, option.id || option.label)) return;
+      const optionId = option.id || option.label;
+      choices.push({
+        key: item.id + "::" + optionId,
+        itemId: item.id,
+        optionId,
+        label: items.length > 1 ? item.name + " - " + option.label : option.label,
+        priceLabel: rentalOptionPriceLabel(option),
+      });
+    });
+  });
+  return choices;
+}
+
+function rentalRepeatRowValue(item, row = {}) {
+  const qty = Number(row.quantity || 0);
+  const optionGroups = {};
+  (item?.optionGroups || []).forEach((group) => {
+    if (["quantity", "number"].includes(group.type)) optionGroups[group.id] = qty;
+  });
+  const typeGroup = rentalRepeatTypeGroup(item);
+  if (typeGroup && row.optionId) {
+    const option = (typeGroup.options || []).map(normalizeRentalChoiceOption).find((candidate) => String(candidate.id || candidate.label) === String(row.optionId));
+    optionGroups[typeGroup.id] = { value: row.optionId, label: option?.label || "" };
+  }
+  return { quantity: qty, optionGroups };
+}
+
+function rentalRepeatRowLabel(items = [], row = {}) {
+  const choice = rentalRepeatChoices(items).find((candidate) => String(candidate.itemId) === String(row.itemId) && String(candidate.optionId || "") === String(row.optionId || ""));
+  return choice?.label || row.optionId || row.itemId || "";
+}
+
+// Rows are also mirrored into selectedItems/itemValues so views that are not
+// row-aware still see which items were chosen; pricing is computed per row.
+function rentalRepeatFieldState(fieldState = {}, rows = [], items = []) {
   const selectedItems = {};
   const itemValues = {};
   rows.forEach((row) => {
     if (!row.itemId) return;
-    const qty = Number(row.quantity || 0);
+    const item = items.find((candidate) => String(candidate.id) === String(row.itemId));
+    const value = rentalRepeatRowValue(item, row);
     selectedItems[row.itemId] = true;
-    itemValues[row.itemId] = { quantity: Number(itemValues[row.itemId]?.quantity || 0) + qty };
+    const prev = itemValues[row.itemId];
+    itemValues[row.itemId] = prev ? { ...prev, quantity: Number(prev.quantity || 0) + value.quantity } : value;
   });
   return { ...fieldState, groupSelected: true, rows, selectedItems, itemValues };
 }
@@ -11718,18 +11768,26 @@ function rentalRepeatFieldState(fieldState = {}, rows = []) {
 function ClientRentalRepeatRows({ field, items, fieldState, onChange }) {
   const pricesVisible = useClientPricingVisible();
   const defaults = rentalRepeatDefaults(field);
-  const rows = Array.isArray(fieldState.rows) && fieldState.rows.length ? fieldState.rows : [newRentalRepeatRow(items)];
+  const rows = Array.isArray(fieldState.rows) && fieldState.rows.length ? fieldState.rows : [newRentalRepeatRow()];
+  const choices = rentalRepeatChoices(items);
+  const typeGroup = items.length === 1 ? rentalRepeatTypeGroup(items[0]) : null;
+  const typeGroupInfo = typeGroup?.infoText || typeGroup?.description || "";
   const maxRows = Number(field.repeatMaxRows || 0);
   const canAdd = !maxRows || rows.length < maxRows;
-  const quantityOptions = rentalCountOptions(field.repeatQuantityMin ?? 1, field.repeatQuantityMax || 200, field.repeatQuantityStep || 1);
-  const setRows = (nextRows) => onChange(rentalRepeatFieldState(fieldState, nextRows));
+  const quantityOptions = rentalCountOptions(field.repeatQuantityMin === "" || field.repeatQuantityMin == null ? 1 : field.repeatQuantityMin, field.repeatQuantityMax || 200, field.repeatQuantityStep || 1);
+  const setRows = (nextRows) => onChange(rentalRepeatFieldState(fieldState, nextRows, items));
   const updateRow = (rowId, patch) => setRows(rows.map((row) => row.id === rowId ? { ...row, ...patch } : row));
+  const chooseType = (rowId, key) => {
+    const choice = choices.find((candidate) => candidate.key === key);
+    updateRow(rowId, { itemId: choice?.itemId || "", optionId: choice?.optionId || "" });
+  };
+  const rowChoiceKey = (row) => row.itemId ? (row.optionId ? row.itemId + "::" + row.optionId : String(row.itemId)) : "";
   return (
     <div className="cv-rental-detail cv-rental-group-panel cv-rental-repeat">
       <div className="cv-rental-detail-head cv-rental-repeat-head">
         <span>{field.label}</span>
         {canAdd && (
-          <button type="button" className="cv-rental-repeat-add" onClick={() => setRows([...rows, newRentalRepeatRow(items)])}>
+          <button type="button" className="cv-rental-repeat-add" onClick={() => setRows([...rows, newRentalRepeatRow()])}>
             {field.repeatAddLabel || defaults.addLabel}
           </button>
         )}
@@ -11750,13 +11808,13 @@ function ClientRentalRepeatRows({ field, items, fieldState, onChange }) {
             </select>
             <div className="cv-rental-field-label">
               {field.repeatTypeLabel || defaults.typeLabel}
-              {field.repeatTypeInfo && <RentalInfoIcon text={field.repeatTypeInfo} />}
+              <RentalInfoIcon text={field.repeatTypeInfo || typeGroupInfo} />
             </div>
-            <select className="cv-input cv-select" value={row.itemId || ""} onChange={(e) => updateRow(row.id, { itemId: e.target.value })}>
+            <select className="cv-input cv-select" value={rowChoiceKey(row)} onChange={(e) => chooseType(row.id, e.target.value)}>
               <option value="">Select one</option>
-              {items.map((item) => {
-                const price = pricesVisible ? workflowRentalPriceLabel(item) : "";
-                return <option key={item.id} value={item.id}>{item.name}{price ? " - " + price : ""}</option>;
+              {choices.map((choice) => {
+                const price = pricesVisible ? choice.priceLabel : "";
+                return <option key={choice.key} value={choice.key}>{choice.label}{price ? " - " + price : ""}</option>;
               })}
             </select>
           </div>
@@ -12128,7 +12186,18 @@ function computeRentalFieldsCost(step, stepState = {}, venue = null) {
     if (mode === "grouped" && fieldState.groupSelected && items.length === 1) selectedIds.add(items[0].id);
     const lines = [];
     const deliveryItems = [];
-    items.filter((item) => selectedIds.has(item.id)).forEach((item) => {
+    if (mode === "repeatable_rows" && Array.isArray(fieldState.rows)) {
+      if (fieldState.groupSelected) {
+        fieldState.rows.forEach((row) => {
+          const item = items.find((candidate) => String(candidate.id) === String(row.itemId));
+          if (!item || !Number(row.quantity || 0)) return;
+          rentalItemCostLine(item, rentalRepeatRowValue(item, row)).lines.forEach((line) => lines.push(line));
+          if (rentalRequiresDelivery(item) && !deliveryItems.some((entry) => entry.itemId === item.id)) {
+            deliveryItems.push({ itemId: item.id, label: item.name, deliveryOptionId: item.deliveryOptionId });
+          }
+        });
+      }
+    } else items.filter((item) => selectedIds.has(item.id)).forEach((item) => {
       const result = rentalItemCostLine(item, (fieldState.itemValues || {})[item.id] || {});
       result.lines.forEach((line) => lines.push(line));
       if (rentalRequiresDelivery(item)) deliveryItems.push({ itemId: item.id, label: item.name, deliveryOptionId: item.deliveryOptionId });
@@ -12262,7 +12331,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
         // and client-choice answers must not survive in the cost summary.
         setFieldState(tile.field.id, { ...fieldState, groupSelected: false, selectedItems: {}, itemValues: {}, rows: [] });
       } else if (rentalGroupDisplayMode(tile.field) === "repeatable_rows") {
-        setFieldState(tile.field.id, rentalRepeatFieldState(fieldState, [newRentalRepeatRow(tile.items)]));
+        setFieldState(tile.field.id, rentalRepeatFieldState(fieldState, [newRentalRepeatRow()], tile.items));
       } else {
         setFieldState(tile.field.id, { ...fieldState, groupSelected: true });
       }
@@ -13577,6 +13646,13 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const rentalDisplay = (field, fieldState = {}, venueId = "") => {
       const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
       const mode = rentalGroupDisplayMode(field);
+      if (mode === "repeatable_rows" && Array.isArray(fieldState?.rows)) {
+        if (!fieldState.groupSelected) return "";
+        return fieldState.rows
+          .filter((row) => row.itemId || row.quantity)
+          .map((row) => `${rentalRepeatRowLabel(items, row) || "Not selected"}: ${row.quantity || 0}`)
+          .join("\n");
+      }
       const selectedIds = new Set((mode === "separate_items" || fieldState?.groupSelected) ? Object.keys(fieldState?.selectedItems || {}).filter((id) => fieldState.selectedItems[id]) : []);
       if (fieldState?.groupSelected && selectedIds.size === 0 && items.length === 1) selectedIds.add(items[0].id);
       const lines = [];
@@ -19416,6 +19492,26 @@ function BookingReadOnlyRentals({ step, answers, showHeading = true }) {
   const scopes = root.__byVenue ? Object.entries(root.__byVenue).map(([venueId, state]) => ({ venueId, state })) : [{ venueId: "", state: root }];
   const content = <>
     {fields.map((field) => {
+      if (rentalGroupDisplayMode(field) === "repeatable_rows") {
+        const repeatRows = scopes.flatMap(({ venueId, state }) => {
+          const current = state?.[field.id] || {};
+          if (!current.groupSelected || !Array.isArray(current.rows)) return [];
+          const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
+          return current.rows.filter((row) => row.itemId).map((row) => ({ key: `${venueId}:${row.id}`, label: rentalRepeatRowLabel(items, row), quantity: row.quantity || 0 }));
+        });
+        const defaults = rentalRepeatDefaults(field);
+        return <div className="booking-readonly-rental-group" key={field.id}>
+          <h3>{field.label}</h3>{field.fieldDescription && <p>{field.fieldDescription}</p>}
+          {repeatRows.length ? <div className="booking-readonly-rental-grid">{repeatRows.map((row) => (
+            <article className="booking-readonly-rental-card selected" key={row.key}>
+              <div className="booking-rental-row-summary">
+                <span className="booking-rental-card-check selected">✓</span>
+                <div><strong>{row.label}</strong><p>{(field.repeatQuantityLabel || defaults.quantityLabel).replace(/:\s*$/, "")}: {row.quantity}</p></div>
+              </div>
+            </article>
+          ))}</div> : <div className="booking-readonly-empty">No items selected.</div>}
+        </div>;
+      }
       const itemRows = scopes.flatMap(({ venueId, state }) => {
         const current = state?.[field.id] || {};
         const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
