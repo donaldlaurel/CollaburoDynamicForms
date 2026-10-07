@@ -3544,7 +3544,57 @@ function groupQuantityForPreview(item, option) {
   return item.pricingModel === "per_hour" ? 3 : 2;
 }
 
-function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], onPatch, onAddOptionGroup, onUpdateOptionGroup, onDeleteOptionGroup, onReorderOptionGroups }) {
+const RENTAL_TECH_QUESTIONS_SEED_ID = "ra_tech_setup_questions";
+
+function rentalSeedNameKey(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Catalogs imported from the old site use different ids (old_addcost_*), so seed
+// rows are matched by id first and then by name.
+function rentalSeedRowFor(row) {
+  if (!row) return null;
+  const byId = SAMPLE_RENTAL_CATALOG.find((seed) => seed.id === row.id);
+  if (byId) return byId;
+  const key = rentalSeedNameKey(row.name);
+  return key ? SAMPLE_RENTAL_CATALOG.find((seed) => rentalSeedNameKey(seed.name) === key) || null : null;
+}
+
+function rentalSeedIdMap(rows = []) {
+  const map = {};
+  rows.forEach((row) => {
+    const seed = rentalSeedRowFor(row);
+    if (seed && (!map[seed.id] || row.id === seed.id)) map[seed.id] = row.id;
+  });
+  return map;
+}
+
+function remapRentalSeedItemIds(value, idMap) {
+  if (Array.isArray(value)) return value.map((entry) => remapRentalSeedItemIds(entry, idMap));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => {
+    if (key === "itemId" && typeof entry === "string") return [key, idMap[entry] || entry];
+    if (key === "itemIds" && Array.isArray(entry)) return [key, entry.map((id) => idMap[id] || id)];
+    return [key, remapRentalSeedItemIds(entry, idMap)];
+  }));
+}
+
+function rentalDefaultSetupPatch(seedId, rows = []) {
+  const setup = LEGACY_RENTAL_ARCHITECTURE[seedId];
+  if (!setup || !(setup.optionGroups || setup.packageBehavior || setup.recommendations)) return null;
+  const idMap = rentalSeedIdMap(rows);
+  const patch = { alwaysShowInGroup: !!setup.alwaysShowInGroup };
+  if (setup.optionGroups) patch.optionGroups = remapRentalSeedItemIds(setup.optionGroups, idMap);
+  if (setup.packageBehavior) patch.packageBehavior = remapRentalSeedItemIds(setup.packageBehavior, idMap);
+  if (setup.recommendations) {
+    patch.recommendations = remapRentalSeedItemIds(setup.recommendations, idMap);
+    patch.recommendationHeading = setup.recommendationHeading || "";
+    patch.recommendationAddLabel = setup.recommendationAddLabel || "";
+  }
+  return patch;
+}
+
+function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], onPatch, onAddItems, onAddOptionGroup, onUpdateOptionGroup, onDeleteOptionGroup, onReorderOptionGroups }) {
   const Ic = window.Icons;
   const categories = Array.from(new Set([...RENTAL_CATEGORIES, ...rows.map((r) => r.category).filter(Boolean)]));
   const optionGroups = (item.optionGroups || []).map((group, index) => {
@@ -3575,19 +3625,18 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
   };
   const setDeliveryRequired = (checked) => onPatch({ deliveryRequired: checked, deliveryOptionId: checked ? (item.deliveryOptionId || activeDeliveryOptions[0]?.id || "") : "" });
   const itemVenues = venues.filter((venue) => venue?.id && rentalAvailableForVenue(item, venue.id));
-  const legacySetup = LEGACY_RENTAL_ARCHITECTURE[item.id];
-  const canRestoreSetup = !!legacySetup && !!(legacySetup.optionGroups || legacySetup.packageBehavior || legacySetup.recommendations);
+  const seedRow = rentalSeedRowFor(item);
+  const defaultSetupPatch = seedRow ? rentalDefaultSetupPatch(seedRow.id, rows) : null;
   const restoreSetup = () => {
     if (!window.confirm("Replace this item's choices, package contents and minimum-item rules with the default setup? Your edits to these sections will be lost.")) return;
-    const patch = { alwaysShowInGroup: !!legacySetup.alwaysShowInGroup };
-    if (legacySetup.optionGroups) patch.optionGroups = JSON.parse(JSON.stringify(legacySetup.optionGroups));
-    if (legacySetup.packageBehavior) patch.packageBehavior = JSON.parse(JSON.stringify(legacySetup.packageBehavior));
-    if (legacySetup.recommendations) {
-      patch.recommendations = JSON.parse(JSON.stringify(legacySetup.recommendations));
-      patch.recommendationHeading = legacySetup.recommendationHeading || "";
-      patch.recommendationAddLabel = legacySetup.recommendationAddLabel || "";
-    }
-    onPatch(patch);
+    onPatch(defaultSetupPatch);
+  };
+  const techQuestionsMissing = seedRow?.category === "AV / Tech" && !rows.some((row) => rentalSeedRowFor(row)?.id === RENTAL_TECH_QUESTIONS_SEED_ID);
+  const addTechQuestions = () => {
+    const seed = SAMPLE_RENTAL_CATALOG.find((row) => row.id === RENTAL_TECH_QUESTIONS_SEED_ID);
+    if (!seed || !onAddItems) return;
+    const [normalized] = normalizeRentalCatalog([seed]);
+    onAddItems(item.category, [{ ...normalized, category: item.category, ...rentalDefaultSetupPatch(RENTAL_TECH_QUESTIONS_SEED_ID, rows) }]);
   };
   return (
     <div className="editor-col">
@@ -3597,8 +3646,11 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
             <div className="editor-head-tag">Rental Item</div>
             <h1>{item.name || "Untitled rental"}</h1>
             <p>Keep this simple: name the rental, choose how it is priced, then add any choices the client must answer.</p>
-            {canRestoreSetup && (
-              <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={restoreSetup}>Restore default setup</button>
+            {(defaultSetupPatch || (techQuestionsMissing && onAddItems)) && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                {defaultSetupPatch && <button type="button" className="btn sm" onClick={restoreSetup}>Restore default setup</button>}
+                {techQuestionsMissing && onAddItems && <button type="button" className="btn sm" onClick={addTechQuestions}><Ic.Plus size={12} /> Add Tech setup questions</button>}
+              </div>
             )}
           </div>
           <div className="rental-pill-row">
@@ -4193,6 +4245,7 @@ function RentalsCatalogView({ catalog, onChange: commitCatalog, venues = [], sit
           venues={venues}
           deliveryOptions={deliveryOptions}
           onPatch={(patch) => patchItem(selected.id, patch)}
+          onAddItems={addRecommendedItems}
           onAddOptionGroup={addOptionGroup}
           onUpdateOptionGroup={updateOptionGroup}
           onDeleteOptionGroup={deleteOptionGroup}
