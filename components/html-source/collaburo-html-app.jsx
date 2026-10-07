@@ -374,8 +374,8 @@ function techAnswer(sourceGroupId, operator, valueOrValues) {
     : { source: "question", sourceGroupId, operator, value: valueOrValues, values: [valueOrValues] };
 }
 
-function techNotBringing(equipmentId) {
-  return techAnswer("external_av_equipment", "not_in", [equipmentId]);
+function techBringingOwn(equipmentId) {
+  return techRuleSets([techAnswer("external_av_equipment", "in", [equipmentId])]);
 }
 
 const LEGACY_RENTAL_ARCHITECTURE = {
@@ -1008,6 +1008,7 @@ const LEGACY_RENTAL_ARCHITECTURE = {
         id: "external_av_equipment",
         label: "Will you (or someone) be bringing any Audio/Video equipment (sound system, projector, microphone, receivers, mixers, cameras, webcams, etc.)? Check all that applies:",
         type: "checkbox",
+        required: true,
         quantitySource: "fixed",
         options: [
           techOption("sound_system", "Myself or someone will bring a sound system from outside (speakers, bass, microphone, receiver, mixer, cables, etc.)"),
@@ -1098,6 +1099,7 @@ const LEGACY_RENTAL_ARCHITECTURE = {
     ],
     recommendationHeading: "Based on your answers above, the minimum tech required are:",
     recommendationAddLabel: "Yes, add the missing tech items",
+    requireRecommendations: true,
     recommendations: [
       { id: "rs_projector", label: "Projector / Projector Screen", itemIds: ["ra_projector"], visibility: techRuleSets([techItemSelected("ra_projector")]) },
       {
@@ -1105,29 +1107,29 @@ const LEGACY_RENTAL_ARCHITECTURE = {
         label: "Sound System",
         itemIds: ["ra_sound_system"],
         visibility: techRuleSets(
-          [techAnswer("projector_display", "equals", "with_audio"), techNotBringing("sound_system")],
-          [techAnswer("sound_system_plan", "in", ["bluetooth", "laptop_hdmi"]), techNotBringing("sound_system")],
-          [techAnswer("online_platform", "in", ["listen_only", "participate"]), techNotBringing("sound_system")],
-          [techAnswer("microphone_need", "in", ["stage", "different_spots"]), techNotBringing("sound_system")],
+          [techAnswer("projector_display", "equals", "with_audio")],
+          [techAnswer("sound_system_plan", "in", ["bluetooth", "laptop_hdmi"])],
+          [techAnswer("online_platform", "in", ["listen_only", "participate"])],
+          [techAnswer("microphone_need", "in", ["stage", "different_spots"])],
         ),
+        waiveWhen: techBringingOwn("sound_system"),
       },
       {
         id: "rs_headset",
         label: "At least 1 wireless microphone or headset is required for online participants to hear the facilitator",
         itemIds: ["ra_wireless_mic", "ra_wireless_headsets"],
-        visibility: techRuleSets([techAnswer("online_platform", "in", ["listen_only", "participate"]), techNotBringing("sound_system")]),
-      },
-      {
-        id: "rs_wireless_room",
-        label: "A wireless microphone or headset is required to speak from different spots in the room",
-        itemIds: ["ra_wireless_mic", "ra_wireless_headsets"],
-        visibility: techRuleSets([techAnswer("microphone_need", "equals", "different_spots"), techNotBringing("sound_system")]),
+        visibility: techRuleSets(
+          [techAnswer("online_platform", "in", ["listen_only", "participate"])],
+          [techAnswer("microphone_need", "equals", "different_spots")],
+        ),
+        waiveWhen: techBringingOwn("sound_system"),
       },
       {
         id: "rs_microphone",
         label: "A wired microphone or wireless microphone/headset is required for in-room attendees to hear. Wireless microphone is recommended as sound projects from 4 speakers as opposed to 1 speaker for wired microphone.",
         itemIds: ["ra_wired_mic", "ra_wireless_mic", "ra_wireless_headsets"],
-        visibility: techRuleSets([techAnswer("microphone_need", "equals", "stage"), techNotBringing("sound_system")]),
+        visibility: techRuleSets([techAnswer("microphone_need", "equals", "stage")]),
+        waiveWhen: techBringingOwn("sound_system"),
       },
       {
         id: "rs_bluetooth",
@@ -1139,19 +1141,22 @@ const LEGACY_RENTAL_ARCHITECTURE = {
         id: "rs_hdmi",
         label: "You will be required to change the HDMI cord from one laptop to another which will impact the projector screen, and in-person attendees will see the new laptop's screen instead. A better solution to this, is to rent the \"Mobile TV\" and connect it separately with another laptop.",
         itemIds: ["ra_mobile_tv"],
-        visibility: techRuleSets([techAnswer("second_audio_device", "equals", "other_laptop_hdmi"), techNotBringing("projector_screen")]),
+        visibility: techRuleSets([techAnswer("second_audio_device", "equals", "other_laptop_hdmi")]),
+        waiveWhen: techBringingOwn("projector_screen"),
       },
       {
         id: "rs_webcam",
         label: "Web conference Camera or PTZ camera",
         itemIds: ["ra_web_conference_camera", "ra_ptz"],
-        visibility: techRuleSets([techAnswer("online_see_room", "equals", "see_mc"), techNotBringing("cameras_webcams")]),
+        visibility: techRuleSets([techAnswer("online_see_room", "equals", "see_mc")]),
+        waiveWhen: techBringingOwn("cameras_webcams"),
       },
       {
         id: "rs_ptzcam",
         label: "PTZ camera",
         itemIds: ["ra_ptz"],
-        visibility: techRuleSets([techAnswer("online_see_room", "equals", "see_mc_and_room"), techNotBringing("cameras_webcams")]),
+        visibility: techRuleSets([techAnswer("online_see_room", "equals", "see_mc_and_room")]),
+        waiveWhen: techBringingOwn("cameras_webcams"),
       },
     ],
     migrationNotes: ["Mirrors the old site's Main Hall tech questions (Q1-Q8) and the \"minimum tech required\" summary."],
@@ -2328,15 +2333,15 @@ function RentalConditionRow({ condition, localGroups, parentItem, catalogRows, o
             <div>
               <label className="lbl">Condition</label>
               <select className="select" value={condition.operator || "ends_late"} onChange={(e) => patch({ operator: e.target.value })}>
-                <option value="ends_late">ends at or after</option>
-                <option value="not_ends_late">ends before</option>
+                <option value="ends_late">ends after</option>
+                <option value="not_ends_late">does not end after</option>
               </select>
             </div>
             <div>
               <label className="lbl">Time</label>
               <input className="input" type="time" value={condition.value || "23:00"} onChange={(e) => patch({ value: e.target.value })} />
             </div>
-            <div className="full rental-muted">Overnight and multi-day bookings count as ending late.</div>
+            <div className="full rental-muted">Overnight and multi-day bookings, and bookings ending before 7:00 AM, also count as ending late.</div>
           </>
         )}
       </div>
@@ -2345,7 +2350,7 @@ function RentalConditionRow({ condition, localGroups, parentItem, catalogRows, o
   );
 }
 
-function RentalRuleSetsEditor({ visibility, localGroups = [], parentItem = null, catalogRows = [], onChange }) {
+function RentalRuleSetsEditor({ visibility, localGroups = [], parentItem = null, catalogRows = [], onChange, heading = "Show when all of these are true:", emptyLabel = "Or another set of conditions" }) {
   const Ic = window.Icons;
   const sets = rentalVisibilityRuleSets(visibility);
   const write = (nextSets) => onChange(nextSets.length ? { mode: "conditional", ruleSets: nextSets } : { mode: "always" });
@@ -2360,7 +2365,7 @@ function RentalRuleSetsEditor({ visibility, localGroups = [], parentItem = null,
         <React.Fragment key={setIndex}>
           {setIndex > 0 && <div className="rental-rule-or">or</div>}
           <div className="rental-rule-set">
-            <div className="rental-rule-set-head">Show when all of these are true:</div>
+            <div className="rental-rule-set-head">{heading}</div>
             {set.conditions.map((condition, conditionIndex) => (
               <RentalConditionRow
                 key={conditionIndex}
@@ -2376,7 +2381,7 @@ function RentalRuleSetsEditor({ visibility, localGroups = [], parentItem = null,
           </div>
         </React.Fragment>
       ))}
-      <button type="button" className="btn sm" onClick={() => write([...sets, { conditions: [newCondition()] }])}><Ic.Plus size={12} /> Or another set of conditions</button>
+      <button type="button" className="btn sm" onClick={() => write([...sets, { conditions: [newCondition()] }])}><Ic.Plus size={12} /> {sets.length === 0 ? emptyLabel : "Or another set of conditions"}</button>
     </div>
   );
 }
@@ -3023,6 +3028,10 @@ function RentalRecommendationsEditor({ item, rows = [], onPatch }) {
         <div className="rental-muted" style={{ marginBottom: 10 }}>
           Shows a checklist under this item's questions when the client's answers call for certain items. Items that aren't selected are flagged "Not Selected", with a button that adds them.
         </div>
+        <label className="chk" style={{ marginBottom: 10 }}>
+          <input type="checkbox" checked={!!item.requireRecommendations} onChange={(e) => onPatch({ requireRecommendations: e.target.checked })} />
+          Client must add the missing items before continuing (unless a "Not required when" rule applies)
+        </label>
         <div className="rental-editor-grid" style={{ marginBottom: 10 }}>
           <div>
             <label className="lbl">Checklist heading</label>
@@ -3071,6 +3080,17 @@ function RentalRecommendationsEditor({ item, rows = [], onPatch }) {
               catalogRows={rows}
               onChange={(visibility) => updateRecommendation(index, { visibility })}
             />
+            {item.requireRecommendations && (rec.itemIds || []).length > 0 && (
+              <RentalRuleSetsEditor
+                visibility={rec.waiveWhen?.mode === "conditional" ? rec.waiveWhen : { mode: "conditional", ruleSets: [] }}
+                localGroups={localGroups}
+                parentItem={item}
+                catalogRows={rows}
+                heading="Not required when all of these are true:"
+                emptyLabel={'Add a "Not required when" rule (e.g. client brings their own)'}
+                onChange={(waiveWhen) => updateRecommendation(index, { waiveWhen: waiveWhen.mode === "conditional" ? waiveWhen : null })}
+              />
+            )}
           </div>
         ))}
         <button type="button" className="btn sm rental-add-btn" onClick={addRecommendation}><Ic.Plus size={12} /> Add requirement</button>
@@ -3206,6 +3226,8 @@ function rentalAnswerConditionMatches(condition, selected, hasValue) {
   return selected.includes(condition.value);
 }
 
+const RENTAL_EARLY_MORNING_END_MINUTES = 7 * 60;
+
 function rentalTimeToMinutes(value) {
   const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
   return match ? Number(match[1]) * 60 + Number(match[2]) : null;
@@ -3219,7 +3241,8 @@ function rentalBookingEndsLate(booking, threshold = "23:00") {
   if (end === null || limit === null) return false;
   const start = rentalTimeToMinutes(booking.startTime);
   if (start !== null && end < start) return true;
-  return end >= limit;
+  // Matches the old site: strictly after the cutoff, or ending in the early morning.
+  return end > limit || end < RENTAL_EARLY_MORNING_END_MINUTES;
 }
 
 function rentalFirstBooking(venueBookings) {
@@ -3601,6 +3624,7 @@ function rentalDefaultSetupPatch(seedId, rows = []) {
     patch.recommendations = remapRentalSeedItemIds(setup.recommendations, idMap);
     patch.recommendationHeading = setup.recommendationHeading || "";
     patch.recommendationAddLabel = setup.recommendationAddLabel || "";
+    patch.requireRecommendations = !!setup.requireRecommendations;
   }
   return patch;
 }
@@ -12904,6 +12928,49 @@ function activeRentalRecommendations(item, itemValue = {}, cross = null) {
     });
 }
 
+function rentalRecommendationWaived(rec, item, itemValue = {}, cross = null) {
+  if (rentalVisibilityRuleSets(rec?.waiveWhen).length === 0) return false;
+  const groups = [rentalParentVisibilitySource(item), ...(item.optionGroups || [])];
+  return rentalRuleSetsMet(rec.waiveWhen, groups, rentalOptionGroupVisibilityValues(groups, itemValue), new Set(), cross);
+}
+
+// Returns { [fieldId]: "questions" | "items" } for rental fields that cannot be left yet:
+// a visible required question is unanswered, or a required minimum item is missing.
+function rentalStepMissingRequirements(fields = [], stepRentalState = {}, venueIds = [], venueBookings = {}) {
+  const scopes = [];
+  if (venueIds.length > 0) {
+    const byVenue = stepRentalState?.__byVenue || {};
+    const flat = Object.fromEntries(Object.entries(stepRentalState || {}).filter(([key]) => !key.startsWith("__")));
+    venueIds.forEach((venueId) => scopes.push({ venueId, state: byVenue[venueId] || (venueIds.length === 1 ? flat : {}), booking: venueBookings?.[venueId] || null }));
+  } else {
+    scopes.push({ venueId: "", state: stepRentalState || {}, booking: rentalFirstBooking(venueBookings) });
+  }
+  const missing = {};
+  scopes.forEach(({ venueId, state, booking }) => {
+    const cross = buildRentalCrossContext(fields, state, venueId, booking);
+    cross.selected.forEach((itemId) => {
+      const item = cross.itemsById[itemId];
+      const fieldId = cross.fieldOfItem[itemId];
+      if (!item || !fieldId || missing[fieldId] === "questions") return;
+      const itemValue = cross.itemValues[itemId] || {};
+      const groups = [rentalParentVisibilitySource(item), ...(item.optionGroups || [])];
+      const values = rentalOptionGroupVisibilityValues(groups, itemValue);
+      const unanswered = (item.optionGroups || []).some((group) => group.required
+        && isRentalQuestionVisible(group, groups, values, new Set(), cross)
+        && !rentalQuestionHasValue(group, values));
+      if (unanswered) {
+        missing[fieldId] = "questions";
+        return;
+      }
+      if (!item.requireRecommendations) return;
+      const blocking = activeRentalRecommendations(item, itemValue, cross)
+        .some((rec) => !rec.satisfied && !rentalRecommendationWaived(rec, item, itemValue, cross));
+      if (blocking) missing[fieldId] = "items";
+    });
+  });
+  return missing;
+}
+
 function RentalRecommendationsBox({ item, itemValue }) {
   const ctx = React.useContext(RentalCrossContext);
   const active = activeRentalRecommendations(item, itemValue, ctx?.cross || null);
@@ -13927,18 +13994,35 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const selectedRentalVenues = (venueStepForRentals?.venues || [])
     .filter((venue) => venue.active !== false && venue.visibility !== "admin_only")
     .filter((venue) => selectedVenueIdsForRentals.includes(venue.id));
+  const rentalRequirementsForStep = (targetStep) => {
+    const rentalFields = (targetStep?.fields || [])
+      .filter((f) => f.type === "rental_group" && isFieldVisible(f, targetStep) && !fieldRuleState(f).disabled);
+    if (rentalFields.length === 0) return {};
+    return rentalStepMissingRequirements(
+      rentalFields,
+      answers.__rentalGroups?.[targetStep.id] || {},
+      selectedRentalVenues.map((venue) => venue.id),
+      answers._venueBookings || {}
+    );
+  };
   const getMissingRequiredFields = (targetStep) => {
     if (!targetStep || targetStep.stepType === "checkout") return [];
+    const rentalMissing = rentalRequirementsForStep(targetStep);
     return (targetStep.fields || [])
       .filter((f) => isFieldVisible(f, targetStep))
       .filter((f) => {
         const rules = fieldRuleState(f);
         if (rules.disabled) return false;
         const rawValue = f.type === "rental_group" ? answers.__rentalGroups?.[targetStep.id]?.[f.id] : answers[f.id];
-        return (rules.required && !answerHasValue(rawValue)) || fieldMissingRequiredSubOption(f, rawValue) || fieldHasInvalidPhone(f, rawValue);
+        return (rules.required && !answerHasValue(rawValue)) || fieldMissingRequiredSubOption(f, rawValue) || fieldHasInvalidPhone(f, rawValue) || !!rentalMissing[f.id];
       });
   };
   const validationMessageForField = (field, targetStep) => {
+    if (field.type === "rental_group") {
+      const rentalReason = rentalRequirementsForStep(targetStep)[field.id];
+      if (rentalReason === "questions") return "Please answer the required questions for the rentals you selected.";
+      if (rentalReason === "items") return "Please add the minimum required items listed above, or tell us you will bring your own equipment.";
+    }
     const rawValue = field.type === "rental_group" ? answers.__rentalGroups?.[targetStep.id]?.[field.id] : answers[field.id];
     if (fieldMissingRequiredSubOption(field, rawValue)) return validations.requiredSubOptionMessage || "Choose a required sub-option.";
     if (fieldHasInvalidPhone(field, rawValue)) return PHONE_INVALID_MESSAGE;
