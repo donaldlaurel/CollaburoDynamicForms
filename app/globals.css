@@ -2889,6 +2889,15 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-rental-group-list{display:flex;flex-direction:column;gap:6px}
 .cv-rental-group-item{border:1px solid #d9dfe5;border-radius:5px;padding:7px 8px;background:#fff}
 .cv-rental-group-item .cv-rental-detail-body{padding:6px 0 0}
+.cv-rental-repeat{grid-column:1/-1}
+.cv-rental-repeat-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.cv-rental-repeat-add{border:1px solid #9aa3ad;background:#fff;border-radius:4px;padding:5px 10px;font-size:12px;font-weight:500;cursor:pointer;color:var(--ink)}
+.cv-rental-repeat-add:hover{border-color:var(--accent);color:var(--accent)}
+.cv-rental-repeat-body{display:flex;flex-direction:column;gap:10px;padding:10px}
+.cv-rental-repeat-row{border:1px solid #d9dfe5;border-radius:5px;padding:14px 18px 16px;background:#fff}
+.cv-rental-repeat-row-actions{display:flex;justify-content:flex-end;margin-bottom:4px}
+.cv-rental-repeat-remove{border:1px solid #d33a5a;color:#d33a5a;background:#fff;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer}
+.cv-rental-repeat-remove:hover{background:#fdf0f3}
 .cv-rental-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
 .cv-rental-card{border:1px solid #e5e5e5;border-radius:6px;padding:10px;text-align:center;cursor:pointer;transition:border-color .15s}
 .cv-rental-card:hover{border-color:#999}
