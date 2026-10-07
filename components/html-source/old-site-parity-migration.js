@@ -6,7 +6,9 @@
 // current version are returned untouched. Ids created by later blocks are
 // stable because the seed state is migrated again on every page load.
 
-export const OLD_SITE_PARITY_VERSION = 2;
+import { OLD_SITE_TOOLTIPS } from "./old-site-tooltip-catalog";
+
+export const OLD_SITE_PARITY_VERSION = 3;
 
 const SYS_VENUE_SOURCE = "__sys:venue";
 
@@ -154,6 +156,7 @@ export function migrateToOldSiteParity(input = {}) {
 
   if (currentVersion < 1) applyV1(state, parityContext(state), log);
   if (currentVersion < 2) applyV2(state, parityContext(state), log);
+  if (currentVersion < 3) applyV3(state, parityContext(state), log);
 
   state.siteSettings = {
     ...(state.siteSettings || {}),
@@ -1016,4 +1019,138 @@ function applyV2(state, ctx, log) {
   }
 
   if (!venues.length) log("No venues found; venue-specific catalog settings were skipped.");
+}
+
+// ===== v3: old-site info tooltips (photos + text) =====
+
+// Larger galleries (e.g. 53 napkin colours) only go on the matching choices.
+const MAX_TOOLTIP_IMAGES = 8;
+
+// Mock-up wording that the old site's real tooltip text should replace.
+const PLACEHOLDER_INFO_TEXTS = new Set([
+  "High-speed wireless internet available throughout the venue.",
+  "Access to the venue's sink for food prep, cleaning, or beverages.",
+  "Floor-standing mini fridge located in the kitchen area.",
+  "Countertop mini fridge for drinks within easy reach.",
+  "Wheelchair-accessible elevator service available throughout the venue.",
+  "Use of the venue's printer for last-minute signage or programs.",
+  "Access to the large fridge in the kitchen.",
+  "Access to the shared kitchen.",
+].map(norm));
+
+const compact = (value) => norm(value).replace(/[^a-z0-9]/g, "");
+const canReplaceText = (text) => isBlank(text) || PLACEHOLDER_INFO_TEXTS.has(norm(text));
+const nonEmpty = (list) => (Array.isArray(list) ? list.filter(Boolean) : []);
+
+function fillRentalTooltip(entity, text, urls) {
+  let changed = false;
+  const hasImages = nonEmpty(entity.infoImageUrls).length || nonEmpty(entity.infoImages).length || !isBlank(entity.infoImageUrl);
+  if (urls.length && !hasImages) {
+    entity.infoImageUrls = [...urls];
+    entity.infoImageUrl = urls[0];
+    changed = true;
+  }
+  if (text && canReplaceText(entity.infoText)) {
+    entity.infoText = text;
+    changed = true;
+  }
+  return changed;
+}
+
+function fillFieldOptionTooltip(option, text, urls) {
+  let changed = false;
+  if (urls.length && !nonEmpty(option.infoImages).length) {
+    option.infoImages = [...urls];
+    changed = true;
+  }
+  if (text && canReplaceText(option.infoText)) {
+    option.infoText = text;
+    changed = true;
+  }
+  return changed;
+}
+
+function fillFieldTooltip(field, text, urls) {
+  let changed = false;
+  if (urls.length && !nonEmpty(field.galleryImages).length && isBlank(field.galleryImage)) {
+    field.galleryImages = [...urls];
+    field.galleryImage = urls[0];
+    changed = true;
+  }
+  if (text && canReplaceText(field.helpText)) {
+    field.helpText = text;
+    changed = true;
+  }
+  return changed;
+}
+
+function rentalItemsFor(catalog, tooltip) {
+  const names = tooltip.items || [];
+  const byName = catalog.filter((item) => names.some((name) => (name.endsWith("*")
+    ? compact(item.name).startsWith(compact(name.slice(0, -1)))
+    : compact(item.name) === compact(name))));
+  if (byName.length) return byName;
+  // Some imported rows carry a wrong old-site key, so keys are only a fallback.
+  const keys = (tooltip.keys || []).map(compact);
+  return catalog.filter((item) => [item.oldSiteName, item.legacyKey].some((key) => !isBlank(key) && keys.includes(compact(key))));
+}
+
+const choiceIn = (groups, label) => groups
+  .flatMap((group) => group.options || [])
+  .find((option) => option && typeof option === "object" && compact(option.label) === compact(label));
+
+function applyV3(state, ctx, log) {
+  const catalog = state.rentalCatalog;
+  const fields = ctx.steps.flatMap((step) => step.fields || []);
+  const touchedItems = new Set();
+  let choices = 0;
+  let fieldCount = 0;
+
+  OLD_SITE_TOOLTIPS.forEach((tooltip) => {
+    const text = tooltip.text || "";
+    const images = tooltip.images || [];
+    const urls = images.map((image) => image.src);
+
+    if (tooltip.kind === "field") {
+      const pattern = new RegExp(tooltip.field, "i");
+      const field = fields.find((candidate) => pattern.test(candidate.label || ""));
+      if (!field) return;
+      if (tooltip.option) {
+        const option = (field.options || []).find((candidate) => candidate && typeof candidate === "object" && compact(candidate.label) === compact(tooltip.option));
+        if (option && fillFieldOptionTooltip(option, text, urls)) fieldCount += 1;
+      } else if (fillFieldTooltip(field, text, urls)) {
+        fieldCount += 1;
+      }
+      return;
+    }
+
+    rentalItemsFor(catalog, tooltip).forEach((item) => {
+      const allGroups = (item.optionGroups || []).filter(Boolean);
+      const groups = tooltip.group ? allGroups.filter((group) => new RegExp(tooltip.group, "i").test(group.label || "")).slice(0, 1) : allGroups;
+      if (tooltip.group && !groups.length) return;
+
+      if (tooltip.option) {
+        const option = choiceIn(groups, tooltip.option);
+        if (option && fillRentalTooltip(option, text, urls)) {
+          choices += 1;
+          touchedItems.add(item.id);
+        }
+        return;
+      }
+
+      images.filter((image) => image.caption).forEach((image) => {
+        const option = choiceIn(groups, image.caption);
+        if (option && fillRentalTooltip(option, "", [image.src])) {
+          choices += 1;
+          touchedItems.add(item.id);
+        }
+      });
+      const host = tooltip.group ? groups[0] : item;
+      if (fillRentalTooltip(host, text, urls.length <= MAX_TOOLTIP_IMAGES ? urls : [])) touchedItems.add(item.id);
+    });
+  });
+
+  if (touchedItems.size || fieldCount) {
+    log(`Info tooltips: old-site photos and descriptions added to ${touchedItems.size} rental items (${choices} individual choices) and ${fieldCount} form fields/options.`);
+  }
 }
