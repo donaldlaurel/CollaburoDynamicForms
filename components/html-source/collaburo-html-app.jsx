@@ -1235,7 +1235,18 @@ function withRentalArchitecture(item) {
 }
 
 function normalizeRentalCatalog(catalog) {
-  return (catalog || []).map(withRentalArchitecture);
+  const rows = (catalog || []).map(withRentalArchitecture);
+  let idMap = null;
+  // Old-site imported packages (different ids) fall back to the default package
+  // contents, pointed at this catalog's own item ids.
+  return rows.map((row) => {
+    if (row.packageBehavior || LEGACY_RENTAL_ARCHITECTURE[row.id]) return row;
+    const seed = rentalSeedRowFor(row);
+    const setup = seed && LEGACY_RENTAL_ARCHITECTURE[seed.id];
+    if (!setup?.packageBehavior) return row;
+    idMap = idMap || rentalSeedIdMap(rows);
+    return { ...row, packageBehavior: remapRentalSeedItemIds(setup.packageBehavior, idMap) };
+  });
 }
 
 function rentalPricingLabel(model) {
@@ -4807,9 +4818,20 @@ function isRichWorkflowOption(option) {
   ));
 }
 
+// Catalogs imported from the old site have no tech questions item; until an admin
+// adds one, the seeded questions are shown in whichever group holds the AV items.
+function withSeededTechQuestions(catalog, groupName) {
+  if (catalog.some((row) => rentalSeedRowFor(row)?.id === RENTAL_TECH_QUESTIONS_SEED_ID)) return catalog;
+  if (!catalog.some((row) => row.category === groupName && rentalSeedRowFor(row)?.category === "AV / Tech")) return catalog;
+  const seed = SAMPLE_RENTAL_CATALOG.find((row) => row.id === RENTAL_TECH_QUESTIONS_SEED_ID);
+  if (!seed) return catalog;
+  const [normalized] = normalizeRentalCatalog([seed]);
+  return [...catalog, { ...normalized, category: groupName, ...rentalDefaultSetupPatch(seed.id, catalog) }];
+}
+
 function workflowRentalCatalogItems(groupName, venueId = "") {
   const source = window.CURRENT_RENTAL_CATALOG || window.SAMPLE_RENTAL_CATALOG || [];
-  const catalog = window.normalizeRentalCatalog ? window.normalizeRentalCatalog(source) : source;
+  const catalog = withSeededTechQuestions(window.normalizeRentalCatalog ? window.normalizeRentalCatalog(source) : source, groupName);
   return catalog
     .filter((item) => item.category === groupName && item.active !== false && rentalAvailableForVenue(item, venueId))
     .map((item) => rentalItemForVenue(item, venueId));
@@ -12698,6 +12720,12 @@ function rentalItemAlwaysShown(item) {
   return item?.alwaysShowInGroup === true;
 }
 
+// In separate-items mode, always-shown items appear once any regular item of the group is picked.
+function rentalSeparateItemsActive(fieldState = {}, items = []) {
+  const alwaysShownIds = new Set(items.filter(rentalItemAlwaysShown).map((item) => item.id));
+  return Object.keys(fieldState.selectedItems || {}).some((id) => !alwaysShownIds.has(id));
+}
+
 function rentalFieldSelectedItemIds(field, fieldState = {}, items = []) {
   const mode = rentalGroupDisplayMode(field);
   if (mode === "repeatable_rows") {
@@ -12709,6 +12737,9 @@ function rentalFieldSelectedItemIds(field, fieldState = {}, items = []) {
   const ids = new Set(mode === "separate_items" || fieldState.groupSelected ? Object.keys(fieldState.selectedItems || {}) : []);
   if (mode === "grouped" && fieldState.groupSelected) {
     if (items.length === 1) ids.add(items[0].id);
+    items.filter(rentalItemAlwaysShown).forEach((item) => ids.add(item.id));
+  }
+  if (mode === "separate_items" && rentalSeparateItemsActive(fieldState, items)) {
     items.filter(rentalItemAlwaysShown).forEach((item) => ids.add(item.id));
   }
   return Array.from(ids);
@@ -13172,7 +13203,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
     const mode = rentalGroupDisplayMode(field);
     const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
     if (mode === "separate_items") {
-      items.forEach((item) => allTiles.push({ type: "item", field, item, key: field.id + ":" + item.id }));
+      items.filter((item) => !rentalItemAlwaysShown(item)).forEach((item) => allTiles.push({ type: "item", field, item, key: field.id + ":" + item.id }));
     } else if (items.length > 0) {
       allTiles.push({ type: "group", field, items, key: field.id + ":group" });
     }
@@ -13251,7 +13282,8 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
               const fieldState = rentalState[field.id] || {};
               const items = workflowRentalCatalogItems(field.rentalGroup || field.label, venueId);
               if (mode === "separate_items") {
-                return items.filter((item) => fieldState.selectedItems?.[item.id]).map((item) => (
+                const showAlwaysShown = rentalSeparateItemsActive(fieldState, items);
+                return items.filter((item) => rentalItemAlwaysShown(item) ? showAlwaysShown : fieldState.selectedItems?.[item.id]).map((item) => (
                   <RentalItemDetailPreview
                     key={field.id + "_" + item.id}
                     item={item}
