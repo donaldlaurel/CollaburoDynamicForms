@@ -14485,13 +14485,8 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const [emailFieldPulseKey, setEmailFieldPulseKey] = React.useState(0);
   const [mobileCostOpen, setMobileCostOpen] = React.useState(false);
   const [progressScrollState, setProgressScrollState] = React.useState({ left: false, right: false });
-  const [introNoteDismissed, setIntroNoteDismissed] = React.useState(() => {
-    try { return window.localStorage.getItem("collaburo.client.introNoteDismissed.v1") === "1"; } catch { return false; }
-  });
-  const dismissIntroNote = () => {
-    setIntroNoteDismissed(true);
-    try { window.localStorage.setItem("collaburo.client.introNoteDismissed.v1", "1"); } catch {}
-  };
+  const [introNoteDismissed, setIntroNoteDismissed] = React.useState(false);
+  const dismissIntroNote = () => setIntroNoteDismissed(true);
   const progressBarRef = React.useRef(null);
   const lastActivityPingRef = React.useRef(0);
   const loadedAnswersRef = React.useRef(answers);
@@ -15132,7 +15127,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         const selected = Array.isArray(answers[field.id]) ? answers[field.id] : [];
         return selected.map((answer) => deliveryOptionIdFromAnswer(answer, site)).filter(Boolean);
       });
-    const deliveryLines = Object.values(rentalCost.reduce((acc, group) => {
+    const deliveryLinesById = rentalCost.reduce((acc, group) => {
       (group.deliveryItems || []).forEach((deliveryItem) => {
         const option = deliveryOptionById(site, deliveryItem.deliveryOptionId);
         if (!option || option.active === false) return;
@@ -15150,12 +15145,12 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         acc[key].metaItems.push(deliveryItem.label);
       });
       return acc;
-    }, {}));
+    }, {});
     manualDeliverySelections.forEach((optionId) => {
       const option = deliveryOptionById(site, optionId);
       if (!option || option.active === false) return;
-      if (!deliveryLines[option.id]) {
-        deliveryLines[option.id] = {
+      if (!deliveryLinesById[option.id]) {
+        deliveryLinesById[option.id] = {
           id: option.id,
           label: option.label || "Delivery",
           group: "Delivery",
@@ -15164,9 +15159,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
           total: Number(option.amount || 0),
         };
       }
-      deliveryLines[option.id].manual = true;
+      deliveryLinesById[option.id].manual = true;
     });
-    const resolvedDeliveryLines = Object.values(deliveryLines).map((line) => ({
+    const resolvedDeliveryLines = Object.values(deliveryLinesById).map((line) => ({
       ...line,
       meta: line.metaItems.length ? `Applies to ${line.metaItems.join(", ")}` : (line.manual ? "Selected delivery option" : ""),
     }));
