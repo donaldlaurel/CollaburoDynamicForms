@@ -5034,6 +5034,10 @@ function normalizeSimpleOption(option, fallback = "Option") {
   return { label: option?.label || fallback, ...option };
 }
 
+function isAddOnsField(field) {
+  return field?.id === "f77" || /^add-?ons/i.test(String(field?.label || "").trim());
+}
+
 function normalizeSimpleOptionGroups(options = []) {
   const source = options && options.length ? options : [{ label: "Option 1" }, { label: "Option 2" }];
   const groups = [];
@@ -11652,7 +11656,7 @@ function PreviewField({ f }) {
                 {o.price !== null && <span style={{ color: "var(--accent)", marginLeft: 5, fontWeight: 700 }}>+${o.price.toFixed(2)}</span>}
                 {o.infoText && <span className="info-trigger" style={{ marginLeft: 5 }}>i<span className="preview-tooltip"><span className="preview-tooltip-text">{o.infoText}</span></span></span>}
                 {o.infoImages && o.infoImages.length > 0 && <span className="info-trigger" style={{ marginLeft: 5, background: "#fff4eb", color: "var(--accent)" }}><span style={{ fontSize: 9, fontWeight: 800 }}>IMG</span><span className="preview-tooltip">{o.infoImages.map((img, ii) => <img key={ii} src={img} alt="" className="preview-tooltip-img" />)}</span></span>}
-                {o.desc && <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)", marginTop: 1 }}>{o.desc}</span>}
+                {o.desc && <span style={{ display: "block", fontSize: 8, color: "var(--ink-3)", marginTop: 1 }}>{o.desc}</span>}
               </span>
             </label>
           ))}
@@ -16427,14 +16431,14 @@ function CVInlineDescription({ text }) {
   const isLong = text.length > 220;
   const shown = (!isLong || expanded) ? text : text.slice(0, 220).trimEnd() + "…";
   return (
-    <div style={{ fontSize: 12.5, color: "#444", lineHeight: 1.55, marginTop: 4, marginBottom: 4, paddingLeft: 26 }}>
+    <div style={{ fontSize: 8, color: "#444", lineHeight: 1.55, marginTop: 4, marginBottom: 4, paddingLeft: 26 }}>
       {shown.split("\n").map((para, i) => (
         <span key={i}>{i > 0 && <br />}{para}</span>
       ))}
       {isLong && (
         <button
           onClick={(e) => { e.stopPropagation(); setExpanded((x) => !x); }}
-          style={{ background: "none", border: "none", color: "var(--ink-3)", fontSize: 12, fontWeight: 500, cursor: "pointer", padding: 0, marginLeft: 4, textDecoration: "underline" }}
+          style={{ background: "none", border: "none", color: "var(--ink-3)", fontSize: 8, fontWeight: 500, cursor: "pointer", padding: 0, marginLeft: 4, textDecoration: "underline" }}
         >
           {expanded ? "See less" : "See more…"}
         </button>
@@ -16803,7 +16807,7 @@ function CVRichTree({ items, level, displayAs, value, onChange, fieldId, depth, 
                   </span>
                 )}
                 {!isServicesStep && (it.description || it.desc) && (
-                  <span style={{ display: "block", color: "var(--ink-3)", fontSize: 11.5, lineHeight: 1.35, marginTop: 2 }}>
+                  <span style={{ display: "block", color: "var(--ink-3)", fontSize: 8, lineHeight: 1.35, marginTop: 2 }}>
                     {it.description || it.desc}
                   </span>
                 )}
@@ -17719,6 +17723,36 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
           if (autoLabels.includes(label)) return;
           onChange(selected.includes(label) ? selected.filter((item) => item !== label) : [...selected, label]);
         };
+        if (!dynamicDelivery && isAddOnsField(f)) {
+          return (
+            <div className="cv-form-group">
+              {labelEl}
+              <div className="cv-rental-group-list">
+                {optRows.map((o, i) => {
+                  const raw = normalizeSimpleOption((f.options || [])[i], o.label);
+                  const images = rentalTooltipImages(raw);
+                  const thumb = rentalItemImage(raw) || images[0] || "";
+                  const price = pricesVisible ? simpleOptionPriceDisplay(raw) : "";
+                  return (
+                    <div className="cv-rental-group-item" key={i}>
+                      <label className="cv-rental-option-row cv-rental-priced-label" style={{ margin: 0 }}>
+                        <span className={"cv-rental-item-name" + (thumb ? " has-image" : "")}>
+                          <input type="checkbox" checked={effectiveSelected.includes(o.label)} onChange={() => toggle(o.label)} />
+                          {thumb && <RentalThumbWithTip src={thumb} text={raw.infoText} images={images.filter((img) => img !== thumb)} />}
+                          <span className="cv-rental-item-copy">
+                            <strong>{raw.label}</strong>
+                            {!thumb && <RentalInfoIcon text={raw.infoText} />}
+                          </span>
+                        </span>
+                        {price && <span className="cv-rental-field-price">{price}</span>}
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
         return (
           <div className="cv-form-group">
             {labelEl}
