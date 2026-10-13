@@ -1861,7 +1861,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .rental-client-form{display:flex;flex-direction:column;gap:12px}
 .rental-client-field{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-2);padding:12px}
 .rental-client-field label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}
-.rental-client-field small{display:block;font-size:11px;color:var(--ink-3);margin-bottom:8px}
+.rental-client-field small{display:block;font-size:11.5px;color:var(--ink-3);margin-bottom:8px}
 .rental-client-label-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
 .rental-client-label-row label{margin:0}
 .rental-client-label-row strong{margin-left:auto;font-size:12px}
