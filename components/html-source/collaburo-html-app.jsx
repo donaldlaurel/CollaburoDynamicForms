@@ -3132,24 +3132,178 @@ function previewItemPriceLabel(item) {
   return price + " each";
 }
 
-function useRentalTipPosition(tipWidth = 220) {
-  const [tip, setTip] = React.useState(null);
-  const hideTip = () => setTip(null);
-  const showTip = (event) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const showAbove = rect.top > 180;
-    setTip({
-      left: Math.min(window.innerWidth - tipWidth - 16, Math.max(12, rect.left + rect.width / 2 - tipWidth / 2)),
-      top: showAbove ? rect.top - 10 : rect.bottom + 10,
-      transform: showAbove ? "translateY(-100%)" : "translateY(0)",
-    });
+function useRentalTipPosition() {
+  const [anchor, setAnchor] = React.useState(null);
+  const hideTimer = React.useRef(null);
+  const keepTip = () => clearTimeout(hideTimer.current);
+  const hideTip = () => {
+    keepTip();
+    setAnchor(null);
   };
-  return { tip, showTip, hideTip };
+  // Delay lets the pointer cross the gap into the tooltip so its image rows can be scrolled.
+  const hideTipSoon = () => {
+    keepTip();
+    hideTimer.current = setTimeout(() => setAnchor(null), 200);
+  };
+  const showTip = (event) => {
+    keepTip();
+    setAnchor(event.currentTarget.getBoundingClientRect());
+  };
+  React.useEffect(() => keepTip, []);
+  const tipStyle = (tipWidth, tipHeight) => {
+    const width = Math.min(tipWidth, window.innerWidth - 24);
+    const spaceBelow = window.innerHeight - anchor.bottom;
+    const showAbove = anchor.top >= tipHeight + 10 || anchor.top > spaceBelow;
+    return {
+      width,
+      left: Math.min(window.innerWidth - width - 12, Math.max(12, anchor.left + anchor.width / 2 - width / 2)),
+      top: showAbove ? anchor.top - 10 : anchor.bottom + 10,
+      transform: showAbove ? "translateY(-100%)" : "translateY(0)",
+    };
+  };
+  return { tip: anchor, showTip, hideTip, hideTipSoon, keepTip, tipStyle };
+}
+
+const RENTAL_TIP_IMAGE_SIZE = 235;
+const RENTAL_TIP_IMAGE_GAP = 6;
+const RENTAL_TIP_CHROME = 22;
+const rentalImageFingerprints = new Map();
+
+function rentalImageUrlKey(src) {
+  const value = String(src || "").trim();
+  if (!value || /^(data|blob):/i.test(value)) return value;
+  try {
+    const url = new URL(value, window.location.href);
+    let path = decodeURIComponent(url.pathname);
+    if (/(^|\.)cloudinary\.com$/i.test(url.hostname)) path = path.replace(/\/upload\/(?:[^/]*[_,:][^/]*\/)*(?:v\d+\/)?/, "/upload/");
+    return (url.host + path).toLowerCase();
+  } catch {
+    return value;
+  }
+}
+
+// Asks Cloudinary for a resized, auto-format/quality copy; other sources are returned unchanged.
+function compressedImageUrl(src, width = 1000) {
+  const value = String(src || "").trim();
+  const match = value.match(/^(https?:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.*)$/i);
+  if (!match) return value;
+  if (/^[a-z]{1,3}_[^/]*\//i.test(match[2])) return value;
+  return `${match[1]}f_auto,q_auto,c_limit,w_${width}/${match[2]}`;
+}
+
+const preloadedImageUrls = new Set();
+function preloadImage(src) {
+  if (!src || preloadedImageUrls.has(src)) return;
+  preloadedImageUrls.add(src);
+  const img = new Image();
+  img.decoding = "async";
+  img.src = src;
+}
+
+function rentalImageFingerprint(src) {
+  if (!rentalImageFingerprints.has(src)) {
+    rentalImageFingerprints.set(src, new Promise((resolve) => {
+      const img = new Image();
+      if (!/^(data|blob):/i.test(src)) img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const size = 16;
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true });
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, size, size);
+          ctx.drawImage(img, 0, 0, size, size);
+          const data = ctx.getImageData(0, 0, size, size).data;
+          const pixels = [];
+          for (let i = 0; i < data.length; i += 4) pixels.push(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+          resolve({ ratio: img.naturalWidth / Math.max(1, img.naturalHeight), pixels });
+        } catch {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    }));
+  }
+  return rentalImageFingerprints.get(src);
+}
+
+function sameRentalImage(a, b) {
+  if (!a || !b || Math.abs(a.ratio - b.ratio) / Math.max(a.ratio, b.ratio) > 0.03) return false;
+  const diff = a.pixels.reduce((sum, value, index) => sum + Math.abs(value - b.pixels[index]), 0) / a.pixels.length;
+  return diff < 8;
+}
+
+// Same photo can be stored under different URLs (old-site path, Cloudinary copy, data URL), so dedupe by content too.
+function useDistinctRentalImages(images, active) {
+  const urlDistinct = React.useMemo(() => {
+    const seen = new Set();
+    return (images || []).filter((src) => {
+      const key = src && rentalImageUrlKey(src);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [(images || []).join("\n")]);
+  const listKey = urlDistinct.join("\n");
+  const [resolved, setResolved] = React.useState(null);
+  const needsCheck = urlDistinct.length > 1 && resolved?.key !== listKey;
+  React.useEffect(() => {
+    if (!active || !needsCheck) return undefined;
+    let cancelled = false;
+    Promise.all(urlDistinct.map(rentalImageFingerprint)).then((prints) => {
+      if (cancelled) return;
+      const keptPrints = [];
+      const list = urlDistinct.filter((src, index) => {
+        const print = prints[index];
+        if (print && keptPrints.some((kept) => sameRentalImage(print, kept))) return false;
+        keptPrints.push(print);
+        return true;
+      });
+      setResolved({ key: listKey, list });
+    });
+    return () => { cancelled = true; };
+  }, [active, needsCheck, listKey]);
+  if (urlDistinct.length < 2) return urlDistinct;
+  if (resolved?.key === listKey) return resolved.list;
+  return urlDistinct.slice(0, 1);
+}
+
+function RentalTipBubble({ tip, tipStyle, keepTip, hideTipSoon, images, text, className = "" }) {
+  const imageList = useDistinctRentalImages(images, Boolean(tip));
+  if (!tip) return null;
+  const columns = Math.min(2, imageList.length);
+  const scrollable = imageList.length > 2;
+  const width = columns ? columns * RENTAL_TIP_IMAGE_SIZE + (columns - 1) * RENTAL_TIP_IMAGE_GAP + RENTAL_TIP_CHROME : 220;
+  const textHeight = text ? Math.ceil((text.length * 6) / Math.max(120, width - RENTAL_TIP_CHROME)) * 15 + 8 : 0;
+  const height = (columns ? RENTAL_TIP_IMAGE_SIZE : 0) + RENTAL_TIP_CHROME + textHeight;
+  return (
+    <span
+      className={"rental-info-tip " + className + (scrollable ? " is-scrollable" : "")}
+      style={tipStyle(width, height)}
+      onMouseEnter={keepTip}
+      onMouseLeave={hideTipSoon}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      {text && <span className="rental-info-tip-text">{text}</span>}
+      {columns > 0 && (
+        <span className="rental-info-tip-images" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, ${RENTAL_TIP_IMAGE_SIZE}px))` }}>
+          {imageList.map((src) => <img src={src} alt="" key={src} />)}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function RentalThumbWithTip({ src, text, images }) {
-  const imageList = Array.from(new Set([src, ...(Array.isArray(images) ? images : [])].filter(Boolean)));
-  const { tip, showTip, hideTip } = useRentalTipPosition(300);
+  const imageList = [src, ...(Array.isArray(images) ? images : [])].filter(Boolean);
+  const { tip, showTip, hideTip, hideTipSoon, keepTip, tipStyle } = useRentalTipPosition();
   if (!src) return null;
   return (
     <>
@@ -3161,21 +3315,18 @@ function RentalThumbWithTip({ src, text, images }) {
           tip ? hideTip() : showTip(e);
         }}
         onMouseEnter={showTip}
-        onMouseLeave={hideTip}
+        onMouseLeave={hideTipSoon}
       >
         <img src={src} alt="" />
       </span>
-      {tip && <span className="rental-info-tip rental-thumb-tip" style={{ left: tip.left, top: tip.top, transform: tip.transform }}>
-        {imageList.map((imageSrc, index) => <img src={imageSrc} alt="" key={imageSrc + index} />)}
-        {text && <span>{text}</span>}
-      </span>}
+      <RentalTipBubble tip={tip} tipStyle={tipStyle} keepTip={keepTip} hideTipSoon={hideTipSoon} images={imageList} text={text} className="rental-thumb-tip" />
     </>
   );
 }
 
 function RentalInfoIcon({ text, imageUrl, images }) {
-  const imageList = Array.from(new Set([...(Array.isArray(images) ? images : []), imageUrl].filter(Boolean)));
-  const { tip, showTip, hideTip } = useRentalTipPosition();
+  const imageList = [...(Array.isArray(images) ? images : []), imageUrl].filter(Boolean);
+  const { tip, showTip, hideTip, hideTipSoon, keepTip, tipStyle } = useRentalTipPosition();
   if (!text && imageList.length === 0) return null;
   return (
     <>
@@ -3189,16 +3340,13 @@ function RentalInfoIcon({ text, imageUrl, images }) {
           tip ? hideTip() : showTip(e);
         }}
         onMouseEnter={showTip}
-        onMouseLeave={hideTip}
+        onMouseLeave={hideTipSoon}
         onFocus={showTip}
-        onBlur={hideTip}
+        onBlur={hideTipSoon}
       >
         i
       </button>
-      {tip && <span className="rental-info-tip" style={{ left: tip.left, top: tip.top, transform: tip.transform }}>
-        {imageList.map((src, index) => <img src={src} alt="" key={src + index} />)}
-        {text && <span>{text}</span>}
-      </span>}
+      <RentalTipBubble tip={tip} tipStyle={tipStyle} keepTip={keepTip} hideTipSoon={hideTipSoon} images={imageList} text={text} />
     </>
   );
 }
@@ -12606,6 +12754,11 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     setSelectedSpaceReqs((prev) => prev.includes(srId) ? prev.filter((x) => x !== srId) : [...prev, srId]);
   };
 
+  const layoutImageUrls = venueAreas.flatMap((area) => area.layouts.map((layout) => compressedImageUrl(layout.image))).filter(Boolean);
+  React.useEffect(() => {
+    layoutImageUrls.forEach(preloadImage);
+  }, [layoutImageUrls.join("|")]);
+
   const selectLayout = (venueId, layoutId) => applySelectedLayouts({ ...selectedLayouts, [venueId]: layoutId });
   const applySelectedLayouts = (next) => {
     onAnswer?.("_selectedLayouts", next);
@@ -12707,7 +12860,7 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
               {/* Layout image */}
               <div style={{ minHeight: 180, background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                 {chosenLayout && chosenLayout.image ? (
-                  <img src={chosenLayout.image} alt={chosenLayout.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  <img src={compressedImageUrl(chosenLayout.image)} alt={chosenLayout.name} decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                 ) : (
                   <span style={{ fontSize: 12, color: "var(--ink-4)", textAlign: "center", padding: 20 }}>
                     {chosenLayout ? "No image available for this layout" : "Select a layout to see the floor plan"}
@@ -19181,6 +19334,68 @@ async function uploadEmbeddedImages(value, cache = new Map()) {
   return next;
 }
 
+const REMOTE_IMAGE_COPY_BATCH_SIZE = 20;
+// Original image URL -> its Cloudinary copy (or itself when the copy failed), for this browser session.
+const remoteImageCopies = new Map();
+
+function isCopyableRemoteImage(value) {
+  if (typeof value !== "string" || value.length > 2048 || !/^https?:\/\//i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    if (/(^|\.)cloudinary\.com$/i.test(url.hostname) || url.host === window.location.host) return false;
+    return /\.(png|jpe?g|webp|gif|avif|svg)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function collectRemoteImageUrls(value, found = new Set()) {
+  if (isCopyableRemoteImage(value)) found.add(value);
+  else if (Array.isArray(value)) value.forEach((item) => collectRemoteImageUrls(item, found));
+  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectRemoteImageUrls(item, found));
+  return found;
+}
+
+// Returns the same reference when nothing changed, so it is safe to feed into React state setters.
+function replaceRemoteImageUrls(value) {
+  if (typeof value === "string") return remoteImageCopies.get(value) || value;
+  if (Array.isArray(value)) {
+    const next = value.map(replaceRemoteImageUrls);
+    return next.some((item, index) => item !== value[index]) ? next : value;
+  }
+  if (!value || typeof value !== "object") return value;
+  let changed = false;
+  const next = {};
+  for (const [key, item] of Object.entries(value)) {
+    next[key] = replaceRemoteImageUrls(item);
+    if (next[key] !== item) changed = true;
+  }
+  return changed ? next : value;
+}
+
+// Copies images still hosted elsewhere (e.g. the old site) into Cloudinary. Never blocks a save:
+// anything that can't be copied keeps its original URL and is retried on a later save.
+async function copyRemoteImagesToCloudinary(value) {
+  const pending = [...collectRemoteImageUrls(value)].filter((url) => !remoteImageCopies.has(url));
+  for (let i = 0; i < pending.length; i += REMOTE_IMAGE_COPY_BATCH_SIZE) {
+    const batch = pending.slice(i, i + REMOTE_IMAGE_COPY_BATCH_SIZE);
+    try {
+      const response = await collaburoApi("/api/uploads/images", {
+        method: "POST",
+        body: JSON.stringify({ remoteUrls: batch }),
+      });
+      batch.forEach((url) => remoteImageCopies.set(url, response.copies?.[url] || url));
+      if (response.failed && Object.keys(response.failed).length) {
+        console.warn("[collaburo] Some images could not be copied to Cloudinary:", response.failed);
+      }
+    } catch (error) {
+      console.warn("[collaburo] Copying images to Cloudinary skipped:", error.message);
+      break;
+    }
+  }
+  return replaceRemoteImageUrls(value);
+}
+
 function buildPublicStatePayload(steps, rentalCatalog, pricingRules, siteSettings) {
   return {
     version: 1,
@@ -19201,7 +19416,8 @@ function buildAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings
 }
 
 async function buildDatabaseAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState = null) {
-  return uploadEmbeddedImages(buildAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState));
+  const payload = await copyRemoteImagesToCloudinary(buildAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState));
+  return uploadEmbeddedImages(payload);
 }
 
 // Applies the one-time old-site parity migration to a freshly loaded database
@@ -22184,6 +22400,8 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   progressRecordsRef.current = progressRecords;
   const publishedStateRef = React.useRef(publishedState);
   publishedStateRef.current = publishedState;
+  const isDirtyRef = React.useRef(isDirty);
+  isDirtyRef.current = isDirty;
   const currentPublishedState = () => publishedStateRef.current || buildPublicStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
   React.useEffect(() => {
     window.requestCollaburoDeleteConfirmation = (config = {}) => {
@@ -22305,6 +22523,29 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
               setIsDirty(true);
               pushToast({ kind: "danger", title: "Old-site settings not saved", desc: `${error.message || "Unknown error."} Review the changes and click Save.`, duration: 10000 });
             });
+        }
+        if (!publicMode && collectRemoteImageUrls({ draft, live }).size) {
+          copyRemoteImagesToCloudinary({ draft, live })
+            .then(() => {
+              if (cancelled) return;
+              const nextSteps = replaceRemoteImageUrls(stepsRef.current);
+              const nextCatalog = replaceRemoteImageUrls(rentalCatalogRef.current);
+              const nextSettings = replaceRemoteImageUrls(siteSettingsRef.current);
+              const nextLive = replaceRemoteImageUrls(publishedStateRef.current);
+              setSteps(nextSteps);
+              setRentalCatalog(nextCatalog);
+              setRecommendedRentalCatalogSnapshot(nextCatalog);
+              setSiteSettings(nextSettings);
+              if (nextLive) setPublishedState(nextLive);
+              // Unsaved admin edits are left for the admin's own Save, which copies images too.
+              if (isDirtyRef.current) return;
+              return buildDatabaseAdminStatePayload(nextSteps, nextCatalog, pricingRulesRef.current, nextSettings, progressRecordsRef.current, nextLive || currentPublishedState())
+                .then((databaseState) => putAdminStateToDatabase(databaseState))
+                .then(() => {
+                  if (!cancelled) setLastSavedAt(Date.now());
+                });
+            })
+            .catch((error) => console.warn("[collaburo] Background image copy not saved:", error.message));
         }
         if (!publicMode) {
           return collaburoApi("/api/submissions")

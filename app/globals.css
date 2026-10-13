@@ -1868,10 +1868,13 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .rental-info-icon{width:16px;height:16px;border:1px solid var(--line-strong);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;line-height:1;color:var(--ink-2);cursor:help;background:#fff;flex:0 0 16px;margin-left:4px;vertical-align:middle;padding:0;font-family:inherit}
 .rental-info-icon:hover,.rental-info-icon:focus{border-color:var(--accent);color:var(--accent);outline:none}
 .rental-info-tip{position:fixed;width:220px;border:1px solid var(--line-strong);background:#fff;border-radius:var(--r-2);box-shadow:0 10px 30px rgba(0,0,0,.18);padding:10px;z-index:10000;font-size:11px;line-height:1.35;color:var(--ink-2);pointer-events:none}
-.rental-info-tip img{width:100%;max-height:120px;object-fit:cover;border-radius:var(--r-1);margin-bottom:8px}
-.rental-thumb-tip{width:300px}
-.rental-thumb-tip img{max-height:300px;height:auto;object-fit:contain;background:var(--surface-2)}
-.rental-thumb-tip img:last-child{margin-bottom:0}
+.rental-info-tip{pointer-events:auto;cursor:default}
+.rental-info-tip-text{display:block}
+.rental-info-tip-text + .rental-info-tip-images{margin-top:8px}
+.rental-info-tip-images{display:grid;gap:6px;align-items:center;justify-items:center}
+.rental-info-tip-images img{display:block;max-width:100%;max-height:235px;width:auto;height:auto;object-fit:contain;border-radius:var(--r-1)}
+.rental-info-tip.is-scrollable .rental-info-tip-images{grid-auto-rows:235px;max-height:235px;overflow-y:auto;overscroll-behavior:contain;scroll-snap-type:y mandatory}
+.rental-info-tip.is-scrollable .rental-info-tip-images img{scroll-snap-align:start}
 .cv-rental-item-thumb.has-tip{cursor:zoom-in}
 .rental-client-options{display:flex;flex-direction:column;gap:7px}
 .rental-client-option{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:var(--r-2);background:var(--surface-2);padding:8px 10px;font-size:12px;cursor:pointer;text-align:left;width:100%;font-family:inherit;color:inherit}
