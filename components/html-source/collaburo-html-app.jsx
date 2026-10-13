@@ -4998,14 +4998,28 @@ function simpleOptionPricingStructure(option) {
   return "flat";
 }
 
-const OPTION_DESC_FONT_SIZES = [6, 7, 8, 9, 10];
-const OPTION_DESC_FONT_SIZE_DEFAULT = 10;
-const OPTION_DESC_FONT_SIZE_MAX = 10;
+const DESC_FONT_SIZES = [6, 7, 8, 9, 10];
+const DESC_FONT_SIZE_DEFAULT = 10;
+const DESC_FONT_SIZE_MAX = 10;
 
-function optionDescFontSize(option) {
-  const size = Number(option && option.descFontSize);
-  if (!Number.isFinite(size) || size <= 0) return OPTION_DESC_FONT_SIZE_DEFAULT;
-  return Math.min(size, OPTION_DESC_FONT_SIZE_MAX);
+function descriptionFontSize(item) {
+  const size = Number(item && item.descFontSize);
+  if (!Number.isFinite(size) || size <= 0) return DESC_FONT_SIZE_DEFAULT;
+  return Math.min(size, DESC_FONT_SIZE_MAX);
+}
+
+function DescriptionFontSizeSelect({ item, onChange }) {
+  return (
+    <select
+      className="select"
+      title={`Description font size (max ${DESC_FONT_SIZE_MAX}px)`}
+      value={descriptionFontSize(item)}
+      onChange={(e) => onChange(Math.min(Number(e.target.value), DESC_FONT_SIZE_MAX))}
+      style={{ width: 76, flexShrink: 0 }}
+    >
+      {DESC_FONT_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}
+    </select>
+  );
 }
 
 function simpleOptionPriceDisplay(option) {
@@ -5158,7 +5172,10 @@ function RentalGroupFieldEditor({ field, onChange }) {
       <div className="field-grid one">
         <div>
           <label className="lbl">Short description</label>
-          <textarea className="textarea" rows={2} value={field.fieldDescription || ""} placeholder="Optional helper text shown above this rental group." onChange={(e) => set({ fieldDescription: e.target.value })} />
+          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+            <textarea className="textarea" style={{ flex: 1 }} rows={2} value={field.fieldDescription || ""} placeholder="Optional helper text shown above this rental group." onChange={(e) => set({ fieldDescription: e.target.value })} />
+            <DescriptionFontSizeSelect item={field} onChange={(size) => set({ descFontSize: size })} />
+          </div>
         </div>
       </div>
       <div className="field-grid">
@@ -5815,13 +5832,17 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
 
                 <div>
                   <label className="lbl">Field description <span className="hint">additional detail shown to clients</span></label>
-                  <textarea
-                    className="textarea"
-                    rows={2}
-                    value={field.fieldDescription || ""}
-                    placeholder="Add a longer description, instructions, or context for this field…"
-                    onChange={(e) => set({ fieldDescription: e.target.value })}
-                  />
+                  <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                    <textarea
+                      className="textarea"
+                      style={{ flex: 1 }}
+                      rows={2}
+                      value={field.fieldDescription || ""}
+                      placeholder="Add a longer description, instructions, or context for this field…"
+                      onChange={(e) => set({ fieldDescription: e.target.value })}
+                    />
+                    <DescriptionFontSizeSelect item={field} onChange={(size) => set({ descFontSize: size })} />
+                  </div>
                 </div>
 
                 <div>
@@ -7577,15 +7598,7 @@ function SimpleChoiceOptionList({ rows, level, path, openKeys, onToggleOpen, onC
                     <label className="lbl">Short description</label>
                     <div style={{ display: "flex", gap: 6 }}>
                       <input className="input" style={{ flex: 1 }} value={option.description || option.desc || ""} placeholder="Optional helper text" onChange={(e) => update(index, { description: e.target.value, desc: e.target.value })} />
-                      <select
-                        className="select"
-                        title="Short description font size (max 10px)"
-                        value={optionDescFontSize(option)}
-                        onChange={(e) => update(index, { descFontSize: Math.min(Number(e.target.value), OPTION_DESC_FONT_SIZE_MAX) })}
-                        style={{ width: 76 }}
-                      >
-                        {OPTION_DESC_FONT_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}
-                      </select>
+                      <DescriptionFontSizeSelect item={option} onChange={(size) => update(index, { descFontSize: size })} />
                     </div>
                   </div>
                   <div>
@@ -8489,13 +8502,17 @@ function ServiceGroupCard({ field, onUpdate, onDelete, sourceHandlers = {}, targ
 
       <div style={{ marginBottom: 14 }}>
         <label className="lbl" style={{ fontSize: 10 }}>Description (shown to clients)</label>
-        <textarea
-          className="textarea"
-          rows={2}
-          value={field.fieldDescription || ""}
-          onChange={(e) => onUpdate({ ...field, fieldDescription: e.target.value })}
-          placeholder="e.g. Collaburo has 3 types of set-up services to choose from"
-        />
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+          <textarea
+            className="textarea"
+            style={{ flex: 1 }}
+            rows={2}
+            value={field.fieldDescription || ""}
+            onChange={(e) => onUpdate({ ...field, fieldDescription: e.target.value })}
+            placeholder="e.g. Collaburo has 3 types of set-up services to choose from"
+          />
+          <DescriptionFontSizeSelect item={field} onChange={(size) => onUpdate({ ...field, descFontSize: size })} />
+        </div>
       </div>
 
       {/* Selection mode */}
@@ -11419,7 +11436,7 @@ function PreviewField({ f }) {
       <div className="preview-field" style={{ gridColumn: "1 / -1" }}>
         <label style={{ display: "block", marginBottom: 8 }}>
           <span>{f.label}{f.required && <span className="req"> *</span>}</span>
-          {f.fieldDescription && <span className="field-desc-preview">{f.fieldDescription}</span>}
+          {f.fieldDescription && <span className="field-desc-preview" style={{ fontSize: descriptionFontSize(f) }}>{f.fieldDescription}</span>}
         </label>
         <div className="workflow-rental-list">
           {items.slice(0, 8).map((item) => (
@@ -11452,7 +11469,7 @@ function PreviewField({ f }) {
         </span>
       )}
       {f.fieldDescription && (
-        <span className="field-desc-preview">{f.fieldDescription}</span>
+        <span className="field-desc-preview" style={{ fontSize: descriptionFontSize(f) }}>{f.fieldDescription}</span>
       )}
     </label>
   );
@@ -11483,7 +11500,7 @@ function PreviewField({ f }) {
             </span>
           )}
           {f.fieldDescription && (
-            <span className="field-desc-preview" style={{ display: "block", marginTop: 2 }}>{f.fieldDescription}</span>
+            <span className="field-desc-preview" style={{ display: "block", marginTop: 2, fontSize: descriptionFontSize(f) }}>{f.fieldDescription}</span>
           )}
         </span>
       </div>
@@ -11662,7 +11679,7 @@ function PreviewField({ f }) {
         const parts = o.split("|");
         return { label: parts[0], desc: parts[1] || "", price: null };
       }
-      return { label: o.label || "", desc: o.desc || o.description || "", descFontSize: optionDescFontSize(o), price: optionHasPricing(o) ? optionPrice(o) : null, infoText: o.infoText || "", infoImages: o.infoImages || [] };
+      return { label: o.label || "", desc: o.desc || o.description || "", descFontSize: descriptionFontSize(o), price: optionHasPricing(o) ? optionPrice(o) : null, infoText: o.infoText || "", infoImages: o.infoImages || [] };
     });
     return (
       <div className="preview-field">
@@ -11675,7 +11692,7 @@ function PreviewField({ f }) {
                 <b style={{ fontSize: 12 }}>{o.label}</b>
                 {o.price !== null && <span style={{ color: "var(--accent)", marginLeft: 5, fontWeight: 700 }}>+${o.price.toFixed(2)}</span>}
                 {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 5 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}{(o.infoImages || []).map((img, ii) => <img key={ii} src={img} alt="" className="preview-tooltip-img" />)}</span></span>}
-                {o.desc && <span style={{ display: "block", fontSize: optionDescFontSize(o), color: "var(--ink-3)", marginTop: 1 }}>{o.desc}</span>}
+                {o.desc && <span style={{ display: "block", fontSize: descriptionFontSize(o), color: "var(--ink-3)", marginTop: 1 }}>{o.desc}</span>}
               </span>
             </label>
           ))}
@@ -11758,7 +11775,7 @@ function PreviewField({ f }) {
               </span>
             </span>
           )}
-          {f.fieldDescription && <span style={{ fontSize: 11, color: "var(--ink-3)" }}>({f.fieldDescription})</span>}
+          {f.fieldDescription && <span style={{ fontSize: descriptionFontSize(f), color: "var(--ink-3)" }}>({f.fieldDescription})</span>}
         </label>
         {f.displayAs === "radio" && richOpts.map((o, i) => (
           <label key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
@@ -13111,7 +13128,7 @@ function ClientRentalRepeatRows({ field, items, fieldState, onChange }) {
         )}
       </div>
       <div className="cv-rental-detail-body cv-rental-repeat-body">
-        {field.fieldDescription && <p className="cv-rental-detail-desc">{field.fieldDescription}</p>}
+        {field.fieldDescription && <p className="cv-rental-detail-desc" style={{ fontSize: descriptionFontSize(field) }}>{field.fieldDescription}</p>}
         {rows.map((row, index) => (
           <div className="cv-rental-repeat-row" key={row.id}>
             {index > 0 && (
@@ -16818,7 +16835,7 @@ function CVRichTree({ items, level, displayAs, value, onChange, fieldId, depth, 
                   </span>
                 )}
                 {!isServicesStep && (it.description || it.desc) && (
-                  <span style={{ display: "block", color: "var(--ink-3)", fontSize: optionDescFontSize(it), lineHeight: 1.35, marginTop: 2 }}>
+                  <span style={{ display: "block", color: "var(--ink-3)", fontSize: descriptionFontSize(it), lineHeight: 1.35, marginTop: 2 }}>
                     {it.description || it.desc}
                   </span>
                 )}
@@ -17493,7 +17510,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
   ) : null;
 
   const descEl = f.fieldDescription ? (
-    <span className="cv-field-desc">{f.fieldDescription}</span>
+    <span className="cv-field-desc" style={{ fontSize: descriptionFontSize(f) }}>{f.fieldDescription}</span>
   ) : null;
 
   // Compute per-field running total for rich-options fields (shown inline beside the label)
@@ -17617,7 +17634,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
             <span>
               <b>{f.label}{f.required && <span className="cv-req"> *</span>}</b>
               {tooltipEl}
-              {f.fieldDescription && <span className="cv-field-desc" style={{ display: "block", marginTop: 2 }}>{f.fieldDescription}</span>}
+              {f.fieldDescription && <span className="cv-field-desc" style={{ display: "block", marginTop: 2, fontSize: descriptionFontSize(f) }}>{f.fieldDescription}</span>}
             </span>
           </label>
         </div>
@@ -17783,7 +17800,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
                     <span>
                       <div className="cv-radio-label">{o.display}{optionInfoEl(raw)}</div>
                       {isAuto && autoDeliveryNote}
-                      {(raw.description || raw.desc) && <div className="cv-radio-desc" style={{ fontSize: optionDescFontSize(raw) }}>{raw.description || raw.desc}</div>}
+                      {(raw.description || raw.desc) && <div className="cv-radio-desc" style={{ fontSize: descriptionFontSize(raw) }}>{raw.description || raw.desc}</div>}
                     </span>
                   </div>
                 );
@@ -17921,7 +17938,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
         return {
           label: o.label || "",
           desc: o.desc || o.description || "",
-          descFontSize: optionDescFontSize(o),
+          descFontSize: descriptionFontSize(o),
           price: optionHasPricing(o) ? optionPrice(o) : null,
           priceLabel: simpleOptionPriceDisplay(o),
           infoText: o.infoText || "",
@@ -17951,7 +17968,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
                 <span>
                   <div className="cv-radio-label">{o.label}{optionInfoEl(o)}</div>
                   {pricesVisible && o.priceLabel && <span style={{ color: "var(--accent)", fontSize: 11.5, fontWeight: 700 }}>+{o.priceLabel}</span>}
-                  {o.desc && <div className="cv-radio-desc" style={{ fontSize: optionDescFontSize(o) }}>{o.desc}</div>}
+                  {o.desc && <div className="cv-radio-desc" style={{ fontSize: descriptionFontSize(o) }}>{o.desc}</div>}
                 </span>
               </div>
             ))}
@@ -18037,7 +18054,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
               <input type="checkbox" checked={effectiveOn} readOnly={autoFieldDeliveryOn} onChange={(e) => !autoFieldDeliveryOn && setChecked({ on: e.target.checked })} />
               <span>
                 <b>{f.label}{f.required && <span className="cv-req"> *</span>}{tooltipEl}</b>
-                {f.fieldDescription && <span className="cv-field-desc" style={{ display: "block", marginTop: 2 }}>{f.fieldDescription}</span>}
+                {f.fieldDescription && <span className="cv-field-desc" style={{ display: "block", marginTop: 2, fontSize: descriptionFontSize(f) }}>{f.fieldDescription}</span>}
                 {autoDeliveryNote}
               </span>
             </label>
