@@ -2424,6 +2424,61 @@ function RentalVisibilityEditor({ group, allGroups, parentItem, catalogRows = []
   );
 }
 
+// Image labels are stored as { [imageIndex]: label } beside the image array:
+// storage cleanup drops empty strings from arrays, which would misalign a parallel array.
+function tooltipImageLabel(labels, index) {
+  return String((labels && labels[index]) || "").trim();
+}
+
+function setTooltipImageLabel(labels, index, value) {
+  return { ...(labels || {}), [index]: value };
+}
+
+function removeTooltipImageLabel(labels, index) {
+  const next = {};
+  Object.entries(labels || {}).forEach(([key, value]) => {
+    const i = Number(key);
+    if (i < index) next[i] = value;
+    else if (i > index) next[i - 1] = value;
+  });
+  return next;
+}
+
+function TooltipImageList({ images = [], labels, onLabelChange, onRemove }) {
+  if (!images.length) return null;
+  return (
+    <div className="tooltip-image-list">
+      {images.map((src, index) => (
+        <div className="tooltip-image-item" key={index}>
+          <span className="tooltip-image-thumb">
+            <img src={src} alt="" />
+            <button type="button" title="Remove image" onClick={() => onRemove(index)}>×</button>
+          </span>
+          <input
+            className="input"
+            value={(labels && labels[index]) || ""}
+            placeholder="Label (optional)"
+            onChange={(e) => onLabelChange(index, e.target.value)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TooltipImages({ images = [], labels, style }) {
+  return images.map((src, index) => {
+    const label = tooltipImageLabel(labels, index);
+    if (!label) return <img key={index} src={src} alt="" className="preview-tooltip-img" style={style} />;
+    return (
+      <span key={index} className="preview-tooltip-figure" style={style}>
+        <img src={src} alt={label} className="preview-tooltip-img" />
+        <span className="preview-tooltip-caption">{label}</span>
+      </span>
+    );
+  });
+}
+
 function RentalImageField({ label, imageUrl, onChange }) {
   const inputId = React.useMemo(() => "upload_" + Math.random().toString(36).slice(2), []);
   const upload = (files) => {
@@ -2473,55 +2528,53 @@ function RentalGroupImageControl({ imageUrl, onChange }) {
   );
 }
 
-function RentalMultiImageField({ label, images = [], onChange }) {
+function RentalMultiImageField({ label, images = [], labels, onChange }) {
   const inputId = React.useMemo(() => "upload_multi_" + Math.random().toString(36).slice(2), []);
   const upload = (files) => {
-    const list = Array.from(files || []);
-    if (list.length === 0) return;
-    Promise.all(list.map((file) => new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result || "");
-      reader.readAsDataURL(file);
-    }))).then((urls) => onChange([...(images || []), ...urls.filter(Boolean)]));
+    readFilesAsDataUrls(files).then((urls) => {
+      const added = urls.filter(Boolean);
+      if (added.length) onChange([...(images || []), ...added], labels || {});
+    });
   };
   const remove = (index) => requestDeleteConfirmation({
     action: "remove",
     itemType: "image",
-    itemName: `Image ${index + 1}`,
-    onConfirm: () => onChange((images || []).filter((_, i) => i !== index)),
+    itemName: tooltipImageLabel(labels, index) || `Image ${index + 1}`,
+    onConfirm: () => onChange((images || []).filter((_, i) => i !== index), removeTooltipImageLabel(labels, index)),
   });
   const clearAll = () => requestDeleteConfirmation({
     action: "remove",
     itemType: "images",
     itemName: "all images",
     confirmLabel: "Remove",
-    onConfirm: () => onChange([]),
+    onConfirm: () => onChange([], {}),
   });
   return (
     <div>
       <label className="lbl">{label}</label>
       <div className="rental-upload-actions">
         <label className="btn sm" htmlFor={inputId}>Upload images</label>
-        <input id={inputId} type="file" accept="image/*" multiple onChange={(e) => upload(e.target.files)} />
+        <input id={inputId} type="file" accept="image/*" multiple onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
         {(images || []).length > 0 && <button className="btn sm ghost" onClick={clearAll}>Clear all</button>}
       </div>
-      {(images || []).length > 0 && (
-        <div className="rental-upload-gallery">
-          {(images || []).map((src, index) => (
-            <span className="rental-upload-thumb" key={src + index}>
-              <img src={src} alt="" />
-              <button type="button" title="Remove image" onClick={() => remove(index)}>x</button>
-            </span>
-          ))}
-        </div>
-      )}
+      <TooltipImageList
+        images={images || []}
+        labels={labels}
+        onRemove={remove}
+        onLabelChange={(index, text) => onChange(images || [], setTooltipImageLabel(labels, index, text))}
+      />
     </div>
   );
 }
 
+function rentalTooltipEditorImages(entity) {
+  if (Array.isArray(entity?.infoImageUrls) && entity.infoImageUrls.length) return entity.infoImageUrls;
+  return entity?.infoImageUrl ? [entity.infoImageUrl] : [];
+}
+
 function RentalTooltipFields({ value, onChange, accordion = true }) {
   const next = value || {};
-  const images = next.infoImageUrls || (next.infoImageUrl ? [next.infoImageUrl] : []);
+  const images = rentalTooltipEditorImages(next);
   const body = (
       <div className="rental-editor-grid">
         <div className="full">
@@ -2529,7 +2582,12 @@ function RentalTooltipFields({ value, onChange, accordion = true }) {
           <textarea className="textarea" rows={2} value={next.infoText || ""} placeholder="Text shown when the info icon is hovered" onChange={(e) => onChange({ ...next, infoText: e.target.value })} />
         </div>
         <div className="full">
-          <RentalMultiImageField label="Tooltip images" images={images} onChange={(urls) => onChange({ ...next, infoImageUrls: urls, infoImageUrl: urls[0] || "" })} />
+          <RentalMultiImageField
+            label="Tooltip images"
+            images={images}
+            labels={next.infoImageLabels}
+            onChange={(urls, labels) => onChange({ ...next, infoImageUrls: urls, infoImageUrl: urls[0] || "", infoImageLabels: labels })}
+          />
         </div>
       </div>
   );
@@ -2766,7 +2824,7 @@ function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], p
         </div>
       </div>
 
-      <RentalTooltipFields value={group} onChange={(next) => onChange({ ...group, infoText: next.infoText, infoImageUrl: next.infoImageUrl, infoImageUrls: next.infoImageUrls || [] })} />
+      <RentalTooltipFields value={group} onChange={(next) => onChange({ ...group, infoText: next.infoText, infoImageUrl: next.infoImageUrl, infoImageUrls: next.infoImageUrls || [], infoImageLabels: next.infoImageLabels || {} })} />
 
       <RentalVisibilityEditor group={group} allGroups={allGroups} parentItem={parentItem} catalogRows={catalogRows} onChange={onChange} />
 
@@ -2877,7 +2935,7 @@ function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], p
                 />
               )}
               <div className="full">
-                <RentalTooltipFields value={option} onChange={(next) => updateOption(index, { infoText: next.infoText, infoImageUrl: next.infoImageUrl, infoImageUrls: next.infoImageUrls || [] })} />
+                <RentalTooltipFields value={option} onChange={(next) => updateOption(index, { infoText: next.infoText, infoImageUrl: next.infoImageUrl, infoImageUrls: next.infoImageUrls || [], infoImageLabels: next.infoImageLabels || {} })} />
               </div>
               </div>}
             </div>
@@ -3274,7 +3332,7 @@ function useDistinctRentalImages(images, active) {
   return urlDistinct.slice(0, 1);
 }
 
-function RentalTipBubble({ tip, tipStyle, keepTip, hideTipSoon, images, text, className = "" }) {
+function RentalTipBubble({ tip, tipStyle, keepTip, hideTipSoon, images, labels, text, className = "" }) {
   const imageList = useDistinctRentalImages(images, Boolean(tip));
   if (!tip) return null;
   const columns = Math.min(2, imageList.length);
@@ -3297,14 +3355,21 @@ function RentalTipBubble({ tip, tipStyle, keepTip, hideTipSoon, images, text, cl
       {text && <span className="rental-info-tip-text">{text}</span>}
       {columns > 0 && (
         <span className="rental-info-tip-images" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, ${RENTAL_TIP_IMAGE_SIZE}px))` }}>
-          {imageList.map((src) => <img src={src} alt="" key={src} />)}
+          {imageList.map((src) => (labels && labels[src]
+            ? (
+              <span className="rental-tip-figure" key={src}>
+                <img src={src} alt={labels[src]} />
+                <span className="rental-tip-caption">{labels[src]}</span>
+              </span>
+            )
+            : <img src={src} alt="" key={src} />))}
         </span>
       )}
     </span>
   );
 }
 
-function RentalThumbWithTip({ src, text, images }) {
+function RentalThumbWithTip({ src, text, images, labels }) {
   const imageList = [src, ...(Array.isArray(images) ? images : [])].filter(Boolean);
   const { tip, showTip, hideTip, hideTipSoon, keepTip, tipStyle } = useRentalTipPosition();
   if (!src) return null;
@@ -3322,12 +3387,12 @@ function RentalThumbWithTip({ src, text, images }) {
       >
         <img src={src} alt="" />
       </span>
-      <RentalTipBubble tip={tip} tipStyle={tipStyle} keepTip={keepTip} hideTipSoon={hideTipSoon} images={imageList} text={text} className="rental-thumb-tip" />
+      <RentalTipBubble tip={tip} tipStyle={tipStyle} keepTip={keepTip} hideTipSoon={hideTipSoon} images={imageList} labels={labels} text={text} className="rental-thumb-tip" />
     </>
   );
 }
 
-function RentalInfoIcon({ text, imageUrl, images }) {
+function RentalInfoIcon({ text, imageUrl, images, labels }) {
   const imageList = [...(Array.isArray(images) ? images : []), imageUrl].filter(Boolean);
   const { tip, showTip, hideTip, hideTipSoon, keepTip, tipStyle } = useRentalTipPosition();
   if (!text && imageList.length === 0) return null;
@@ -3349,7 +3414,7 @@ function RentalInfoIcon({ text, imageUrl, images }) {
       >
         i
       </button>
-      <RentalTipBubble tip={tip} tipStyle={tipStyle} keepTip={keepTip} hideTipSoon={hideTipSoon} images={imageList} text={text} />
+      <RentalTipBubble tip={tip} tipStyle={tipStyle} keepTip={keepTip} hideTipSoon={hideTipSoon} images={imageList} labels={labels} text={text} />
     </>
   );
 }
@@ -3360,6 +3425,18 @@ function rentalTooltipImages(entity) {
     ...(Array.isArray(entity?.infoImages) ? entity.infoImages : []),
     entity?.infoImageUrl,
   ].filter(Boolean)));
+}
+
+// Rental editors label infoImageUrls; form-field option editors label infoImages.
+function rentalTooltipLabels(entity) {
+  const rentalImages = rentalTooltipEditorImages(entity);
+  const images = rentalImages.length ? rentalImages : (Array.isArray(entity?.infoImages) ? entity.infoImages : []);
+  const bySrc = {};
+  images.forEach((src, index) => {
+    const label = tooltipImageLabel(entity?.infoImageLabels, index);
+    if (src && label && !bySrc[src]) bySrc[src] = label;
+  });
+  return bySrc;
 }
 
 function selectedAnswerIdsForPreview(group, values) {
@@ -3605,7 +3682,7 @@ function RentalClientChoicePreview({ group, values, onValueChange }) {
       <div className="rental-client-label-row">
         <label>{label}{group.required ? " *" : ""}</label>
         {previewChoicePriceLabel(group) && <strong>{previewChoicePriceLabel(group)}</strong>}
-        <RentalInfoIcon text={group.infoText} images={rentalTooltipImages(group)} />
+        <RentalInfoIcon text={group.infoText} images={rentalTooltipImages(group)} labels={rentalTooltipLabels(group)} />
       </div>
       {group.description && <small style={{ fontSize: descriptionFontSize(group) }}>{group.description}</small>}
       {type === "quantity" && <input {...inputProps} min={group.settings?.min ?? 0} max={group.settings?.max || undefined} step={group.settings?.step ?? 1} type="number" value={value ?? group.settings?.defaultValue ?? 2} onChange={(e) => setValue(Number(e.target.value || 0))} />}
@@ -3624,7 +3701,7 @@ function RentalClientChoicePreview({ group, values, onValueChange }) {
               <span>
                 <i className="rental-client-dot square"></i>
                 {option.label}
-                <RentalInfoIcon text={option.infoText || option.description} images={rentalTooltipImages(option)} />
+                <RentalInfoIcon text={option.infoText || option.description} images={rentalTooltipImages(option)} labels={rentalTooltipLabels(option)} />
               </span>
               <span className="rental-client-option-actions">
                 <strong>{previewPriceLabel(option)}</strong>
@@ -3653,7 +3730,7 @@ function RentalClientChoicePreview({ group, values, onValueChange }) {
                 <i className={"rental-client-dot" + (type === "checkbox" || type === "multi_quantity" ? " square" : "")}></i>
                 {option.imageUrl && <span className="rental-client-option-media"><img src={option.imageUrl} alt="" /></span>}
                 {option.label}
-                <RentalInfoIcon text={option.infoText || option.description} images={rentalTooltipImages(option)} />
+                <RentalInfoIcon text={option.infoText || option.description} images={rentalTooltipImages(option)} labels={rentalTooltipLabels(option)} />
               </span>
               {type === "multi_quantity" ? (
                 <span className="rental-client-option-actions">
@@ -3723,7 +3800,7 @@ function RentalClientPreviewPanel({ item }) {
                 </label>
               )}
               {previewItemPriceLabel(item) && <strong>{previewItemPriceLabel(item)}</strong>}
-              <RentalInfoIcon text={item.infoText} images={rentalTooltipImages(item)} />
+              <RentalInfoIcon text={item.infoText} images={rentalTooltipImages(item)} labels={rentalTooltipLabels(item)} />
             </div>
             {item.notes && <small style={{ fontSize: descriptionFontSize(item) }}>{item.notes}</small>}
             {itemChecked && showBaseQuantity && <input className="input" type="number" min={item.minUnits ?? 0} max={item.maxUnits || undefined} step={item.increment || 1} value={baseQty} onChange={(e) => setBaseQty(Math.max(Number(item.minUnits || 0), Number(e.target.value || 0)))} />}
@@ -4097,7 +4174,7 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
               </div>
             </div>
 
-            <RentalTooltipFields value={item} onChange={(next) => onPatch({ infoText: next.infoText, infoImageUrl: next.infoImageUrl, infoImageUrls: next.infoImageUrls || [] })} />
+            <RentalTooltipFields value={item} onChange={(next) => onPatch({ infoText: next.infoText, infoImageUrl: next.infoImageUrl, infoImageUrls: next.infoImageUrls || [], infoImageLabels: next.infoImageLabels || {} })} />
 
             <div className="rental-preview-card" style={{ marginTop: 14 }}>
               <h3>Example total</h3>
@@ -5476,11 +5553,11 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
     requestDeleteConfirmation({
       action: "remove",
       itemType: "image",
-      itemName: `Image ${index + 1}`,
+      itemName: tooltipImageLabel(field.galleryImageLabels, index) || `Image ${index + 1}`,
       confirmLabel: "Remove",
       onConfirm: () => {
         const next = fieldGalleryImages.filter((_, i) => i !== index);
-        set({ galleryImages: next, galleryImage: next[0] || "" });
+        set({ galleryImages: next, galleryImage: next[0] || "", galleryImageLabels: removeTooltipImageLabel(field.galleryImageLabels, index) });
       },
     });
   };
@@ -5504,16 +5581,12 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
           <span><b>Upload images</b> · drag or click</span>
         </div>
       </div>
-      {fieldGalleryImages.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-          {fieldGalleryImages.map((image, imageIndex) => (
-            <div className="upload-preview" key={imageIndex} style={{ marginTop: 0 }}>
-              <img src={image} alt="Gallery preview" style={{ width: 72, height: 54, objectFit: "cover" }} />
-              <span className="remove" onClick={() => removeFieldGalleryImage(imageIndex)} title="Remove image">×</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <TooltipImageList
+        images={fieldGalleryImages}
+        labels={field.galleryImageLabels}
+        onRemove={removeFieldGalleryImage}
+        onLabelChange={(index, text) => set({ galleryImageLabels: setTooltipImageLabel(field.galleryImageLabels, index, text) })}
+      />
     </>
   );
 
@@ -6509,14 +6582,15 @@ function NestedOptionRow({ item, level, depth, onChange, onRemove, levelDisplays
     requestDeleteConfirmation({
       action: "remove",
       itemType: "image",
-      itemName: `Image ${idx + 1}`,
+      itemName: tooltipImageLabel(item.infoImageLabels, idx) || `Image ${idx + 1}`,
       confirmLabel: "Remove",
       onConfirm: () => {
         const imgs = (item.infoImages || []).filter((_, j) => j !== idx);
-        update({ infoImages: imgs });
+        update({ infoImages: imgs, infoImageLabels: removeTooltipImageLabel(item.infoImageLabels, idx) });
       },
     });
   };
+  const setImageLabel = (idx, text) => update({ infoImageLabels: setTooltipImageLabel(item.infoImageLabels, idx, text) });
 
   const hasInfo = !!(item.infoText || (item.infoImages && item.infoImages.length) || (level === "option" && (item.rules || []).length));
 
@@ -6633,19 +6707,7 @@ function NestedOptionRow({ item, level, depth, onChange, onRemove, levelDisplays
               </div>
             </div>
           </div>
-          {(item.infoImages || []).length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-              {item.infoImages.map((img, idx) => (
-                <div key={idx} style={{ position: "relative", width: 56, height: 56, borderRadius: 4, overflow: "hidden", border: "1px solid var(--line)" }}>
-                  <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  <span
-                    onClick={() => removeImage(idx)}
-                    style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", lineHeight: 1 }}
-                  >×</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <TooltipImageList images={item.infoImages || []} labels={item.infoImageLabels} onRemove={removeImage} onLabelChange={setImageLabel} />
           {level === "option" && (
             <div style={{ marginTop: 10 }}>
               <OptionRulesEditor option={item} onChange={update} />
@@ -6796,9 +6858,9 @@ function ServiceOptionCard({ item, level, depth, onChange, onRemove, levelDispla
   const removeImage = (idx) => requestDeleteConfirmation({
     action: "remove",
     itemType: "image",
-    itemName: `Image ${idx + 1}`,
+    itemName: tooltipImageLabel(item.infoImageLabels, idx) || `Image ${idx + 1}`,
     confirmLabel: "Remove",
-    onConfirm: () => update({ infoImages: (item.infoImages || []).filter((_, j) => j !== idx) }),
+    onConfirm: () => update({ infoImages: (item.infoImages || []).filter((_, j) => j !== idx), infoImageLabels: removeTooltipImageLabel(item.infoImageLabels, idx) }),
   });
 
   const ps = item.pricingStructure || "flat";
@@ -6934,21 +6996,16 @@ function ServiceOptionCard({ item, level, depth, onChange, onRemove, levelDispla
       {cfg.showAdvanced && (item.infoImages && item.infoImages.length > 0) && (
         <div style={{ marginBottom: 10 }}>
           <label className="lbl" style={{ fontSize: 10 }}>Information gallery</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-            {item.infoImages.map((img, idx) => (
-              <div key={idx} style={{ position: "relative", width: 56, height: 56, borderRadius: 4, overflow: "hidden", border: "1px solid var(--line)" }}>
-                <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                <span
-                  onClick={() => removeImage(idx)}
-                  style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", lineHeight: 1 }}
-                >×</span>
-              </div>
-            ))}
-            <label style={{ width: 56, height: 56, borderRadius: 4, border: "1px dashed var(--line-strong)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--ink-4)" }}>
-              <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { addImages(e.target.files); e.target.value = ""; }} />
-              <Ic.Plus size={14} />
-            </label>
-          </div>
+          <TooltipImageList
+            images={item.infoImages}
+            labels={item.infoImageLabels}
+            onRemove={removeImage}
+            onLabelChange={(idx, text) => update({ infoImageLabels: setTooltipImageLabel(item.infoImageLabels, idx, text) })}
+          />
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--ink-4)", cursor: "pointer", marginTop: 6 }}>
+            <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { addImages(e.target.files); e.target.value = ""; }} />
+            <Ic.Plus size={11} /> Add more images
+          </label>
         </div>
       )}
       {cfg.showAdvanced && !(item.infoImages && item.infoImages.length) && (
@@ -7320,7 +7377,10 @@ function SimpleOptionsEditor({ options, onChange, fieldType, groupOptions = fals
       next.price = 0;
     }
     if (next.subOptions && next.subOptions.length) next.hasSubOptions = true;
-    if (next.infoImages && !next.infoImages.length) delete next.infoImages;
+    if (next.infoImages && !next.infoImages.length) {
+      delete next.infoImages;
+      delete next.infoImageLabels;
+    }
     return next;
   };
   const commit = (next) => onChange(next.map(cleanOption));
@@ -7619,22 +7679,21 @@ function SimpleChoiceOptionList({ rows, level, path, openKeys, onToggleOpen, onC
                       <input type="file" accept="image/*" multiple onChange={(e) => { uploadInfoImages(index, e.target.files); e.target.value = ""; }} />
                       <div className="upload"><Ic.Img size={15} /><span><b>Upload images</b> · drag or click</span></div>
                     </div>
-                    {option.infoImages && option.infoImages.length > 0 && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                        {option.infoImages.map((img, imageIndex) => (
-                          <div className="upload-preview" key={imageIndex} style={{ marginTop: 0 }}>
-                            <img src={img} alt="" style={{ width: 72, height: 54, objectFit: "cover" }} />
-                            <span className="remove" onClick={() => requestDeleteConfirmation({
-                              action: "remove",
-                              itemType: "image",
-                              itemName: `Image ${imageIndex + 1}`,
-                              confirmLabel: "Remove",
-                              onConfirm: () => update(index, { infoImages: option.infoImages.filter((_, i) => i !== imageIndex) }),
-                            })}>×</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <TooltipImageList
+                      images={option.infoImages || []}
+                      labels={option.infoImageLabels}
+                      onRemove={(imageIndex) => requestDeleteConfirmation({
+                        action: "remove",
+                        itemType: "image",
+                        itemName: tooltipImageLabel(option.infoImageLabels, imageIndex) || `Image ${imageIndex + 1}`,
+                        confirmLabel: "Remove",
+                        onConfirm: () => update(index, {
+                          infoImages: option.infoImages.filter((_, i) => i !== imageIndex),
+                          infoImageLabels: removeTooltipImageLabel(option.infoImageLabels, imageIndex),
+                        }),
+                      })}
+                      onLabelChange={(imageIndex, text) => update(index, { infoImageLabels: setTooltipImageLabel(option.infoImageLabels, imageIndex, text) })}
+                    />
                   </div>
                 </div>
                 <OptionRulesEditor option={option} onChange={(patch) => update(index, patch)} />
@@ -11471,9 +11530,7 @@ function PreviewField({ f }) {
           i
           <span className="preview-tooltip">
             {f.helpText && <span className="preview-tooltip-text">{f.helpText}</span>}
-            {fieldGalleryImages.map((image, imageIndex) => (
-              <img key={imageIndex} src={image} alt="Info" className="preview-tooltip-img" />
-            ))}
+            <TooltipImages images={fieldGalleryImages} labels={f.galleryImageLabels} />
           </span>
         </span>
       )}
@@ -11502,9 +11559,7 @@ function PreviewField({ f }) {
               i
               <span className="preview-tooltip">
                 {f.helpText && <span className="preview-tooltip-text">{f.helpText}</span>}
-                {fieldGalleryImages.map((image, imageIndex) => (
-                  <img key={imageIndex} src={image} alt="Info" className="preview-tooltip-img" />
-                ))}
+                <TooltipImages images={fieldGalleryImages} labels={f.galleryImageLabels} />
               </span>
             </span>
           )}
@@ -11553,7 +11608,7 @@ function PreviewField({ f }) {
                 <span>
                   {o.label}
                   {o.enablePrice && o.price ? <span style={{ color: "var(--accent)", marginLeft: 4, fontWeight: 600 }}>+${o.price}</span> : null}
-                  {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 4 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}{(o.infoImages || []).map((im, ii) => <img key={ii} src={im} alt="" className="preview-tooltip-img" />)}</span></span>}
+                  {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 4 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}<TooltipImages images={o.infoImages || []} labels={o.infoImageLabels} /></span></span>}
                 </span>
               </label>
               {hasChildKey && o[hasChildKey] && (o[childKey] || []).length > 0 && (
@@ -11688,7 +11743,7 @@ function PreviewField({ f }) {
         const parts = o.split("|");
         return { label: parts[0], desc: parts[1] || "", price: null };
       }
-      return { label: o.label || "", desc: o.desc || o.description || "", descFontSize: descriptionFontSize(o), price: optionHasPricing(o) ? optionPrice(o) : null, infoText: o.infoText || "", infoImages: o.infoImages || [] };
+      return { label: o.label || "", desc: o.desc || o.description || "", descFontSize: descriptionFontSize(o), price: optionHasPricing(o) ? optionPrice(o) : null, infoText: o.infoText || "", infoImages: o.infoImages || [], infoImageLabels: o.infoImageLabels };
     });
     return (
       <div className="preview-field">
@@ -11700,7 +11755,7 @@ function PreviewField({ f }) {
               <span>
                 <b style={{ fontSize: 12 }}>{o.label}</b>
                 {o.price !== null && <span style={{ color: "var(--accent)", marginLeft: 5, fontWeight: 700 }}>+${o.price.toFixed(2)}</span>}
-                {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 5 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}{(o.infoImages || []).map((img, ii) => <img key={ii} src={img} alt="" className="preview-tooltip-img" />)}</span></span>}
+                {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 5 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}<TooltipImages images={o.infoImages || []} labels={o.infoImageLabels} /></span></span>}
                 {o.desc && <span style={{ display: "block", fontSize: descriptionFontSize(o), color: "var(--ink-3)", marginTop: 1 }}>{o.desc}</span>}
               </span>
             </label>
@@ -11780,7 +11835,7 @@ function PreviewField({ f }) {
             <span className="info-trigger">i
               <span className="preview-tooltip">
                 {f.helpText && <span className="preview-tooltip-text">{f.helpText}</span>}
-                {f.galleryImage && <img src={f.galleryImage} alt="" className="preview-tooltip-img" />}
+                <TooltipImages images={fieldGalleryImages} labels={f.galleryImageLabels} />
               </span>
             </span>
           )}
@@ -13186,16 +13241,17 @@ function rentalOptionPriceLabel(option) {
 function RentalItemNameWithImage({ item, children }) {
   const image = rentalItemImage(item);
   const infoImages = rentalTooltipImages(item);
+  const infoLabels = rentalTooltipLabels(item);
   const inlineText = !image && item.infoText ? item.infoText : "";
   const copy = (
     <span className="cv-rental-item-copy">
       {children}
-      {!image && <RentalInfoIcon imageUrl={item.infoImageUrl} images={infoImages} />}
+      {!image && <RentalInfoIcon imageUrl={item.infoImageUrl} images={infoImages} labels={infoLabels} />}
     </span>
   );
   return (
     <span className={"cv-rental-item-name" + (image ? " has-image" : "")}>
-      {image && <RentalThumbWithTip src={image} text={item.infoText} images={infoImages} />}
+      {image && <RentalThumbWithTip src={image} text={item.infoText} images={infoImages} labels={infoLabels} />}
       {inlineText ? (
         <span className="cv-rental-item-text">
           {copy}
@@ -13251,7 +13307,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
     <div className="cv-rental-field-label cv-rental-priced-label">
       <span>
         {group.label || fallback}{group.required && <span className="cv-req"> *</span>}
-        <RentalInfoIcon text={group.infoText || group.description} imageUrl={group.infoImageUrl || group.imageUrl} images={rentalTooltipImages(group)} />
+        <RentalInfoIcon text={group.infoText || group.description} imageUrl={group.infoImageUrl || group.imageUrl} images={rentalTooltipImages(group)} labels={rentalTooltipLabels(group)} />
       </span>
       {pricesVisible && groupPrice && <span className="cv-rental-field-price">{groupPrice}</span>}
     </div>
@@ -13305,7 +13361,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
         <div className="cv-rental-subline cv-rental-priced-label">
           <span>
             {group.label}
-            <RentalInfoIcon text={group.infoText || group.description} imageUrl={group.infoImageUrl || group.imageUrl} images={rentalTooltipImages(group)} />
+            <RentalInfoIcon text={group.infoText || group.description} imageUrl={group.infoImageUrl || group.imageUrl} images={rentalTooltipImages(group)} labels={rentalTooltipLabels(group)} />
           </span>
           {pricesVisible && groupPrice && <span className="cv-rental-field-price">{groupPrice}</span>}
         </div>
@@ -13316,7 +13372,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
             <label className="cv-rental-option-row" key={optId}>
               <span>
                 {opt.label}
-                <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} />
+                <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} labels={rentalTooltipLabels(opt)} />
                 :{pricesVisible && rentalOptionPriceLabel(opt) && <span className="cv-rental-price">({rentalOptionPriceLabel(opt)} each)</span>}
               </span>
               <select className="cv-input cv-select cv-rental-inline-select" value={val} disabled={locked} onChange={(e) => setGroup({ ...(current || {}), [optId]: Number(e.target.value) })}>
@@ -13343,7 +13399,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
               <input type="checkbox" checked={checked} disabled={locked} onChange={() => setGroup(checked ? checkedIds.filter((id) => id !== optId) : [...checkedIds, optId])} />
               <span>
                 {opt.label}
-                <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} />
+                <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} labels={rentalTooltipLabels(opt)} />
                 {pricesVisible && rentalOptionPriceLabel(opt) && <span className="cv-rental-price">({rentalOptionPriceLabel(opt)})</span>}
               </span>
             </label>
@@ -13364,7 +13420,7 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
             <input type="radio" name={radioName} checked={selected} disabled={locked} onChange={() => setGroup({ value: optId, label: opt.label })} />
             <span>
               {opt.label}
-              <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} />
+              <RentalInfoIcon text={opt.infoText || opt.description} imageUrl={opt.infoImageUrl || opt.imageUrl} images={rentalTooltipImages(opt)} labels={rentalTooltipLabels(opt)} />
               {pricesVisible && rentalOptionPriceLabel(opt) && <span className="cv-rental-price">({rentalOptionPriceLabel(opt)} each)</span>}
             </span>
           </label>
@@ -14087,7 +14143,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                     </div>
                     <div className="cv-rental-pick-name">
                       {label}
-                      {tile.type === "item" && <RentalInfoIcon text={tile.item.infoText} imageUrl={tile.item.infoImageUrl} images={rentalTooltipImages(tile.item)} />}
+                      {tile.type === "item" && <RentalInfoIcon text={tile.item.infoText} imageUrl={tile.item.infoImageUrl} images={rentalTooltipImages(tile.item)} labels={rentalTooltipLabels(tile.item)} />}
                       {tile.type === "item" && rentalRequiresDelivery(tile.item) && <DeliveryIndicator />}
                     </div>
                   </div>
@@ -16740,9 +16796,7 @@ function CVRichTree({ items, level, displayAs, value, onChange, fieldId, depth, 
       <span className="info-trigger" style={{ marginLeft: 6 }}>i
         <span className="preview-tooltip" style={hasImages ? { minWidth: 180 } : undefined}>
           {it.infoText && <span className="preview-tooltip-text">{it.infoText}</span>}
-          {hasImages && it.infoImages.map((img, ii) => (
-            <img key={ii} src={img} alt="" className="preview-tooltip-img" style={{ marginBottom: 4 }} />
-          ))}
+          {hasImages && <TooltipImages images={it.infoImages} labels={it.infoImageLabels} style={{ marginBottom: 4 }} />}
         </span>
       </span>
     );
@@ -16834,7 +16888,7 @@ function CVRichTree({ items, level, displayAs, value, onChange, fieldId, depth, 
                 {isServicesStep && it.infoImages && it.infoImages.length > 0 && (
                   <span className="info-trigger" style={{ marginLeft: 6 }}>i
                     <span className="preview-tooltip" style={{ minWidth: 180 }}>
-                      {it.infoImages.map((img, ii) => (<img key={ii} src={img} alt="" className="preview-tooltip-img" style={{ marginBottom: 4 }} />))}
+                      <TooltipImages images={it.infoImages} labels={it.infoImageLabels} style={{ marginBottom: 4 }} />
                     </span>
                   </span>
                 )}
@@ -17509,9 +17563,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       i
       <span className="preview-tooltip">
         {f.helpText && <span className="preview-tooltip-text">{f.helpText}</span>}
-        {fieldGalleryImages.map((image, imageIndex) => (
-          <img key={imageIndex} src={image} alt="Info" className="preview-tooltip-img" />
-        ))}
+        <TooltipImages images={fieldGalleryImages} labels={f.galleryImageLabels} />
       </span>
     </span>
   ) : null;
@@ -17547,9 +17599,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       <span className="info-trigger" style={{ marginLeft: 6 }}>i
         <span className="preview-tooltip" style={hasImages ? { minWidth: 180 } : undefined}>
           {option.infoText && <span className="preview-tooltip-text">{option.infoText}</span>}
-          {hasImages && option.infoImages.map((img, ii) => (
-            <img key={ii} src={img} alt="" className="preview-tooltip-img" style={{ marginBottom: 4 }} />
-          ))}
+          {hasImages && <TooltipImages images={option.infoImages} labels={option.infoImageLabels} style={{ marginBottom: 4 }} />}
         </span>
       </span>
     );
@@ -17766,7 +17816,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
                       <label className="cv-rental-option-row cv-rental-priced-label" style={{ margin: 0 }}>
                         <span className={"cv-rental-item-name" + (thumb ? " has-image" : "")}>
                           <input type="checkbox" checked={effectiveSelected.includes(o.label)} onChange={() => toggle(o.label)} />
-                          {thumb && <RentalThumbWithTip src={thumb} text={raw.infoText} images={images.filter((img) => img !== thumb)} />}
+                          {thumb && <RentalThumbWithTip src={thumb} text={raw.infoText} images={images.filter((img) => img !== thumb)} labels={rentalTooltipLabels(raw)} />}
                           <span className="cv-rental-item-copy">
                             <strong>{raw.label}</strong>
                             {!thumb && <RentalInfoIcon text={raw.infoText} />}
@@ -17950,6 +18000,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
           priceLabel: simpleOptionPriceDisplay(o),
           infoText: o.infoText || "",
           infoImages: o.infoImages || [],
+          infoImageLabels: o.infoImageLabels,
         };
       });
       return (
