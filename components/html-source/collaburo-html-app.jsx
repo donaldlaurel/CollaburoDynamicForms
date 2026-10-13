@@ -4998,6 +4998,16 @@ function simpleOptionPricingStructure(option) {
   return "flat";
 }
 
+const OPTION_DESC_FONT_SIZES = [6, 7, 8, 9, 10];
+const OPTION_DESC_FONT_SIZE_DEFAULT = 8;
+const OPTION_DESC_FONT_SIZE_MAX = 10;
+
+function optionDescFontSize(option) {
+  const size = Number(option && option.descFontSize);
+  if (!Number.isFinite(size) || size <= 0) return OPTION_DESC_FONT_SIZE_DEFAULT;
+  return Math.min(size, OPTION_DESC_FONT_SIZE_MAX);
+}
+
 function simpleOptionPriceDisplay(option) {
   const price = optionPrice(option);
   if (!optionHasPricing(option) || price <= 0) return "";
@@ -7565,7 +7575,18 @@ function SimpleChoiceOptionList({ rows, level, path, openKeys, onToggleOpen, onC
                 <div className="field-grid">
                   <div>
                     <label className="lbl">Short description</label>
-                    <input className="input" value={option.description || option.desc || ""} placeholder="Optional helper text" onChange={(e) => update(index, { description: e.target.value, desc: e.target.value })} />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input className="input" style={{ flex: 1 }} value={option.description || option.desc || ""} placeholder="Optional helper text" onChange={(e) => update(index, { description: e.target.value, desc: e.target.value })} />
+                      <select
+                        className="select"
+                        title="Short description font size (max 10px)"
+                        value={optionDescFontSize(option)}
+                        onChange={(e) => update(index, { descFontSize: Math.min(Number(e.target.value), OPTION_DESC_FONT_SIZE_MAX) })}
+                        style={{ width: 76 }}
+                      >
+                        {OPTION_DESC_FONT_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div>
                     <label className="lbl">Information icon</label>
@@ -11506,8 +11527,7 @@ function PreviewField({ f }) {
                 <span>
                   {o.label}
                   {o.enablePrice && o.price ? <span style={{ color: "var(--accent)", marginLeft: 4, fontWeight: 600 }}>+${o.price}</span> : null}
-                  {o.infoText && <span className="info-trigger" style={{ marginLeft: 4 }}>i<span className="preview-tooltip"><span className="preview-tooltip-text">{o.infoText}</span></span></span>}
-                  {o.infoImages && o.infoImages.length > 0 && <span className="info-trigger" style={{ marginLeft: 3, fontSize: 8, fontWeight: 800 }}>IMG<span className="preview-tooltip">{o.infoImages.map((im, ii) => <img key={ii} src={im} className="preview-tooltip-img" />)}</span></span>}
+                  {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 4 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}{(o.infoImages || []).map((im, ii) => <img key={ii} src={im} alt="" className="preview-tooltip-img" />)}</span></span>}
                 </span>
               </label>
               {hasChildKey && o[hasChildKey] && (o[childKey] || []).length > 0 && (
@@ -11642,7 +11662,7 @@ function PreviewField({ f }) {
         const parts = o.split("|");
         return { label: parts[0], desc: parts[1] || "", price: null };
       }
-      return { label: o.label || "", desc: o.desc || o.description || "", price: optionHasPricing(o) ? optionPrice(o) : null, infoText: o.infoText || "", infoImages: o.infoImages || [] };
+      return { label: o.label || "", desc: o.desc || o.description || "", descFontSize: optionDescFontSize(o), price: optionHasPricing(o) ? optionPrice(o) : null, infoText: o.infoText || "", infoImages: o.infoImages || [] };
     });
     return (
       <div className="preview-field">
@@ -11654,9 +11674,8 @@ function PreviewField({ f }) {
               <span>
                 <b style={{ fontSize: 12 }}>{o.label}</b>
                 {o.price !== null && <span style={{ color: "var(--accent)", marginLeft: 5, fontWeight: 700 }}>+${o.price.toFixed(2)}</span>}
-                {o.infoText && <span className="info-trigger" style={{ marginLeft: 5 }}>i<span className="preview-tooltip"><span className="preview-tooltip-text">{o.infoText}</span></span></span>}
-                {o.infoImages && o.infoImages.length > 0 && <span className="info-trigger" style={{ marginLeft: 5, background: "#fff4eb", color: "var(--accent)" }}><span style={{ fontSize: 9, fontWeight: 800 }}>IMG</span><span className="preview-tooltip">{o.infoImages.map((img, ii) => <img key={ii} src={img} alt="" className="preview-tooltip-img" />)}</span></span>}
-                {o.desc && <span style={{ display: "block", fontSize: 8, color: "var(--ink-3)", marginTop: 1 }}>{o.desc}</span>}
+                {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 5 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}{(o.infoImages || []).map((img, ii) => <img key={ii} src={img} alt="" className="preview-tooltip-img" />)}</span></span>}
+                {o.desc && <span style={{ display: "block", fontSize: optionDescFontSize(o), color: "var(--ink-3)", marginTop: 1 }}>{o.desc}</span>}
               </span>
             </label>
           ))}
@@ -16693,27 +16712,20 @@ function CVRichTree({ items, level, displayAs, value, onChange, fieldId, depth, 
     }
   };
 
-  const renderInfoIcons = (it) => (
-    <>
-      {it.infoText && (
-        <span className="info-trigger" style={{ marginLeft: 6 }}>i
-          <span className="preview-tooltip">
-            <span className="preview-tooltip-text">{it.infoText}</span>
-          </span>
+  const renderInfoIcons = (it) => {
+    const hasImages = it.infoImages && it.infoImages.length > 0;
+    if (!it.infoText && !hasImages) return null;
+    return (
+      <span className="info-trigger" style={{ marginLeft: 6 }}>i
+        <span className="preview-tooltip" style={hasImages ? { minWidth: 180 } : undefined}>
+          {it.infoText && <span className="preview-tooltip-text">{it.infoText}</span>}
+          {hasImages && it.infoImages.map((img, ii) => (
+            <img key={ii} src={img} alt="" className="preview-tooltip-img" style={{ marginBottom: 4 }} />
+          ))}
         </span>
-      )}
-      {it.infoImages && it.infoImages.length > 0 && (
-        <span className="info-trigger" title="View images" style={{ marginLeft: 4, background: "#fff4eb", color: "var(--accent)" }}>
-          <span style={{ fontSize: 9, fontWeight: 800 }}>IMG</span>
-          <span className="preview-tooltip" style={{ minWidth: 180 }}>
-            {it.infoImages.map((img, ii) => (
-              <img key={ii} src={img} alt="" className="preview-tooltip-img" style={{ marginBottom: 4 }} />
-            ))}
-          </span>
-        </span>
-      )}
-    </>
-  );
+      </span>
+    );
+  };
 
   // Select dropdown rendering
   if (displayAs === "select") {
@@ -16799,15 +16811,14 @@ function CVRichTree({ items, level, displayAs, value, onChange, fieldId, depth, 
                 {/* For non-services steps, keep the (i) popover. For services, description shown inline below. */}
                 {!isServicesStep && renderInfoIcons(it)}
                 {isServicesStep && it.infoImages && it.infoImages.length > 0 && (
-                  <span className="info-trigger" title="View images" style={{ marginLeft: 4, background: "#fff4eb", color: "var(--accent)" }}>
-                    <span style={{ fontSize: 9, fontWeight: 800 }}>IMG</span>
+                  <span className="info-trigger" style={{ marginLeft: 6 }}>i
                     <span className="preview-tooltip" style={{ minWidth: 180 }}>
                       {it.infoImages.map((img, ii) => (<img key={ii} src={img} alt="" className="preview-tooltip-img" style={{ marginBottom: 4 }} />))}
                     </span>
                   </span>
                 )}
                 {!isServicesStep && (it.description || it.desc) && (
-                  <span style={{ display: "block", color: "var(--ink-3)", fontSize: 8, lineHeight: 1.35, marginTop: 2 }}>
+                  <span style={{ display: "block", color: "var(--ink-3)", fontSize: optionDescFontSize(it), lineHeight: 1.35, marginTop: 2 }}>
                     {it.description || it.desc}
                   </span>
                 )}
@@ -17505,27 +17516,20 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       {descEl}
     </label>
   );
-  const optionInfoEl = (option) => (
-    <>
-      {option.infoText && (
-        <span className="info-trigger" style={{ marginLeft: 6 }}>i
-          <span className="preview-tooltip">
-            <span className="preview-tooltip-text">{option.infoText}</span>
-          </span>
+  const optionInfoEl = (option) => {
+    const hasImages = option.infoImages && option.infoImages.length > 0;
+    if (!option.infoText && !hasImages) return null;
+    return (
+      <span className="info-trigger" style={{ marginLeft: 6 }}>i
+        <span className="preview-tooltip" style={hasImages ? { minWidth: 180 } : undefined}>
+          {option.infoText && <span className="preview-tooltip-text">{option.infoText}</span>}
+          {hasImages && option.infoImages.map((img, ii) => (
+            <img key={ii} src={img} alt="" className="preview-tooltip-img" style={{ marginBottom: 4 }} />
+          ))}
         </span>
-      )}
-      {option.infoImages && option.infoImages.length > 0 && (
-        <span className="info-trigger" title="View images" style={{ marginLeft: 4, background: "#fff4eb", color: "var(--accent)" }}>
-          <span style={{ fontSize: 9, fontWeight: 800 }}>IMG</span>
-          <span className="preview-tooltip" style={{ minWidth: 180 }}>
-            {option.infoImages.map((img, ii) => (
-              <img key={ii} src={img} alt="" className="preview-tooltip-img" style={{ marginBottom: 4 }} />
-            ))}
-          </span>
-        </span>
-      )}
-    </>
-  );
+      </span>
+    );
+  };
   const autoFieldDeliveryLines = fieldAutoDeliveryLines(f, autoDeliveryLines);
   const autoFieldDeliveryOn = autoFieldDeliveryLines.length > 0;
   const autoDeliveryNote = autoFieldDeliveryOn ? (
@@ -17779,7 +17783,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
                     <span>
                       <div className="cv-radio-label">{o.display}{optionInfoEl(raw)}</div>
                       {isAuto && autoDeliveryNote}
-                      {(raw.description || raw.desc) && <div className="cv-radio-desc">{raw.description || raw.desc}</div>}
+                      {(raw.description || raw.desc) && <div className="cv-radio-desc" style={{ fontSize: optionDescFontSize(raw) }}>{raw.description || raw.desc}</div>}
                     </span>
                   </div>
                 );
@@ -17917,6 +17921,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
         return {
           label: o.label || "",
           desc: o.desc || o.description || "",
+          descFontSize: optionDescFontSize(o),
           price: optionHasPricing(o) ? optionPrice(o) : null,
           priceLabel: simpleOptionPriceDisplay(o),
           infoText: o.infoText || "",
@@ -17946,7 +17951,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
                 <span>
                   <div className="cv-radio-label">{o.label}{optionInfoEl(o)}</div>
                   {pricesVisible && o.priceLabel && <span style={{ color: "var(--accent)", fontSize: 11.5, fontWeight: 700 }}>+{o.priceLabel}</span>}
-                  {o.desc && <div className="cv-radio-desc">{o.desc}</div>}
+                  {o.desc && <div className="cv-radio-desc" style={{ fontSize: optionDescFontSize(o) }}>{o.desc}</div>}
                 </span>
               </div>
             ))}
