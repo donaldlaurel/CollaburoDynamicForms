@@ -2858,7 +2858,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-toggle-row:hover{background:#faf7f3}
 .cv-toggle-row input{margin-top:2px;flex-shrink:0;accent-color:var(--accent);width:16px;height:16px}
 .cv-toggle-row b{font-weight:600}
-.cv-choice-row{display:flex;align-items:flex-start;gap:9px;font-size:13px;cursor:pointer;padding:6px 8px;border-radius:8px;transition:background .15s,border-color .15s}
+.cv-choice-row{display:flex;align-items:flex-start;gap:9px;font-size:13px;cursor:pointer;padding:3px 8px;border-radius:8px;transition:background .15s,border-color .15s}
 .cv-choice-row:hover{background:#faf7f3}
 .cv-choice-row input{margin-top:2px;flex-shrink:0;accent-color:var(--accent);width:15px;height:15px}
 .cv-choice-row > span:not(.info-trigger),.cv-radio-option > span:not(.info-trigger),.cv-toggle-row > span:not(.info-trigger){flex:1;min-width:0}
@@ -3022,8 +3022,8 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-venue-detail-cols{padding:0 24px 20px}
 
 /* Radio buttons with descriptions */
-.cv-radio-group{display:flex;flex-direction:column;gap:6px}
-.cv-radio-option{display:flex;align-items:flex-start;gap:9px;border:1px solid #d0d0d0;border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .15s,background .15s}
+.cv-radio-group{display:flex;flex-direction:column;gap:4px}
+.cv-radio-option{display:flex;align-items:flex-start;gap:9px;border:1px solid #d0d0d0;border-radius:8px;padding:6px 12px;cursor:pointer;transition:border-color .15s,background .15s}
 .cv-radio-option:hover{border-color:#999;background:#fafafa}
 .cv-radio-option.sel{border-color:var(--accent);background:#fff4eb}
 .cv-radio-option input[type="radio"],.cv-radio-option input[type="checkbox"]{margin-top:3px;flex-shrink:0;accent-color:var(--accent);pointer-events:none;width:16px;height:16px}
