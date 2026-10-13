@@ -1869,6 +1869,10 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .rental-info-icon:hover,.rental-info-icon:focus{border-color:var(--accent);color:var(--accent);outline:none}
 .rental-info-tip{position:fixed;width:220px;border:1px solid var(--line-strong);background:#fff;border-radius:var(--r-2);box-shadow:0 10px 30px rgba(0,0,0,.18);padding:10px;z-index:10000;font-size:11px;line-height:1.35;color:var(--ink-2);pointer-events:none}
 .rental-info-tip img{width:100%;max-height:120px;object-fit:cover;border-radius:var(--r-1);margin-bottom:8px}
+.rental-thumb-tip{width:300px}
+.rental-thumb-tip img{max-height:300px;height:auto;object-fit:contain;background:var(--surface-2)}
+.rental-thumb-tip img:last-child{margin-bottom:0}
+.cv-rental-item-thumb.has-tip{cursor:zoom-in}
 .rental-client-options{display:flex;flex-direction:column;gap:7px}
 .rental-client-option{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:var(--r-2);background:var(--surface-2);padding:8px 10px;font-size:12px;cursor:pointer;text-align:left;width:100%;font-family:inherit;color:inherit}
 .rental-client-option.active{border-color:var(--accent);background:var(--accent-soft)}
@@ -2738,7 +2742,9 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 @media (max-width:760px){.cv-admin-bar{align-items:flex-start;gap:8px;padding:9px 12px}.cv-admin-bar-identity{align-items:flex-start;flex-direction:column;gap:2px}.cv-admin-bar-actions{gap:7px}.cv-admin-bar-note{display:none}.cv-admin-save-btn,.cv-admin-exit-btn{padding:0 10px}}
 @media (max-width:440px){.cv-admin-bar{flex-wrap:wrap}.cv-admin-bar-actions{width:100%;justify-content:flex-end}}
 .cv-title{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-bottom:28px}
-.cv-intro-note{max-width:720px;margin:-14px auto 24px;color:#5f554d;background:#fff8f2;border:1px solid #f0d6c2;border-radius:8px;padding:12px 16px;font-size:13px;line-height:1.5;text-align:left}
+.cv-intro-note{position:relative;max-width:720px;margin:-14px auto 24px;color:#5f554d;background:#fff8f2;border:1px solid #f0d6c2;border-radius:8px;padding:12px 36px 12px 16px;font-size:13px;line-height:1.5;text-align:left}
+.cv-intro-note-close{position:absolute;top:6px;right:8px;width:24px;height:24px;border:0;border-radius:4px;background:transparent;color:#8a7b6f;font-size:18px;line-height:1;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center}
+.cv-intro-note-close:hover,.cv-intro-note-close:focus-visible{background:#f3e3d6;color:#5f554d;outline:none}
 
 /* Progress bar */
 .cv-progress-shell{position:relative;max-width:100%;margin-bottom:8px}
@@ -2887,6 +2893,8 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-rental-price{font-size:11px;color:#444;margin-left:2px}
 .cv-rental-item-name{display:inline-flex;align-items:center;gap:8px;min-width:0;flex:1}
 .cv-rental-item-copy{display:inline-flex;align-items:center;gap:4px;min-width:0;flex-wrap:wrap}
+.cv-rental-item-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cv-rental-item-desc{font-size:11.5px;font-weight:400;line-height:1.35;color:var(--ink-3);white-space:pre-line}
 .cv-rental-item-thumb{width:38px;height:30px;border:1px solid var(--line);border-radius:var(--r-1);background:var(--surface-2);overflow:hidden;flex:0 0 auto}
 .cv-rental-item-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .cv-rental-subline{border-top:1px solid #d9dfe5;margin:8px 0 6px;padding-top:7px;font-size:12px;font-weight:700}

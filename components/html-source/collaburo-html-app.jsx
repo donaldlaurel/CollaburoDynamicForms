@@ -3132,20 +3132,51 @@ function previewItemPriceLabel(item) {
   return price + " each";
 }
 
-function RentalInfoIcon({ text, imageUrl, images }) {
-  const imageList = Array.from(new Set([...(Array.isArray(images) ? images : []), imageUrl].filter(Boolean)));
+function useRentalTipPosition(tipWidth = 220) {
   const [tip, setTip] = React.useState(null);
   const hideTip = () => setTip(null);
-  if (!text && imageList.length === 0) return null;
   const showTip = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const showAbove = rect.top > 180;
     setTip({
-      left: Math.min(window.innerWidth - 236, Math.max(12, rect.left + rect.width / 2 - 110)),
+      left: Math.min(window.innerWidth - tipWidth - 16, Math.max(12, rect.left + rect.width / 2 - tipWidth / 2)),
       top: showAbove ? rect.top - 10 : rect.bottom + 10,
       transform: showAbove ? "translateY(-100%)" : "translateY(0)",
     });
   };
+  return { tip, showTip, hideTip };
+}
+
+function RentalThumbWithTip({ src, text, images }) {
+  const imageList = Array.from(new Set([src, ...(Array.isArray(images) ? images : [])].filter(Boolean)));
+  const { tip, showTip, hideTip } = useRentalTipPosition(300);
+  if (!src) return null;
+  return (
+    <>
+      <span
+        className="cv-rental-item-thumb has-tip"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          tip ? hideTip() : showTip(e);
+        }}
+        onMouseEnter={showTip}
+        onMouseLeave={hideTip}
+      >
+        <img src={src} alt="" />
+      </span>
+      {tip && <span className="rental-info-tip rental-thumb-tip" style={{ left: tip.left, top: tip.top, transform: tip.transform }}>
+        {imageList.map((imageSrc, index) => <img src={imageSrc} alt="" key={imageSrc + index} />)}
+        {text && <span>{text}</span>}
+      </span>}
+    </>
+  );
+}
+
+function RentalInfoIcon({ text, imageUrl, images }) {
+  const imageList = Array.from(new Set([...(Array.isArray(images) ? images : []), imageUrl].filter(Boolean)));
+  const { tip, showTip, hideTip } = useRentalTipPosition();
+  if (!text && imageList.length === 0) return null;
   return (
     <>
       <button
@@ -12889,10 +12920,14 @@ function ClientRentalRepeatRows({ field, items, fieldState, onChange }) {
     updateRow(rowId, { itemId: choice?.itemId || "", optionId: choice?.optionId || "" });
   };
   const rowChoiceKey = (row) => row.itemId ? (row.optionId ? row.itemId + "::" + row.optionId : String(row.itemId)) : "";
+  const headImage = rentalGroupTileImage(items, field.rentalGroup || field.label) || rentalItemImage(items.find((item) => rentalItemImage(item)));
   return (
     <div className="cv-rental-detail cv-rental-group-panel cv-rental-repeat">
       <div className="cv-rental-detail-head cv-rental-repeat-head">
-        <span>{field.label}</span>
+        <span className={"cv-rental-item-name" + (headImage ? " has-image" : "")}>
+          <RentalThumbWithTip src={headImage} />
+          <span className="cv-rental-item-copy">{field.label}</span>
+        </span>
         {canAdd && (
           <button type="button" className="cv-rental-repeat-add" onClick={() => setRows([...rows, newRentalRepeatRow()])}>
             {field.repeatAddLabel || defaults.addLabel}
@@ -12948,10 +12983,23 @@ function rentalOptionPriceLabel(option) {
 
 function RentalItemNameWithImage({ item, children }) {
   const image = rentalItemImage(item);
+  const infoImages = rentalTooltipImages(item);
+  const inlineText = !image && item.infoText ? item.infoText : "";
+  const copy = (
+    <span className="cv-rental-item-copy">
+      {children}
+      {!image && <RentalInfoIcon imageUrl={item.infoImageUrl} images={infoImages} />}
+    </span>
+  );
   return (
     <span className={"cv-rental-item-name" + (image ? " has-image" : "")}>
-      {image && <span className="cv-rental-item-thumb"><img src={image} alt="" /></span>}
-      <span className="cv-rental-item-copy">{children}</span>
+      {image && <RentalThumbWithTip src={image} text={item.infoText} images={infoImages} />}
+      {inlineText ? (
+        <span className="cv-rental-item-text">
+          {copy}
+          <span className="cv-rental-item-desc">{inlineText}</span>
+        </span>
+      ) : copy}
     </span>
   );
 }
@@ -13161,7 +13209,7 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
       {!grouped && (
         <div className="cv-rental-detail-head" style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <RentalItemNameWithImage item={item}>
-            {item.name}: <RentalInfoIcon text={item.infoText} imageUrl={item.infoImageUrl} images={rentalTooltipImages(item)} />
+            {item.name}:
             {rentalRequiresDelivery(item) && <DeliveryIndicator />}
           </RentalItemNameWithImage>
           {pricesVisible && <span style={{ fontWeight: 500 }}>{priceLabel}</span>}
@@ -13943,7 +13991,6 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                               />
                               <RentalItemNameWithImage item={item}>
                                 <strong>{item.name}</strong>
-                                <RentalInfoIcon text={item.infoText} imageUrl={item.infoImageUrl} images={rentalTooltipImages(item)} />
                                 {rentalRequiresDelivery(item) && <DeliveryIndicator />}
                                 {inclusion && <span className="cv-rental-included-note">Included in {inclusion.packageName}</span>}
                               </RentalItemNameWithImage>
@@ -14236,6 +14283,13 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const [emailFieldPulseKey, setEmailFieldPulseKey] = React.useState(0);
   const [mobileCostOpen, setMobileCostOpen] = React.useState(false);
   const [progressScrollState, setProgressScrollState] = React.useState({ left: false, right: false });
+  const [introNoteDismissed, setIntroNoteDismissed] = React.useState(() => {
+    try { return window.localStorage.getItem("collaburo.client.introNoteDismissed.v1") === "1"; } catch { return false; }
+  });
+  const dismissIntroNote = () => {
+    setIntroNoteDismissed(true);
+    try { window.localStorage.setItem("collaburo.client.introNoteDismissed.v1", "1"); } catch {}
+  };
   const progressBarRef = React.useRef(null);
   const lastActivityPingRef = React.useRef(0);
   const loadedAnswersRef = React.useRef(answers);
@@ -15730,9 +15784,12 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
             </button>
           )}
           <h1 className="cv-title">{branding.siteTitle || "Customize Your Event"}</h1>
-          <div className="cv-intro-note">
-            This is just a planning tool. Fill in what you can, and it is okay if some details are missing or change later. Your saved form lets us know you are interested in the space, and we can look back, update details, and finalize everything together afterward.
-          </div>
+          {!introNoteDismissed && (
+            <div className="cv-intro-note">
+              <button type="button" className="cv-intro-note-close" aria-label="Close" onClick={dismissIntroNote}>×</button>
+              This is just a planning tool. Fill in what you can, and it is okay if some details are missing or change later. Your saved form lets us know you are interested in the space, and we can look back, update details, and finalize everything together afterward.
+            </div>
+          )}
           <div className={"cv-progress-shell" + (progressScrollState.left ? " has-left-shadow" : "") + (progressScrollState.right ? " has-right-shadow" : "")}>
             <div className="cv-progress-bar" ref={progressBarRef} onScroll={updateProgressScrollState}>
               {list.map((s, i) => (
