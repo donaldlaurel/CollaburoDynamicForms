@@ -17640,7 +17640,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
     }
     case "toggle":
       return (
-        <div className="cv-form-group">
+        <div className="cv-form-group cv-toggle-group">
           <label className="cv-toggle-row">
             <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
             <span>
