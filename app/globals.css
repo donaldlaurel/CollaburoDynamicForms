@@ -2671,7 +2671,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .preview-tooltip-img{max-width:100%;max-height:160px;border-radius:6px;margin-top:8px;display:block}
 
 /* ---------- Field description (small text below label in preview) ---------- */
-.field-desc-preview{display:block;width:100%;font-size:11.5px;color:var(--ink-3,#888);font-weight:400;line-height:1.45;margin-top:2px}
+.field-desc-preview{display:block;width:100%;font-size:10px;color:var(--ink-3,#888);font-weight:400;line-height:1.45;margin-top:2px}
 
 /* ---------- Upload preview ---------- */
 .upload-wrap{position:relative}
@@ -2840,7 +2840,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-form-group{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .cv-label{font-size:13px;font-weight:600;position:relative;display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
 .cv-req{color:var(--accent)}
-.cv-field-desc{display:block;width:100%;font-size:11.5px;color:#6b6b6b;font-weight:400;line-height:1.4;margin-top:1px}
+.cv-field-desc{display:block;width:100%;font-size:10px;color:#6b6b6b;font-weight:400;line-height:1.4;margin-top:1px}
 .cv-field-has-error .cv-input{border-color:#e08a79;box-shadow:0 0 0 3px rgba(201,68,45,.08)}
 .cv-field-pending > .cv-rule-fieldset > .cv-form-group{outline:1.5px dashed #f0b48f;outline-offset:5px;border-radius:6px;transition:outline-color .2s}
 .cv-field-error{margin:-10px 0 12px;padding-left:2px;color:var(--danger);font-size:12px;font-weight:650;line-height:1.35;animation:cvFieldErrorIn .28s ease-out}
