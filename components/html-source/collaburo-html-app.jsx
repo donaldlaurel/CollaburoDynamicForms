@@ -21999,6 +21999,472 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
   );
 }
 
+const REPORT_BOOKED_STATUSES = ["Partially Paid", "Paid", "Completed"];
+const REPORT_PERIODS = [
+  { id: "all", label: "All time" },
+  { id: "month", label: "This month" },
+  { id: "30d", label: "Last 30 days" },
+  { id: "next90", label: "Next 90 days" },
+  { id: "ytd", label: "This year" },
+  { id: "12m", label: "Last 12 months" },
+];
+const REPORT_COST_CATEGORIES = [
+  ["spaceRentalTotal", "Space rental"],
+  ["spaceContentTotal", "Content rentals"],
+  ["cateringTotal", "Catering"],
+  ["setupTotal", "Set-up services"],
+  ["eventTotal", "Event services"],
+  ["cleanupTotal", "Clean-up services"],
+];
+const REPORT_ADDON_LINE_GROUPS = [
+  ["spaceContentLines", "Rentals"],
+  ["cateringLines", "Catering"],
+  ["setupLines", "Set-up"],
+  ["eventLines", "Event services"],
+  ["cleanupLines", "Clean-up"],
+];
+const reportMoney = (value) => "$" + Math.round(Number(value || 0)).toLocaleString("en-US");
+const reportPercent = (part, whole) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : "–");
+const reportLineSum = (lines) => (Array.isArray(lines) ? lines.reduce((sum, line) => sum + Number(line?.total || line?.amount || 0), 0) : 0);
+
+function reportPeriodRange(id, now) {
+  const today = calStartOfDay(now);
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  switch (id) {
+    case "month": return [new Date(year, month, 1), new Date(year, month + 1, 1)];
+    case "30d": return [calAddDays(today, -29), calAddDays(today, 1)];
+    case "next90": return [today, calAddDays(today, 91)];
+    case "ytd": return [new Date(year, 0, 1), new Date(year + 1, 0, 1)];
+    case "12m": return [new Date(year - 1, month + 1, 1), new Date(year, month + 1, 1)];
+    default: return [null, null];
+  }
+}
+
+function reportRecordFacts(record) {
+  const status = normalizeProgressStatus(record.progress?.status);
+  const ranges = parseBookingCalendarRanges(record.request?.bookingDateTime, record.request?.space);
+  const roomNames = new Map();
+  [...ranges.map((range) => range.room), record.request?.space].join(",").split(/\s*,\s*/).forEach((name) => {
+    const text = String(name || "").trim();
+    if (text && !roomNames.has(text.toLowerCase())) roomNames.set(text.toLowerCase(), text);
+  });
+  const costs = record.costs || {};
+  const booked = REPORT_BOOKED_STATUSES.includes(status) || progressAgreementComplete(record.progress || {});
+  return {
+    record,
+    status,
+    stage: status === "Cancelled" ? "lost" : booked ? "booked" : "open",
+    eventDate: ranges[0]?.start || null,
+    hours: ranges.reduce((sum, range) => sum + (range.allDay ? 0 : (range.end - range.start) / 3600000), 0),
+    rooms: Array.from(roomNames.values()),
+    costs,
+    total: Number(costs.total || costs.subtotal || 0),
+    submitted: new Date(record.submittedAt),
+    source: record.progress?.source || "Unspecified",
+    eventType: record.request?.eventType || "Unspecified",
+    guests: Number(String(record.request?.attendeeCount || "").replace(/[^\d.]/g, "")) || 0,
+    alcohol: /^(yes|y|true)/i.test(String(record.request?.alcoholOnSite || "").trim()),
+  };
+}
+
+function ReportBar({ value, max, className = "" }) {
+  const width = max > 0 && value > 0 ? Math.max(2, (value / max) * 100) : 0;
+  return <div className="rp-bar"><span className={className} style={{ width: `${width}%` }} /></div>;
+}
+
+function ReportPanel({ title, subtitle, children, className = "" }) {
+  return (
+    <section className={"rp-panel " + className}>
+      <div className="rp-panel-head">
+        <h3>{title}</h3>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ReportsView({ records, venues = [], onOpenRecord }) {
+  const Ic = window.Icons;
+  const [period, setPeriod] = React.useState("all");
+  const [basis, setBasis] = React.useState("event");
+  const [room, setRoom] = React.useState("All");
+  const [scope, setScope] = React.useState("booked");
+  const now = new Date();
+  const today = calStartOfDay(now);
+
+  const allFacts = React.useMemo(() => (records || []).map(reportRecordFacts), [records]);
+  const roomOptions = React.useMemo(() => {
+    const names = new Map();
+    [...venues.map((venue) => venue.name), ...allFacts.flatMap((fact) => fact.rooms)].forEach((name) => {
+      const text = String(name || "").trim();
+      if (text && !names.has(text.toLowerCase())) names.set(text.toLowerCase(), text);
+    });
+    return Array.from(names.values());
+  }, [venues, allFacts]);
+
+  const [from, to] = reportPeriodRange(period, now);
+  const factDate = (fact) => (basis === "event" ? fact.eventDate || fact.submitted : fact.submitted);
+  const roomFacts = allFacts.filter((fact) => room === "All" || fact.rooms.some((name) => name.toLowerCase() === room.toLowerCase()));
+  const facts = roomFacts.filter((fact) => {
+    if (!from) return true;
+    const date = factDate(fact);
+    return date instanceof Date && !Number.isNaN(date.getTime()) && date >= from && date < to;
+  });
+  const booked = facts.filter((fact) => fact.stage === "booked");
+  const open = facts.filter((fact) => fact.stage === "open");
+  const lost = facts.filter((fact) => fact.stage === "lost");
+  const submittedFacts = facts.filter((fact) => fact.status !== "Draft");
+  const revenueFacts = scope === "booked" ? booked : facts.filter((fact) => fact.stage !== "lost");
+  const bookedRevenue = booked.reduce((sum, fact) => sum + fact.total, 0);
+  const pipelineValue = open.reduce((sum, fact) => sum + fact.total, 0);
+  const leadTimes = booked
+    .filter((fact) => fact.eventDate && !Number.isNaN(fact.submitted.getTime()) && fact.eventDate > fact.submitted)
+    .map((fact) => (fact.eventDate - fact.submitted) / 86400000);
+  const avgLeadTime = leadTimes.length ? Math.round(leadTimes.reduce((a, b) => a + b, 0) / leadTimes.length) : null;
+  const upcoming30 = roomFacts.filter((fact) => fact.stage !== "lost" && fact.eventDate && fact.eventDate >= today && fact.eventDate < calAddDays(today, 30)).length;
+  const bookedHours = booked.reduce((sum, fact) => sum + fact.hours, 0);
+
+  const kpis = [
+    { label: "Booked revenue", value: reportMoney(bookedRevenue), sub: `${booked.length} booked event${booked.length === 1 ? "" : "s"}` },
+    { label: "Open pipeline", value: reportMoney(pipelineValue), sub: `${open.length} open inquir${open.length === 1 ? "y" : "ies"}` },
+    { label: "Inquiry → booking", value: reportPercent(booked.length, submittedFacts.length), sub: `${booked.length} of ${submittedFacts.length} submitted` },
+    { label: "Avg booking value", value: booked.length ? reportMoney(bookedRevenue / booked.length) : "–", sub: `${Math.round(bookedHours)} booked hours` },
+    { label: "Avg lead time", value: avgLeadTime === null ? "–" : `${avgLeadTime} days`, sub: "Inquiry to event date" },
+    { label: "Lost / cancelled", value: String(lost.length), sub: `${reportPercent(lost.length, facts.length)} of inquiries` },
+    { label: "Events next 30 days", value: String(upcoming30), sub: "Booked or in progress" },
+  ];
+
+  const roomRows = (() => {
+    const rows = new Map();
+    const ensure = (name) => {
+      const key = name.toLowerCase();
+      if (!rows.has(key)) rows.set(key, { name, bookings: 0, revenue: 0, hours: 0, pipeline: 0 });
+      return rows.get(key);
+    };
+    (room === "All" ? roomOptions : [room]).forEach(ensure);
+    facts.filter((fact) => fact.stage !== "lost").forEach((fact) => {
+      const rooms = fact.rooms.length ? fact.rooms : ["No space"];
+      rooms.forEach((name) => {
+        const row = ensure(name);
+        if (fact.stage === "booked") {
+          row.bookings += 1;
+          row.revenue += fact.total / rooms.length;
+          row.hours += fact.hours / rooms.length;
+        } else {
+          row.pipeline += fact.total / rooms.length;
+        }
+      });
+    });
+    return Array.from(rows.values()).sort((a, b) => b.revenue - a.revenue || b.bookings - a.bookings);
+  })();
+  const roomRevenueTotal = roomRows.reduce((sum, row) => sum + row.revenue, 0);
+  const roomMax = Math.max(0, ...roomRows.map((row) => row.revenue));
+
+  const funnel = [
+    { label: "Inquiries started", count: facts.length },
+    { label: "Submitted", count: submittedFacts.length },
+    { label: "Contacted", count: facts.filter((fact) => !["Draft", "Not Contacted"].includes(fact.status)).length },
+    { label: "In discussion or later", count: facts.filter((fact) => fact.stage === "booked" || fact.status === "In Discussion").length },
+    { label: "Booked (contract or payment)", count: booked.length },
+    { label: "Completed", count: facts.filter((fact) => fact.status === "Completed").length },
+  ];
+
+  const mixRows = (() => {
+    const rows = REPORT_COST_CATEGORIES.map(([key, label]) => ({
+      label,
+      value: revenueFacts.reduce((sum, fact) => sum + Number(fact.costs[key] || 0), 0),
+    }));
+    rows.push({ label: "Fees", value: revenueFacts.reduce((sum, fact) => sum + reportLineSum(fact.costs.feeLines), 0) });
+    rows.push({ label: "Discounts", value: -revenueFacts.reduce((sum, fact) => sum + Math.abs(reportLineSum(fact.costs.discountLines)), 0) });
+    return rows.filter((row) => row.value !== 0);
+  })();
+  const mixMax = Math.max(0, ...mixRows.map((row) => Math.abs(row.value)));
+
+  const addOnRows = (() => {
+    const rows = new Map();
+    revenueFacts.forEach((fact) => {
+      REPORT_ADDON_LINE_GROUPS.forEach(([key, category]) => {
+        (Array.isArray(fact.costs[key]) ? fact.costs[key] : []).forEach((line) => {
+          const total = Number(line?.total || 0);
+          if (total <= 0) return;
+          const label = String(line.label || "Item").replace(/\s+x\s+\d+$/i, "").replace(/\s*\([^)]*\d{4}[^)]*\)\s*$/, "").trim();
+          const id = `${category}|${label.toLowerCase()}`;
+          if (!rows.has(id)) rows.set(id, { label, category, qty: 0, revenue: 0, bookings: new Set() });
+          const row = rows.get(id);
+          row.qty += Number(line.quantity || 1);
+          row.revenue += total;
+          row.bookings.add(fact.record.id);
+        });
+      });
+    });
+    return Array.from(rows.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  })();
+  const addOnMax = Math.max(0, ...addOnRows.map((row) => row.revenue));
+
+  const groupRows = (keyOf) => {
+    const rows = new Map();
+    facts.forEach((fact) => {
+      const key = keyOf(fact);
+      if (!rows.has(key)) rows.set(key, { name: key, inquiries: 0, booked: 0, revenue: 0, guests: 0, guestCount: 0 });
+      const row = rows.get(key);
+      row.inquiries += 1;
+      if (fact.guests) { row.guests += fact.guests; row.guestCount += 1; }
+      if (fact.stage === "booked") { row.booked += 1; row.revenue += fact.total; }
+    });
+    return Array.from(rows.values()).sort((a, b) => b.revenue - a.revenue || b.inquiries - a.inquiries);
+  };
+  const sourceRows = groupRows((fact) => fact.source);
+  const sourceMax = Math.max(0, ...sourceRows.map((row) => row.inquiries));
+  const typeRows = groupRows((fact) => fact.eventType).slice(0, 8);
+
+  const weekdayCounts = CALENDAR_WEEKDAYS_MONDAY_FIRST.map((label, index) => ({
+    label,
+    count: facts.filter((fact) => fact.stage !== "lost" && fact.eventDate && (fact.eventDate.getDay() + 6) % 7 === index).length,
+  }));
+  const weekdayMax = Math.max(0, ...weekdayCounts.map((row) => row.count));
+
+  const trendMonths = Array.from({ length: 12 }, (_, index) => new Date(today.getFullYear(), today.getMonth() - 8 + index, 1));
+  const trend = trendMonths.map((month) => {
+    const next = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+    const inMonth = (date) => date instanceof Date && date >= month && date < next;
+    const bookedInMonth = roomFacts.filter((fact) => fact.stage === "booked" && inMonth(fact.eventDate));
+    return {
+      month,
+      inquiries: roomFacts.filter((fact) => inMonth(fact.submitted)).length,
+      events: bookedInMonth.length,
+      revenue: bookedInMonth.reduce((sum, fact) => sum + fact.total, 0),
+    };
+  });
+  const trendMax = Math.max(1, ...trend.map((row) => Math.max(row.inquiries, row.events)));
+
+  const actionRows = roomFacts
+    .filter((fact) => fact.stage !== "lost" && fact.eventDate && fact.eventDate >= today && fact.eventDate < calAddDays(today, 60))
+    .map((fact) => {
+      const progress = fact.record.progress || {};
+      const issues = [];
+      if (!progressAgreementComplete(progress)) issues.push("Contract not signed");
+      if (!progressInsuranceComplete(progress)) issues.push("Insurance missing");
+      if (fact.alcohol && !progressAgcoLicenseComplete(progress)) issues.push("AGCO licence missing");
+      if (fact.stage === "open") issues.push("Not paid");
+      return { fact, issues };
+    })
+    .filter((row) => row.issues.length)
+    .sort((a, b) => a.fact.eventDate - b.fact.eventDate);
+
+  const exportCsv = () => {
+    const header = ["Booking ID", "Client", "Status", "Stage", "Source", "Event type", "Rooms", "Event date", "Inquiry date", "Guests", "Hours", "Total"];
+    const escape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const rows = facts.map((fact) => [
+      bookingCodeForRecord(fact.record),
+      fact.record.client?.name || "",
+      fact.status,
+      fact.stage,
+      fact.source,
+      fact.eventType,
+      fact.rooms.join(", "),
+      fact.eventDate ? calDateKey(fact.eventDate) : "",
+      Number.isNaN(fact.submitted.getTime()) ? "" : calDateKey(fact.submitted),
+      fact.guests || "",
+      fact.hours.toFixed(1),
+      fact.total.toFixed(2),
+    ]);
+    const csv = [header, ...rows].map((row) => row.map(escape).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `collaburo-report-${calDateKey(now)}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const scopeLabel = scope === "booked" ? "booked events" : "booked events and open quotes";
+  const emptyNote = (text) => <div className="rp-empty">{text}</div>;
+
+  return (
+    <div className="editor-col" style={{ flex: 1 }}>
+      <div className="editor-inner progress-list-inner">
+        <div className="editor-head">
+          <div>
+            <span className="editor-head-tag"><Ic.Chart size={11} /> Operations</span>
+            <h1>Reports</h1>
+            <p>Revenue, conversion, add-ons, and lead sources from the Rentals Progress List. Booked means a signed contract or a Partially Paid, Paid, or Completed status.</p>
+          </div>
+          <button className="btn sm" onClick={exportCsv} disabled={!facts.length}><Ic.Download size={13} /> Export CSV</button>
+        </div>
+
+        <div className="rp-filters">
+          <div><label className="lbl">Period</label><select className="select" value={period} onChange={(e) => setPeriod(e.target.value)}>{REPORT_PERIODS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
+          <div><label className="lbl">Date basis</label><select className="select" value={basis} onChange={(e) => setBasis(e.target.value)}><option value="event">Event date</option><option value="inquiry">Inquiry date</option></select></div>
+          <div><label className="lbl">Room</label><select className="select" value={room} onChange={(e) => setRoom(e.target.value)}><option value="All">All rooms</option>{roomOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></div>
+          <div><label className="lbl">Revenue includes</label><select className="select" value={scope} onChange={(e) => setScope(e.target.value)}><option value="booked">Booked only</option><option value="all">Booked + open quotes</option></select></div>
+        </div>
+
+        <div className="rp-kpis">
+          {kpis.map((kpi) => (
+            <div key={kpi.label} className="rp-kpi">
+              <div className="rp-kpi-label">{kpi.label}</div>
+              <div className="rp-kpi-value">{kpi.value}</div>
+              <div className="rp-kpi-sub">{kpi.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="rp-grid">
+          <ReportPanel title="Revenue by room" subtitle="Booked revenue, events, and hours per room. Multi-room bookings are split evenly.">
+            {roomRows.length ? (
+              <table className="rp-table">
+                <thead><tr><th>Room</th><th>Events</th><th>Hours</th><th>Revenue</th><th>Share</th><th>Open quotes</th></tr></thead>
+                <tbody>
+                  {roomRows.map((row) => (
+                    <tr key={row.name}>
+                      <td><span className="rp-room-name"><i className={"bk-cal-room-dot " + calRoomColorClass(row.name)} /> {row.name}</span><ReportBar value={row.revenue} max={roomMax} className={calRoomColorClass(row.name)} /></td>
+                      <td>{row.bookings}</td>
+                      <td>{Math.round(row.hours)}</td>
+                      <td className="rp-money">{reportMoney(row.revenue)}</td>
+                      <td>{reportPercent(row.revenue, roomRevenueTotal)}</td>
+                      <td className="rp-muted">{reportMoney(row.pipeline)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : emptyNote("No rooms or bookings in this period.")}
+          </ReportPanel>
+
+          <ReportPanel title="Inquiry to booking funnel" subtitle={`Share of all inquiries reaching each stage. ${lost.length} cancelled.`}>
+            <div className="rp-funnel">
+              {funnel.map((step) => (
+                <div key={step.label} className="rp-funnel-row">
+                  <div className="rp-funnel-label"><span>{step.label}</span><strong>{step.count}</strong><em>{reportPercent(step.count, funnel[0].count)}</em></div>
+                  <ReportBar value={step.count} max={funnel[0].count} className="accent" />
+                </div>
+              ))}
+            </div>
+          </ReportPanel>
+
+          <ReportPanel title="Top-grossing add-ons" subtitle={`Rentals, catering, and services ranked by revenue across ${scopeLabel}.`}>
+            {addOnRows.length ? (
+              <table className="rp-table">
+                <thead><tr><th>Item</th><th>Qty</th><th>Bookings</th><th>Revenue</th></tr></thead>
+                <tbody>
+                  {addOnRows.map((row) => (
+                    <tr key={row.category + row.label}>
+                      <td><span className="rp-item-name">{row.label}</span><span className="rp-item-cat">{row.category}</span><ReportBar value={row.revenue} max={addOnMax} className="accent" /></td>
+                      <td>{row.qty}</td>
+                      <td>{row.bookings.size}</td>
+                      <td className="rp-money">{reportMoney(row.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : emptyNote(`No priced add-ons on ${scopeLabel} in this period.`)}
+          </ReportPanel>
+
+          <ReportPanel title="Lead source attribution" subtitle="Where inquiries come from, how often they book, and the revenue they bring.">
+            {sourceRows.length ? (
+              <table className="rp-table">
+                <thead><tr><th>Source</th><th>Inquiries</th><th>Booked</th><th>Conversion</th><th>Revenue</th></tr></thead>
+                <tbody>
+                  {sourceRows.map((row) => (
+                    <tr key={row.name}>
+                      <td><span className={row.name === "Unspecified" ? "rp-muted" : ""}>{row.name}</span><ReportBar value={row.inquiries} max={sourceMax} className="ink" /></td>
+                      <td>{row.inquiries}</td>
+                      <td>{row.booked}</td>
+                      <td>{reportPercent(row.booked, row.inquiries)}</td>
+                      <td className="rp-money">{reportMoney(row.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : emptyNote("No inquiries in this period.")}
+          </ReportPanel>
+
+          <ReportPanel title="Revenue mix" subtitle={`What ${scopeLabel} are spending on.`}>
+            {mixRows.length ? (
+              <div className="rp-funnel">
+                {mixRows.map((row) => (
+                  <div key={row.label} className="rp-funnel-row">
+                    <div className="rp-funnel-label"><span>{row.label}</span><strong className={row.value < 0 ? "rp-negative" : ""}>{row.value < 0 ? "−" : ""}{reportMoney(Math.abs(row.value))}</strong></div>
+                    <ReportBar value={Math.abs(row.value)} max={mixMax} className={row.value < 0 ? "negative" : "accent"} />
+                  </div>
+                ))}
+              </div>
+            ) : emptyNote(`No priced quotes on ${scopeLabel} in this period.`)}
+          </ReportPanel>
+
+          <ReportPanel title="Event types" subtitle="Demand and value by type of event.">
+            {typeRows.length ? (
+              <table className="rp-table">
+                <thead><tr><th>Event type</th><th>Inquiries</th><th>Booked</th><th>Avg guests</th><th>Revenue</th></tr></thead>
+                <tbody>
+                  {typeRows.map((row) => (
+                    <tr key={row.name}>
+                      <td className={row.name === "Unspecified" ? "rp-muted" : ""}>{row.name}</td>
+                      <td>{row.inquiries}</td>
+                      <td>{row.booked}</td>
+                      <td>{row.guestCount ? Math.round(row.guests / row.guestCount) : "–"}</td>
+                      <td className="rp-money">{reportMoney(row.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : emptyNote("No inquiries in this period.")}
+          </ReportPanel>
+
+          <ReportPanel title="Monthly activity" subtitle="Inquiries received vs. booked events by month (8 months back, 3 ahead). Ignores the period filter." className="wide">
+            <div className="rp-trend">
+              {trend.map((row) => (
+                <div key={row.month.toISOString()} className={"rp-trend-col" + (row.month.getMonth() === today.getMonth() && row.month.getFullYear() === today.getFullYear() ? " current" : "")} title={`${row.inquiries} inquiries · ${row.events} booked events · ${reportMoney(row.revenue)}`}>
+                  <div className="rp-trend-bars">
+                    <span className="inquiries" style={{ height: `${(row.inquiries / trendMax) * 100}%` }} />
+                    <span className="events" style={{ height: `${(row.events / trendMax) * 100}%` }} />
+                  </div>
+                  <div className="rp-trend-label">{row.month.toLocaleDateString("en-US", { month: "short" })}</div>
+                  <div className="rp-trend-value">{row.revenue ? reportMoney(row.revenue) : ""}</div>
+                </div>
+              ))}
+            </div>
+            <div className="rp-trend-legend"><span><i className="inquiries" /> Inquiries</span><span><i className="events" /> Booked events (revenue below)</span></div>
+          </ReportPanel>
+
+          <ReportPanel title="Busiest days" subtitle="Events (excluding cancelled) by day of the week.">
+            <div className="rp-weekdays">
+              {weekdayCounts.map((row) => (
+                <div key={row.label} className="rp-weekday">
+                  <div className="rp-weekday-bar"><span style={{ height: `${weekdayMax ? (row.count / weekdayMax) * 100 : 0}%` }} /></div>
+                  <strong>{row.count}</strong>
+                  <span>{row.label}</span>
+                </div>
+              ))}
+            </div>
+          </ReportPanel>
+
+          <ReportPanel title="Needs attention" subtitle="Events in the next 60 days with missing paperwork or payment." className="wide">
+            {actionRows.length ? (
+              <table className="rp-table">
+                <thead><tr><th>Event date</th><th>Client</th><th>Room</th><th>Status</th><th>Missing</th><th /></tr></thead>
+                <tbody>
+                  {actionRows.map(({ fact, issues }) => (
+                    <tr key={fact.record.id}>
+                      <td>{fact.eventDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</td>
+                      <td>{fact.record.client?.name || "Unnamed client"}</td>
+                      <td>{fact.rooms.join(", ") || "–"}</td>
+                      <td><span className={"bk-cal-status-pill " + progressStatusClass(fact.status)}>{fact.status}</span></td>
+                      <td><div className="rp-issues">{issues.map((issue) => <span key={issue}>{issue}</span>)}</div></td>
+                      <td><button type="button" className="btn ghost sm" onClick={() => onOpenRecord(fact.record.id)}><Ic.External size={12} /> Open</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : emptyNote("Nothing outstanding for the next 60 days.")}
+          </ReportPanel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, onUpdateRecord, onEmail, onCopyLink, onDelete }) {
   const Ic = window.Icons;
   const [now, setNow] = React.useState(Date.now());
@@ -24205,6 +24671,19 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
               setActiveSection("clients");
             }}
             onCreateBooking={startAdminBooking}
+          />
+        );
+      }
+      if (activeSection === "reports") {
+        return (
+          <ReportsView
+            records={progressRecords}
+            venues={rentalVenueOptions}
+            onOpenRecord={(recordId) => {
+              setSubmittedAnswersRecordId(null);
+              setActiveProgressId(recordId);
+              setActiveSection("clients");
+            }}
           />
         );
       }
