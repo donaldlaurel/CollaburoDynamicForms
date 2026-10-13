@@ -2671,7 +2671,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .preview-tooltip-img{max-width:100%;max-height:160px;border-radius:6px;margin-top:8px;display:block}
 
 /* ---------- Field description (small text below label in preview) ---------- */
-.field-desc-preview{display:block;width:100%;font-size:10px;color:var(--ink-3,#888);font-weight:400;line-height:1.45;margin-top:2px}
+.field-desc-preview{display:block;width:100%;font-size:11.5px;color:var(--ink-3,#888);font-weight:400;line-height:1.45;margin-top:2px}
 
 /* ---------- Upload preview ---------- */
 .upload-wrap{position:relative}
@@ -2840,7 +2840,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-form-group{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .cv-label{font-size:13px;font-weight:600;position:relative;display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
 .cv-req{color:var(--accent)}
-.cv-field-desc{display:block;width:100%;font-size:10px;color:#6b6b6b;font-weight:400;line-height:1.4;margin-top:1px}
+.cv-field-desc{display:block;width:100%;font-size:11.5px;color:#6b6b6b;font-weight:400;line-height:1.4;margin-top:1px}
 .cv-field-has-error .cv-input{border-color:#e08a79;box-shadow:0 0 0 3px rgba(201,68,45,.08)}
 .cv-field-pending > .cv-rule-fieldset > .cv-form-group{outline:1.5px dashed #f0b48f;outline-offset:5px;border-radius:6px;transition:outline-color .2s}
 .cv-field-error{margin:-10px 0 12px;padding-left:2px;color:var(--danger);font-size:12px;font-weight:650;line-height:1.35;animation:cvFieldErrorIn .28s ease-out}
@@ -2885,7 +2885,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-rental-detail{border:1px solid #d9dfe5;border-radius:4px;overflow:hidden;background:#fff}
 .cv-rental-detail-head{background:#f6f7f8;border-bottom:1px solid #d9dfe5;padding:7px 10px;font-size:12px;font-weight:700}
 .cv-rental-detail-body{padding:8px 10px;font-size:12px;line-height:1.35}
-.cv-rental-detail-desc{font-size:10px;margin:0 0 6px;color:#555;line-height:1.35}
+.cv-rental-detail-desc{font-size:11.5px;margin:0 0 6px;color:#555;line-height:1.35}
 .cv-rental-field-label{font-size:11.5px;font-weight:700;margin:4px 0 4px;line-height:1.25}
 .cv-rental-priced-label{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .cv-rental-priced-label>span:first-child{min-width:0}
@@ -2897,7 +2897,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-rental-item-name{display:inline-flex;align-items:center;gap:8px;min-width:0;flex:1}
 .cv-rental-item-copy{display:inline-flex;align-items:center;gap:4px;min-width:0;flex-wrap:wrap}
 .cv-rental-item-text{display:flex;flex-direction:column;gap:2px;min-width:0}
-.cv-rental-item-desc{font-size:10px;font-weight:400;line-height:1.35;color:var(--ink-3);white-space:pre-line}
+.cv-rental-item-desc{font-size:11.5px;font-weight:400;line-height:1.35;color:var(--ink-3);white-space:pre-line}
 .cv-rental-item-thumb{width:38px;height:30px;border:1px solid var(--line);border-radius:var(--r-1);background:var(--surface-2);overflow:hidden;flex:0 0 auto}
 .cv-rental-item-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .cv-rental-subline{border-top:1px solid #d9dfe5;margin:8px 0 6px;padding-top:7px;font-size:12px;font-weight:700}
@@ -3027,7 +3027,7 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-radio-option.sel{border-color:var(--accent);background:#fff4eb}
 .cv-radio-option input[type="radio"],.cv-radio-option input[type="checkbox"]{margin-top:3px;flex-shrink:0;accent-color:var(--accent);pointer-events:none;width:16px;height:16px}
 .cv-radio-label{font-size:13.5px;font-weight:600;line-height:1.3}
-.cv-radio-desc{font-size:10px;color:#6b6b6b;line-height:1.45;margin-top:2px}
+.cv-radio-desc{font-size:11.5px;color:#6b6b6b;line-height:1.45;margin-top:2px}
 
 /* Grouped select */
 .cv-select optgroup{font-weight:600;font-style:normal;color:#333;font-size:13px}
