@@ -21419,6 +21419,586 @@ function EmailSendModal({ record, typeId, siteSettings, onClose, onSent, onError
   );
 }
 
+const CALENDAR_MONTH_INDEX = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+const CALENDAR_DATE_PATTERN = "(\\d{4}-\\d{2}-\\d{2}|[A-Za-z]{3,9}\\.?\\s+\\d{1,2},?\\s+\\d{4})";
+const CALENDAR_TIME_PATTERN = "(\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[ap]\\.?m\\.?)?)";
+const CALENDAR_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const CALENDAR_WEEKDAYS_MONDAY_FIRST = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// Must match the 44px hour stripe in .bk-cal-tg-col (globals.css).
+const CALENDAR_HOUR_HEIGHT = 44;
+const CALENDAR_ROOM_COLORS = [
+  { key: "main-hall", label: "Main Hall", match: /main\s*hall/i },
+  { key: "large-room", label: "Large Room", match: /large/i },
+  { key: "small-room", label: "Small Room", match: /small/i },
+  { key: "patio", label: "Patio", match: /patio/i },
+];
+
+const calStartOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const calAddDays = (date, days) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+const calStartOfWeek = (date) => calAddDays(date, -((date.getDay() + 6) % 7));
+const calSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+const calDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const calTimeLabel = (date) => date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
+const calShortTime = (date) => {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  return `${hours % 12 || 12}${minutes ? `:${String(minutes).padStart(2, "0")}` : ""}${hours < 12 ? "a" : "p"}`;
+};
+const calShortRange = (event) => (event.allDay ? "All day" : `${calShortTime(event.start)} - ${calShortTime(event.end)}`);
+const calRoomColorClass = (room = "") => {
+  const first = String(room || "").split(/\s*,\s*/)[0] || "";
+  return "room-" + (CALENDAR_ROOM_COLORS.find((item) => item.match.test(first))?.key || "other");
+};
+const calMinutesValue = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+const calEventOnDay = (event, day) => event.start < calAddDays(day, 1) && event.end > day;
+
+function parseCalendarDate(text = "") {
+  const value = String(text || "").trim();
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  const named = value.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/);
+  const month = named ? CALENDAR_MONTH_INDEX[named[1].slice(0, 3).toLowerCase()] : undefined;
+  if (month === undefined) return null;
+  return new Date(Number(named[3]), month, Number(named[2]));
+}
+
+function parseCalendarMinutes(text = "") {
+  const match = String(text || "").match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap])?/i);
+  if (!match) return null;
+  let hours = Number(match[1]) % 24;
+  const meridiem = (match[3] || "").toLowerCase();
+  if (meridiem) hours = (hours % 12) + (meridiem === "p" ? 12 : 0);
+  return hours * 60 + Number(match[2]);
+}
+
+// Handles both "Jun 18, 2026 04:00 pm - Jun 18, 2026 08:00 pm" and
+// "Main Hall: 2026-06-18 16:00 - 2026-06-18 20:00, 2026-06-19 ...; Patio: ...".
+function parseBookingCalendarRanges(text = "", fallbackRoom = "") {
+  const D = CALENDAR_DATE_PATTERN;
+  const T = CALENDAR_TIME_PATTERN;
+  const rangePattern = new RegExp(`${D}(?:,?\\s+${T})?(?:\\s*(?:-|–|to)\\s*(?:${D}(?:,?\\s+${T})?|${T}))?`, "gi");
+  const roomPrefix = new RegExp(`^\\s*([^:;]+?):\\s*(?=${D})`);
+  const ranges = [];
+  String(text || "").split(";").forEach((segment) => {
+    const prefix = segment.match(roomPrefix);
+    const room = String(prefix ? prefix[1] : fallbackRoom || "").trim();
+    const body = prefix ? segment.slice(prefix[0].length) : segment;
+    for (const match of body.matchAll(rangePattern)) {
+      const [, startDateText, startTimeText, endDateText, endTimeText, endTimeOnly] = match;
+      const startDay = parseCalendarDate(startDateText);
+      if (!startDay) continue;
+      const startMinutes = parseCalendarMinutes(startTimeText);
+      const allDay = startMinutes === null;
+      const endDay = parseCalendarDate(endDateText) || startDay;
+      const start = new Date(startDay);
+      start.setMinutes(startMinutes || 0);
+      let end = new Date(endDay);
+      if (allDay) {
+        end = calAddDays(endDay, 1);
+      } else {
+        const endMinutes = parseCalendarMinutes(endTimeText || endTimeOnly);
+        end.setMinutes(endMinutes === null ? startMinutes + 60 : endMinutes);
+        if (end <= start) end = new Date(start.getTime() + 60 * 60 * 1000);
+      }
+      ranges.push({ start, end, allDay, room });
+    }
+  });
+  return ranges;
+}
+
+function buildBookingCalendarEvents(records = []) {
+  const events = [];
+  (records || []).forEach((record) => {
+    const status = normalizeProgressStatus(record.progress?.status);
+    parseBookingCalendarRanges(record.request?.bookingDateTime, record.request?.space).forEach((range, index) => {
+      events.push({
+        ...range,
+        id: `${record.id}__${index}`,
+        record,
+        status,
+        statusClass: progressStatusClass(status),
+        colorClass: calRoomColorClass(range.room) + (status === "Cancelled" ? " cancelled" : ""),
+        title: record.client?.name || record.client?.organization || "Unnamed client",
+        rooms: range.room.split(/\s*,\s*/).filter(Boolean).map((name) => name.toLowerCase()),
+        conflicts: [],
+      });
+    });
+  });
+  const active = events.filter((event) => event.status !== "Cancelled");
+  active.forEach((a, i) => {
+    for (let j = i + 1; j < active.length; j += 1) {
+      const b = active[j];
+      if (a.record.id === b.record.id) continue;
+      if (a.start < b.end && b.start < a.end && a.rooms.some((name) => b.rooms.includes(name))) {
+        a.conflicts.push(b);
+        b.conflicts.push(a);
+      }
+    }
+  });
+  return events.sort((a, b) => a.start - b.start);
+}
+
+function calRangeLabel(event) {
+  const dayFormat = { weekday: "short", month: "short", day: "numeric", year: "numeric" };
+  const day = (date) => date.toLocaleDateString("en-US", dayFormat);
+  if (event.allDay) {
+    const lastDay = calAddDays(event.end, -1);
+    return calSameDay(event.start, lastDay) ? `${day(event.start)} · All day` : `${day(event.start)} – ${day(lastDay)} · All day`;
+  }
+  return calSameDay(event.start, event.end)
+    ? `${day(event.start)} · ${calTimeLabel(event.start)} – ${calTimeLabel(event.end)}`
+    : `${day(event.start)} ${calTimeLabel(event.start)} – ${day(event.end)} ${calTimeLabel(event.end)}`;
+}
+
+function layoutCalendarDayItems(items) {
+  const sorted = [...items].sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
+  let cluster = [];
+  let clusterEnd = -1;
+  const flush = () => {
+    const cols = Math.max(1, ...cluster.map((item) => item.col + 1));
+    cluster.forEach((item) => { item.cols = cols; });
+    cluster = [];
+    clusterEnd = -1;
+  };
+  sorted.forEach((item) => {
+    if (cluster.length && item.startMin >= clusterEnd) flush();
+    const used = new Set(cluster.filter((other) => other.endMin > item.startMin).map((other) => other.col));
+    let col = 0;
+    while (used.has(col)) col += 1;
+    item.col = col;
+    cluster.push(item);
+    clusterEnd = Math.max(clusterEnd, item.endMin);
+  });
+  flush();
+  return sorted;
+}
+
+function useCalendarEscape(onClose) {
+  React.useEffect(() => {
+    const closeOnEscape = (event) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+}
+
+function BookingCalendarEventModal({ event, onClose, onOpen, onSelectEvent }) {
+  const Ic = window.Icons;
+  useCalendarEscape(onClose);
+  const record = event.record;
+  const rows = [
+    ["When", calRangeLabel(event)],
+    ["Room", event.room || "No space"],
+    ["Guests", record.request?.attendeeCount],
+    ["Event", record.request?.eventType || record.request?.description],
+    ["Organization", record.client?.organization],
+    ["Email", record.client?.email],
+    ["Phone", record.client?.phone],
+  ].filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "");
+  return (
+    <div className="bk-cal-modal-backdrop" onClick={onClose} role="presentation">
+      <div className="bk-cal-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="bk-cal-event-title">
+        <div className="bk-cal-modal-head">
+          <div>
+            <span className={"bk-cal-status-pill " + event.statusClass}>{event.status}</span>
+            <h2 id="bk-cal-event-title">{event.title}</h2>
+            <div className="bk-cal-modal-sub">{bookingCodeForRecord(record)}</div>
+          </div>
+          <button type="button" className="btn ghost icon" onClick={onClose} title="Close"><Ic.Close size={16} /></button>
+        </div>
+        <dl className="bk-cal-detail-list">
+          {rows.map(([label, value]) => (
+            <React.Fragment key={label}>
+              <dt>{label}</dt>
+              <dd>{String(value)}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+        {event.conflicts.length > 0 && (
+          <div className="bk-cal-conflict-box">
+            <div className="bk-cal-conflict-title"><Ic.Alert size={14} /> Double-booked with</div>
+            {event.conflicts.map((other) => (
+              <button key={other.id} type="button" className="bk-cal-conflict-item" onClick={() => onSelectEvent(other.id)}>
+                <strong>{other.title}</strong>
+                <span>{calRangeLabel(other)} · {other.status}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="bk-cal-modal-foot">
+          <button type="button" className="btn ghost sm" onClick={onClose}>Close</button>
+          <button type="button" className="btn dark sm" onClick={onOpen}><Ic.External size={13} /> Open booking</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingCalendarCreateModal({ draft, venues, events, onChange, onClose, onCreate }) {
+  const Ic = window.Icons;
+  useCalendarEscape(onClose);
+  const venue = venues.find((item) => item.id === draft.venueId) || null;
+  const start = parseCalendarDate(draft.startDate);
+  const end = parseCalendarDate(draft.endDate);
+  if (start) start.setMinutes(parseCalendarMinutes(draft.startTime) || 0);
+  if (end) end.setMinutes(parseCalendarMinutes(draft.endTime) || 0);
+  const invalid = !start || !end || end <= start;
+  const roomKey = String(venue?.name || "").toLowerCase();
+  const conflicts = invalid || !roomKey ? [] : events.filter((event) =>
+    event.status !== "Cancelled" && event.rooms.includes(roomKey) && event.start < end && start < event.end
+  );
+  const update = (patch) => onChange({ ...draft, ...patch });
+  return (
+    <div className="bk-cal-modal-backdrop" onClick={onClose} role="presentation">
+      <div className="bk-cal-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="bk-cal-create-title">
+        <div className="bk-cal-modal-head">
+          <div>
+            <h2 id="bk-cal-create-title">New booking</h2>
+            <div className="bk-cal-modal-sub">Creates a progress record and opens the booking form with these details.</div>
+          </div>
+          <button type="button" className="btn ghost icon" onClick={onClose} title="Close"><Ic.Close size={16} /></button>
+        </div>
+        <div className="bk-cal-form">
+          <div className="bk-cal-form-full">
+            <label className="lbl">Room</label>
+            <select className="select" value={draft.venueId} onChange={(e) => update({ venueId: e.target.value })}>
+              {venues.length === 0 && <option value="">No rooms configured</option>}
+              {venues.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
+          <div><label className="lbl">Start date</label><input className="input" type="date" value={draft.startDate} onChange={(e) => update({ startDate: e.target.value, ...(draft.endDate < e.target.value ? { endDate: e.target.value } : {}) })} /></div>
+          <div><label className="lbl">Start time</label><input className="input" type="time" value={draft.startTime} onChange={(e) => update({ startTime: e.target.value })} /></div>
+          <div><label className="lbl">End date</label><input className="input" type="date" value={draft.endDate} min={draft.startDate} onChange={(e) => update({ endDate: e.target.value })} /></div>
+          <div><label className="lbl">End time</label><input className="input" type="time" value={draft.endTime} onChange={(e) => update({ endTime: e.target.value })} /></div>
+        </div>
+        {invalid && <div className="bk-cal-form-error">End must be after start.</div>}
+        {conflicts.length > 0 && (
+          <div className="bk-cal-conflict-box">
+            <div className="bk-cal-conflict-title"><Ic.Alert size={14} /> {venue.name} is already booked at this time</div>
+            {conflicts.map((other) => (
+              <div key={other.id} className="bk-cal-conflict-item static">
+                <strong>{other.title}</strong>
+                <span>{calRangeLabel(other)} · {other.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="bk-cal-modal-foot">
+          <button type="button" className="btn ghost sm" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="btn dark sm"
+            disabled={invalid}
+            onClick={() => onCreate({ ...draft, venueName: venue?.name || "" })}
+          >
+            <Ic.Plus size={13} /> Create &amp; open form
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooking }) {
+  const Ic = window.Icons;
+  const [view, setView] = React.useState("month");
+  const [cursor, setCursor] = React.useState(() => calStartOfDay(new Date()));
+  const [room, setRoom] = React.useState("All");
+  const [conflictsOnly, setConflictsOnly] = React.useState(false);
+  const [selectedEventId, setSelectedEventId] = React.useState(null);
+  const [draft, setDraft] = React.useState(null);
+  const [now, setNow] = React.useState(() => new Date());
+  const timeGridRef = React.useRef(null);
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+  React.useEffect(() => {
+    if (timeGridRef.current) timeGridRef.current.scrollTop = 7 * CALENDAR_HOUR_HEIGHT;
+  }, [view]);
+
+  const events = React.useMemo(() => buildBookingCalendarEvents(records), [records]);
+  const roomOptions = React.useMemo(() => {
+    const names = new Map();
+    [...venues.map((venue) => venue.name), ...events.flatMap((event) => event.room.split(/\s*,\s*/))].forEach((name) => {
+      const text = String(name || "").trim();
+      if (text && !names.has(text.toLowerCase())) names.set(text.toLowerCase(), text);
+    });
+    return Array.from(names.values());
+  }, [venues, events]);
+  const conflictBookingCount = new Set(events.filter((event) => event.conflicts.length).map((event) => event.record.id)).size;
+  const visible = events.filter((event) =>
+    (room === "All" || event.rooms.includes(room.toLowerCase())) && (!conflictsOnly || event.conflicts.length > 0)
+  );
+  const selectedEvent = events.find((event) => event.id === selectedEventId) || null;
+  const closeEvent = React.useCallback(() => setSelectedEventId(null), []);
+  const closeDraft = React.useCallback(() => setDraft(null), []);
+
+  const today = calStartOfDay(now);
+  const weekStart = calStartOfWeek(cursor);
+  const shift = (direction) => setCursor((current) => (
+    view === "month" || view === "list"
+      ? new Date(current.getFullYear(), current.getMonth() + direction, 1)
+      : calAddDays(current, direction * (view === "week" ? 7 : 1))
+  ));
+  const goToDay = (day) => { setCursor(day); setView("day"); };
+  const title = view === "month" || view === "list"
+    ? cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+    : view === "week"
+    ? `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${calAddDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+    : cursor.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+  const openDraft = (day, startMinutes = 10 * 60) => {
+    const venue = (room !== "All" && venues.find((item) => String(item.name || "").toLowerCase() === room.toLowerCase())) || venues[0];
+    setDraft({
+      venueId: venue?.id || "",
+      startDate: calDateKey(day),
+      startTime: calMinutesValue(startMinutes),
+      endDate: calDateKey(day),
+      endTime: calMinutesValue(Math.min(startMinutes + 120, 23 * 60 + 30)),
+    });
+  };
+  const createFromDraft = (prefill) => {
+    setDraft(null);
+    onCreateBooking(prefill);
+  };
+
+  const chip = (event, day) => (
+    <button
+      key={event.id}
+      type="button"
+      className={"bk-cal-chip " + event.colorClass + (event.conflicts.length ? " conflict" : "")}
+      onClick={(e) => { e.stopPropagation(); setSelectedEventId(event.id); }}
+      title={`${event.title} · ${calRangeLabel(event)} · ${event.room || "No space"} · ${event.status}`}
+    >
+      {event.conflicts.length > 0 && <Ic.Alert size={11} />}
+      {(event.allDay || !day || calSameDay(event.start, day)) && <span className="bk-cal-chip-time">{calShortRange(event)}</span>}
+      <span className="bk-cal-chip-title">{event.room || "No space"} · {event.title}</span>
+    </button>
+  );
+
+  const renderMonth = () => {
+    const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const gridStart = calStartOfWeek(monthStart);
+    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const weekCount = Math.ceil(Math.round((monthEnd - gridStart) / 86400000) / 7);
+    const days = Array.from({ length: weekCount * 7 }, (_, index) => calAddDays(gridStart, index));
+    return (
+      <div className="bk-cal-month">
+        <div className="bk-cal-weekdays">{CALENDAR_WEEKDAYS_MONDAY_FIRST.map((label) => <div key={label}>{label}</div>)}</div>
+        <div className="bk-cal-month-grid">
+          {days.map((day) => {
+            const dayEvents = visible.filter((event) => calEventOnDay(event, day));
+            const classes = ["bk-cal-day"];
+            if (day.getMonth() !== cursor.getMonth()) classes.push("outside");
+            if (calSameDay(day, today)) classes.push("today");
+            return (
+              <div key={calDateKey(day)} className={classes.join(" ")} onClick={() => openDraft(day)} title="Click to add a booking">
+                <button type="button" className="bk-cal-daynum" onClick={(e) => { e.stopPropagation(); goToDay(day); }}>{day.getDate()}</button>
+                <div className="bk-cal-day-events">
+                  {dayEvents.slice(0, 3).map((event) => chip(event, day))}
+                  {dayEvents.length > 3 && (
+                    <button type="button" className="bk-cal-more" onClick={(e) => { e.stopPropagation(); goToDay(day); }}>+{dayEvents.length - 3} more</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTimeGrid = () => {
+    const days = view === "week" ? Array.from({ length: 7 }, (_, index) => calAddDays(weekStart, index)) : [cursor];
+    const columns = { gridTemplateColumns: `56px repeat(${days.length}, minmax(0, 1fr))` };
+    const dayParts = days.map((day) => {
+      const dayEnd = calAddDays(day, 1);
+      const dayEvents = visible.filter((event) => calEventOnDay(event, day));
+      const allDay = dayEvents.filter((event) => event.allDay || (event.start <= day && event.end >= dayEnd));
+      const timed = layoutCalendarDayItems(dayEvents
+        .filter((event) => !allDay.includes(event))
+        .map((event) => ({
+          event,
+          startMin: Math.max(0, (event.start - day) / 60000),
+          endMin: Math.min(24 * 60, (event.end - day) / 60000),
+        })));
+      return { day, allDay, timed };
+    });
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    return (
+      <div className={"bk-cal-timegrid " + view} ref={timeGridRef}>
+        <div className="bk-cal-tg-sticky">
+          <div className="bk-cal-tg-row" style={columns}>
+            <div className="bk-cal-tg-gutter" />
+            {days.map((day) => (
+              <button key={calDateKey(day)} type="button" className={"bk-cal-tg-dayhead" + (calSameDay(day, today) ? " today" : "")} onClick={() => goToDay(day)}>
+                <span>{CALENDAR_WEEKDAYS[day.getDay()]}</span>
+                <strong>{day.getMonth() + 1}/{day.getDate()}</strong>
+              </button>
+            ))}
+          </div>
+          <div className="bk-cal-tg-row bk-cal-tg-allday" style={columns}>
+            <div className="bk-cal-tg-gutter">All day</div>
+            {dayParts.map(({ day, allDay }) => (
+              <div key={calDateKey(day)} className="bk-cal-tg-allday-cell">{allDay.map((event) => chip(event, day))}</div>
+            ))}
+          </div>
+        </div>
+        <div className="bk-cal-tg-row" style={columns}>
+          <div className="bk-cal-tg-hours">
+            {Array.from({ length: 24 }, (_, hour) => (
+              <div key={hour} className="bk-cal-tg-hour" style={{ height: CALENDAR_HOUR_HEIGHT }}>
+                {hour > 0 && <span>{calTimeLabel(new Date(2000, 0, 1, hour))}</span>}
+              </div>
+            ))}
+          </div>
+          {dayParts.map(({ day, timed }) => (
+            <div
+              key={calDateKey(day)}
+              className={"bk-cal-tg-col" + (calSameDay(day, today) ? " today" : "")}
+              style={{ height: 24 * CALENDAR_HOUR_HEIGHT }}
+              title="Click to add a booking"
+              onClick={(e) => {
+                const offset = e.clientY - e.currentTarget.getBoundingClientRect().top;
+                const minutes = Math.floor((offset / CALENDAR_HOUR_HEIGHT) * 2) * 30;
+                openDraft(day, Math.max(0, Math.min(minutes, 22 * 60)));
+              }}
+            >
+              {timed.map(({ event, startMin, endMin, col, cols }) => (
+                <button
+                  key={event.id}
+                  type="button"
+                  className={"bk-cal-tg-event " + event.colorClass + (event.conflicts.length ? " conflict" : "")}
+                  style={{
+                    top: (startMin / 60) * CALENDAR_HOUR_HEIGHT,
+                    height: Math.max(20, ((endMin - startMin) / 60) * CALENDAR_HOUR_HEIGHT - 2),
+                    left: `calc(${(col / cols) * 100}% + 2px)`,
+                    width: `calc(${100 / cols}% - 4px)`,
+                  }}
+                  onClick={(e) => { e.stopPropagation(); setSelectedEventId(event.id); }}
+                  title={`${event.title} · ${calRangeLabel(event)} · ${event.room || "No space"} · ${event.status}`}
+                >
+                  <strong>{event.conflicts.length > 0 && <Ic.Alert size={11} />} {calShortRange(event)} {event.room || "No space"}</strong>
+                  <span>{event.title}</span>
+                </button>
+              ))}
+              {calSameDay(day, today) && <div className="bk-cal-now-line" style={{ top: (nowMinutes / 60) * CALENDAR_HOUR_HEIGHT }} />}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderList = () => {
+    const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const groups = [];
+    for (let day = monthStart; day < monthEnd; day = calAddDays(day, 1)) {
+      const dayEvents = visible.filter((event) => calEventOnDay(event, day));
+      if (dayEvents.length) groups.push({ day, dayEvents });
+    }
+    if (!groups.length) return <div className="bk-cal-list-empty">No bookings this month.</div>;
+    return (
+      <div className="bk-cal-list">
+        {groups.map(({ day, dayEvents }) => (
+          <div key={calDateKey(day)} className="bk-cal-list-group">
+            <button type="button" className={"bk-cal-list-day" + (calSameDay(day, today) ? " today" : "")} onClick={() => goToDay(day)}>
+              {day.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            </button>
+            {dayEvents.map((event) => (
+              <button key={event.id} type="button" className="bk-cal-list-row" onClick={() => setSelectedEventId(event.id)}>
+                <i className={"bk-cal-room-dot " + event.colorClass} />
+                <span className="bk-cal-list-time">{event.allDay ? "All day" : `${calTimeLabel(event.start)} - ${calTimeLabel(event.end)}`}</span>
+                <span className="bk-cal-list-room">{event.room || "No space"}</span>
+                <span className="bk-cal-list-client">
+                  {event.conflicts.length > 0 && <Ic.Alert size={12} />} {event.title}
+                </span>
+                <span className={"bk-cal-status-pill " + event.statusClass}>{event.status}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="editor-col" style={{ flex: 1 }}>
+      <div className="editor-inner progress-list-inner">
+        <div className="editor-head">
+          <div>
+            <span className="editor-head-tag"><Ic.Cal size={11} /> Operations</span>
+            <h1>Booking Calendar</h1>
+            <p>Every booking from the Rentals Progress List, colored by room. Click a booking for details, or click an empty slot to create one.</p>
+          </div>
+          <button className="btn dark sm" onClick={() => openDraft(cursor < today ? today : cursor)}><Ic.Plus size={13} /> New booking</button>
+        </div>
+
+        <div className="bk-cal-toolbar">
+          <div className="bk-cal-nav">
+            <button type="button" className="btn sm" onClick={() => setCursor(calStartOfDay(new Date()))}>Today</button>
+            <button type="button" className="btn icon sm" onClick={() => shift(-1)} title="Previous"><Ic.Chevron size={14} style={{ transform: "rotate(90deg)" }} /></button>
+            <button type="button" className="btn icon sm" onClick={() => shift(1)} title="Next"><Ic.Chevron size={14} style={{ transform: "rotate(-90deg)" }} /></button>
+            <h2 className="bk-cal-title">{title}</h2>
+          </div>
+          <div className="bk-cal-controls">
+            <select className="select bk-cal-room-select" value={room} onChange={(e) => setRoom(e.target.value)}>
+              <option value="All">All rooms</option>
+              {roomOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <button
+              type="button"
+              className={"btn sm bk-cal-conflict-toggle" + (conflictsOnly ? " active" : "")}
+              onClick={() => setConflictsOnly((current) => !current)}
+              disabled={conflictBookingCount === 0 && !conflictsOnly}
+              title="Bookings that overlap another booking in the same room"
+            >
+              <Ic.Alert size={13} /> {conflictBookingCount} double-booked
+            </button>
+            <div className="bk-cal-views" role="tablist">
+              {["month", "week", "day", "list"].map((option) => (
+                <button key={option} type="button" role="tab" aria-selected={view === option} className={view === option ? "active" : ""} onClick={() => setView(option)}>
+                  {option[0].toUpperCase() + option.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="bk-cal-legend">
+          {CALENDAR_ROOM_COLORS.map((item) => (
+            <span key={item.key}><i className={"bk-cal-room-dot room-" + item.key} /> {item.label}</span>
+          ))}
+          <span><i className="bk-cal-room-dot room-other" /> Other</span>
+          <span className="bk-cal-legend-note"><i className="bk-cal-room-dot room-other cancelled" /> Cancelled (faded)</span>
+        </div>
+
+        <div className="bk-cal-shell">{view === "month" ? renderMonth() : view === "list" ? renderList() : renderTimeGrid()}</div>
+      </div>
+
+      {selectedEvent && (
+        <BookingCalendarEventModal
+          event={selectedEvent}
+          onClose={closeEvent}
+          onSelectEvent={setSelectedEventId}
+          onOpen={() => { setSelectedEventId(null); onOpenRecord(selectedEvent.record.id); }}
+        />
+      )}
+      {draft && (
+        <BookingCalendarCreateModal
+          draft={draft}
+          venues={venues}
+          events={events}
+          onChange={setDraft}
+          onClose={closeDraft}
+          onCreate={createFromDraft}
+        />
+      )}
+    </div>
+  );
+}
+
 function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, onUpdateRecord, onEmail, onCopyLink, onDelete }) {
   const Ic = window.Icons;
   const [now, setNow] = React.useState(Date.now());
@@ -23022,16 +23602,31 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     if (!record?.id) return;
     window.open(progressSummaryLink(record), "_blank", "noopener,noreferrer");
   };
-  const startAdminBooking = () => {
-    const record = createProgressRecordFromSubmission({
+  const startAdminBooking = (prefill = null) => {
+    const answers = {};
+    const booking = prefill ? { startDate: prefill.startDate || "", startTime: prefill.startTime || "", endDate: prefill.endDate || "", endTime: prefill.endTime || "" } : null;
+    if (prefill?.venueId) {
+      answers._selectedVenueIds = [prefill.venueId];
+      answers._selectedVenueId = prefill.venueId;
+      answers._venueBookings = { [prefill.venueId]: booking };
+    }
+    const created = createProgressRecordFromSubmission({
       recordId: bookingId(),
       steps,
-      answers: {},
+      answers,
       costData: {},
       venueCost: {},
       adminEditMode: true,
       createdBy: "Admin",
     });
+    const record = booking ? normalizeProgressRecord({
+      ...created,
+      request: {
+        ...created.request,
+        space: prefill.venueName || "",
+        bookingDateTime: [prefill.venueName, bookingRangeText(booking)].filter(Boolean).join(": "),
+      },
+    }) : created;
     const nextRecords = [record, ...progressRecordsRef.current];
     setProgressRecords(nextRecords);
     setAdminEditRecordId(record.id);
@@ -23596,6 +24191,20 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
             onEmail={(recordId, typeId) => setEmailDraft({ recordId, typeId })}
             onCopyLink={copyProgressLink}
             onDelete={deleteProgressRecord}
+          />
+        );
+      }
+      if (activeSection === "calendar") {
+        return (
+          <BookingCalendarView
+            records={progressRecords}
+            venues={rentalVenueOptions}
+            onOpenRecord={(recordId) => {
+              setSubmittedAnswersRecordId(null);
+              setActiveProgressId(recordId);
+              setActiveSection("clients");
+            }}
+            onCreateBooking={startAdminBooking}
           />
         );
       }
