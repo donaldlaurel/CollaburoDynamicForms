@@ -4998,9 +4998,9 @@ function simpleOptionPricingStructure(option) {
   return "flat";
 }
 
-const DESC_FONT_SIZES = [6, 7, 8, 9, 10];
-const DESC_FONT_SIZE_DEFAULT = 10;
-const DESC_FONT_SIZE_MAX = 10;
+const DESC_FONT_SIZES = [8, 9, 10, 11, 11.5, 12];
+const DESC_FONT_SIZE_DEFAULT = 11.5;
+const DESC_FONT_SIZE_MAX = 12;
 
 function descriptionFontSize(item) {
   const size = Number(item && item.descFontSize);
@@ -16467,14 +16467,14 @@ function CVInlineDescription({ text }) {
   const isLong = text.length > 220;
   const shown = (!isLong || expanded) ? text : text.slice(0, 220).trimEnd() + "…";
   return (
-    <div style={{ fontSize: 10, color: "#444", lineHeight: 1.55, marginTop: 4, marginBottom: 4, paddingLeft: 26 }}>
+    <div style={{ fontSize: 11.5, color: "#444", lineHeight: 1.55, marginTop: 4, marginBottom: 4, paddingLeft: 26 }}>
       {shown.split("\n").map((para, i) => (
         <span key={i}>{i > 0 && <br />}{para}</span>
       ))}
       {isLong && (
         <button
           onClick={(e) => { e.stopPropagation(); setExpanded((x) => !x); }}
-          style={{ background: "none", border: "none", color: "var(--ink-3)", fontSize: 10, fontWeight: 500, cursor: "pointer", padding: 0, marginLeft: 4, textDecoration: "underline" }}
+          style={{ background: "none", border: "none", color: "var(--ink-3)", fontSize: 11.5, fontWeight: 500, cursor: "pointer", padding: 0, marginLeft: 4, textDecoration: "underline" }}
         >
           {expanded ? "See less" : "See more…"}
         </button>
