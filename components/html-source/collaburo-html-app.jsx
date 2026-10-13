@@ -1702,7 +1702,7 @@ function RentalItemCard({ item, open, onToggle, onPatch, onDelete, onDuplicate }
           <div className="rental-grid">
             <FieldMini label="Rental name" required><input className="input" value={item.name || ""} onChange={(e) => onPatch({ name: e.target.value })} /></FieldMini>
             <FieldMini label="Rental image" required><div className="rental-img-row"><div className="rental-img-ph"></div><button className="btn sm">Upload Image</button></div></FieldMini>
-            <FieldMini label="Short description" required full><input className="input" value={item.notes || ""} placeholder="Choose the number of items you wish to add to quote" onChange={(e) => onPatch({ notes: e.target.value })} /></FieldMini>
+            <FieldMini label="Short description" required full><div style={{ display: "flex", gap: 6 }}><input className="input" style={{ flex: 1 }} value={item.notes || ""} placeholder="Choose the number of items you wish to add to quote" onChange={(e) => onPatch({ notes: e.target.value })} /><DescriptionFontSizeSelect item={item} onChange={(size) => onPatch({ descFontSize: size })} /></div></FieldMini>
             <FieldMini label="Total stock inventory #">
               <label className="chk orange-check"><input type="checkbox" checked={item.deliveryClass === "none"} onChange={(e) => onPatch({ deliveryClass: e.target.checked ? "none" : "large" })} /> No Stock Inventory</label>
               <div className="rental-stock-row"><input className="input" value={item.stock || "8"} onChange={(e) => onPatch({ stock: e.target.value })} /><span>units available</span></div>
@@ -2715,7 +2715,10 @@ function RentalOptionSimpleEditor({ group, onChange, onDelete, allGroups = [], p
         <RentalImageField label="Image" imageUrl={group.imageUrl || ""} onChange={(url) => onChange({ ...group, imageUrl: url })} />
         <div className="full">
           <label className="lbl">Short description</label>
-          <textarea className="textarea" rows={2} value={group.description || ""} placeholder="Optional helper text for this client question" onChange={(e) => onChange({ ...group, description: e.target.value })} />
+          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+            <textarea className="textarea" style={{ flex: 1 }} rows={2} value={group.description || ""} placeholder="Optional helper text for this client question" onChange={(e) => onChange({ ...group, description: e.target.value })} />
+            <DescriptionFontSizeSelect item={group} onChange={(size) => onChange({ ...group, descFontSize: size })} />
+          </div>
         </div>
         <div>
           <label className="lbl">Input type</label>
@@ -3604,7 +3607,7 @@ function RentalClientChoicePreview({ group, values, onValueChange }) {
         {previewChoicePriceLabel(group) && <strong>{previewChoicePriceLabel(group)}</strong>}
         <RentalInfoIcon text={group.infoText} images={rentalTooltipImages(group)} />
       </div>
-      {group.description && <small>{group.description}</small>}
+      {group.description && <small style={{ fontSize: descriptionFontSize(group) }}>{group.description}</small>}
       {type === "quantity" && <input {...inputProps} min={group.settings?.min ?? 0} max={group.settings?.max || undefined} step={group.settings?.step ?? 1} type="number" value={value ?? group.settings?.defaultValue ?? 2} onChange={(e) => setValue(Number(e.target.value || 0))} />}
       {type === "number" && <ClampedNumberInput {...inputProps} min={group.settings?.min ?? 0} max={group.settings?.max || undefined} step={group.settings?.step ?? 1} value={value ?? group.settings?.defaultValue ?? 1} onChange={(raw) => setValue(Number(raw || 0))} />}
       {type === "checkbox_row" && (
@@ -3722,7 +3725,7 @@ function RentalClientPreviewPanel({ item }) {
               {previewItemPriceLabel(item) && <strong>{previewItemPriceLabel(item)}</strong>}
               <RentalInfoIcon text={item.infoText} images={rentalTooltipImages(item)} />
             </div>
-            {item.notes && <small>{item.notes}</small>}
+            {item.notes && <small style={{ fontSize: descriptionFontSize(item) }}>{item.notes}</small>}
             {itemChecked && showBaseQuantity && <input className="input" type="number" min={item.minUnits ?? 0} max={item.maxUnits || undefined} step={item.increment || 1} value={baseQty} onChange={(e) => setBaseQty(Math.max(Number(item.minUnits || 0), Number(e.target.value || 0)))} />}
             {itemChecked && rentalPackageIncludes(item).length > 0 && (
               <div className="rental-client-included">
@@ -3907,7 +3910,10 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
                 <RentalImageField label="Rental image" imageUrl={item.imageUrl || ""} onChange={(url) => onPatch({ imageUrl: url })} />
                 <div className="full">
                   <label className="lbl">Short description</label>
-                  <textarea className="textarea" rows={2} value={item.notes || ""} onChange={(e) => onPatch({ notes: e.target.value })} placeholder="Short helper text for admins and clients." />
+                  <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                    <textarea className="textarea" style={{ flex: 1 }} rows={2} value={item.notes || ""} onChange={(e) => onPatch({ notes: e.target.value })} placeholder="Short helper text for admins and clients." />
+                    <DescriptionFontSizeSelect item={item} onChange={(size) => onPatch({ descFontSize: size })} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -10039,7 +10045,10 @@ function VenueCard({ venue, otherVenues = [], onToggleExclusion, onUpdate, onDel
                   </div>
                   <div>
                     <label className="lbl">Short Description</label>
-                    <textarea className="textarea" rows={2} value={venue.subSpace.description || ""} onChange={(e) => setSub({ description: e.target.value })} />
+                    <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                      <textarea className="textarea" style={{ flex: 1 }} rows={2} value={venue.subSpace.description || ""} onChange={(e) => setSub({ description: e.target.value })} />
+                      <DescriptionFontSizeSelect item={venue.subSpace} onChange={(size) => setSub({ descFontSize: size })} />
+                    </div>
                   </div>
                 </div>
                 <div className="venue-section-head">
@@ -12469,7 +12478,7 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
                 <input type="checkbox" checked={!!subSpaceOpenByVenue[selected.id]} onChange={(e) => { setVenueSubSpaceOpen(selected.id, e.target.checked); if (!e.target.checked) setVenueSubSpaceId(selected.id, ""); }} style={{ width: 16, height: 16, accentColor: "var(--accent)" }} />
                 {selected.subSpace.title || "Add Optional Sub-Space"}
               </label>
-              {selected.subSpace.description && <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "4px 0 0", paddingLeft: 24 }}>{selected.subSpace.description}</p>}
+              {selected.subSpace.description && <p style={{ fontSize: descriptionFontSize(selected.subSpace), color: "var(--ink-3)", margin: "4px 0 0", paddingLeft: 24 }}>{selected.subSpace.description}</p>}
               {!!subSpaceOpenByVenue[selected.id] && (
                 <div className="cv-subspace-opts" style={{ marginTop: 12 }}>
                   {selected.subSpace.options.map((opt) => (
@@ -13409,7 +13418,7 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
         </div>
       )}
       <div className="cv-rental-detail-body">
-        {item.notes && <p className="cv-rental-detail-desc">{item.notes}</p>}
+        {item.notes && <p className="cv-rental-detail-desc" style={{ fontSize: descriptionFontSize(item) }}>{item.notes}</p>}
         {showBaseQuantity && (
           <div>
             {Number(recommendedCount || 0) > 0 && (
@@ -17300,7 +17309,7 @@ function InstructionalNotice({ field, values: valuesProp = null }) {
           <div className="cv-notice-title-text">{tone.value === "plain" ? renderNoticeBlocks(title, "t") : renderNoticeInline(title, "t")}</div>
         </div>
       )}
-      {body && <div className="cv-notice-body">{renderNoticeBlocks(body)}</div>}
+      {body && <div className="cv-notice-body" style={tone.value === "plain" ? { fontSize: descriptionFontSize(field) } : undefined}>{renderNoticeBlocks(body)}</div>}
       {moreSection}
     </div>
   );
@@ -17454,7 +17463,10 @@ function InstructionalNoticeEditor({ field, onChange }) {
       <div className="field-grid one">
         <div>
           <label className="lbl">{boxed ? "Message" : "Description"} <span className="hint">{boxed ? "shown under the title" : "optional secondary text"}</span></label>
-          <textarea ref={bodyRef} className="textarea" rows={boxed ? 5 : 2} value={field.fieldDescription || ""} placeholder="Additional detail or context..." onFocus={() => setActiveArea("fieldDescription")} onChange={(e) => onChange({ fieldDescription: e.target.value })} />
+          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+            <textarea ref={bodyRef} className="textarea" style={{ flex: 1 }} rows={boxed ? 5 : 2} value={field.fieldDescription || ""} placeholder="Additional detail or context..." onFocus={() => setActiveArea("fieldDescription")} onChange={(e) => onChange({ fieldDescription: e.target.value })} />
+            {!boxed && <DescriptionFontSizeSelect item={field} onChange={(size) => onChange({ descFontSize: size })} />}
+          </div>
         </div>
       </div>
       <div className="field-grid one" style={{ marginTop: 8 }}>
