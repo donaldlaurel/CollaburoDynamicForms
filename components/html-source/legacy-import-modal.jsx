@@ -23,6 +23,11 @@ const IMPORT_MODES = [
   },
 ];
 
+const todayIsoDate = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+};
+
 const money = (value) => "$" + Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function CountList({ counts }) {
@@ -49,7 +54,7 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
   const [fileName, setFileName] = React.useState("");
   const [progress, setProgress] = React.useState(0);
   const [parsed, setParsed] = React.useState(null);
-  const [beforeYear, setBeforeYear] = React.useState(new Date().getFullYear());
+  const [throughDate, setThroughDate] = React.useState(todayIsoDate);
   const [result, setResult] = React.useState(null);
   const [error, setError] = React.useState("");
   const [mode, setMode] = React.useState("skip");
@@ -58,8 +63,8 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
   const needsConfirm = mode === "replace" && confirmText.trim().toUpperCase() !== "DELETE";
 
   const conversion = React.useMemo(
-    () => (parsed ? convertLegacyBookings(parsed, { beforeYear: Number(beforeYear) || new Date().getFullYear() }) : null),
-    [parsed, beforeYear]
+    () => (parsed ? convertLegacyBookings(parsed, { throughDate: throughDate || todayIsoDate() }) : null),
+    [parsed, throughDate]
   );
 
   const readFile = async (file) => {
@@ -135,11 +140,11 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
             <>
               <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "end" }}>
                 <div className="rental-muted">
-                  {fileName}: {summary.totalBookings} bookings found. Bookings with a booking date in or after the year on the right, and bookings with no booking date, are left out.
+                  {fileName}: {summary.totalBookings} bookings found. Bookings dated after the date on the right, and bookings with no booking date, are left out.
                 </div>
                 <div>
-                  <label className="lbl">Only bookings before</label>
-                  <input className="input" type="number" style={{ width: 110 }} value={beforeYear} disabled={busy} onChange={(e) => setBeforeYear(e.target.value)} />
+                  <label className="lbl">Bookings dated up to</label>
+                  <input className="input" type="date" style={{ width: 160 }} value={throughDate} disabled={busy} onChange={(e) => setThroughDate(e.target.value)} />
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, background: "var(--bg-2, #fafafa)", border: "1px solid var(--line)", borderRadius: 8, padding: 12, fontSize: 13 }}>
@@ -152,7 +157,7 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
                   <CountList counts={summary.byStatus} />
                 </div>
                 <div style={{ gridColumn: "1 / -1", display: "grid", gap: 4 }}>
-                  <div>Left out: {summary.skippedTooNew} dated {beforeYear} or later, {summary.skippedNoDate} with no booking date</div>
+                  <div>Left out: {summary.skippedTooNew} dated after {throughDate}, {summary.skippedNoDate} with no booking date</div>
                   <div>With prices from the old contract: {summary.withTotals} (total {money(summary.totalsSum)})</div>
                   {summary.missingEmail > 0 && <div>Without an email address: {summary.missingEmail}</div>}
                   {parsed?.mismatchedRows > 0 && <div style={{ color: "var(--danger, #b42318)" }}>{parsed.mismatchedRows} rows in the file could not be read and were skipped.</div>}

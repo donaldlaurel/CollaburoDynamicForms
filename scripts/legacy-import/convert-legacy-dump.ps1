@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Reads `addrentalprogress` (bookings) and `contract` (totals) from the dump, keeps
-  bookings whose earliest booking date is before -BeforeYear, and writes to -OutDir:
+  bookings whose earliest booking date is on or before -Through (default today), and writes to -OutDir:
     legacy-bookings.json      every converted record, for review
     legacy-import-NN.sql      batches of -BatchSize records (skipped with -DryRun)
   Each SQL batch is one transaction that inserts into collaburo_submissions and
@@ -14,18 +14,19 @@
   browser (components/html-source/legacy-import.js); keep the two mappings in sync.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File scripts\legacy-import\convert-legacy-dump.ps1 -DumpPath C:\Users\user\Downloads\muslim19_collaburospace.sql -DryRun
+  powershell -ExecutionPolicy Bypass -File scripts\legacy-import\convert-legacy-dump.ps1 -DumpPath C:\Users\user\Downloads\muslim19_collaburospace.sql -Through 2026-06-30 -DryRun
 #>
 param(
   [Parameter(Mandatory = $true)][string]$DumpPath,
   [string]$OutDir = "",
-  [int]$BeforeYear = 2026,
+  [string]$Through = (Get-Date).ToString("yyyy-MM-dd"),
   [int]$BatchSize = 50,
   [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
 if (-not $OutDir) { $OutDir = Join-Path $PSScriptRoot "..\..\import" }
+$ThroughDate = [datetime]::ParseExact($Through, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)
 $Culture = [Globalization.CultureInfo]::InvariantCulture
 $WantedTables = @("addrentalprogress", "contract")
 
@@ -410,7 +411,7 @@ $tooNew = 0
 foreach ($row in $bookings) {
   $item = Convert-Booking $row $contracts[(Text $row["uniqueid"])]
   if (-not $item.BookingDate) { $noDate++; continue }
-  if ($item.BookingDate.Year -ge $BeforeYear) { $tooNew++; continue }
+  if ($item.BookingDate.Date -gt $ThroughDate) { $tooNew++; continue }
   [void]$converted.Add($item)
 }
 $converted = @($converted | Sort-Object BookingDate -Descending)
@@ -424,8 +425,8 @@ $allJson = ConvertTo-Json -InputObject $records -Depth 20
 
 Write-Host ""
 Write-Host "=== Summary ==="
-Write-Host "Selected (booking date before $BeforeYear): $($records.Count)"
-Write-Host "Skipped: $tooNew dated $BeforeYear or later, $noDate with no parseable booking date"
+Write-Host "Selected (booking date up to $Through): $($records.Count)"
+Write-Host "Skipped: $tooNew dated after $Through, $noDate with no parseable booking date"
 Write-Host "By year:";   $converted | Group-Object { $_.BookingDate.Year } | Sort-Object Name | ForEach-Object { Write-Host ("  {0}  {1}" -f $_.Name, $_.Count) }
 Write-Host "By status (new app):"; $records | Group-Object { $_.progress.status } | Sort-Object Count -Descending | ForEach-Object { Write-Host ("  {0,-18} {1}" -f $_.Name, $_.Count) }
 $withContract = @($converted | Where-Object HasContract)

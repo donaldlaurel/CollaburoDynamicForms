@@ -387,8 +387,9 @@ function convertBooking(row, contract, importedAtLabel) {
   };
 }
 
-// Keeps bookings whose earliest booking date falls before `beforeYear`, newest first.
-export function convertLegacyBookings({ bookings = [], contracts = [] }, { beforeYear }) {
+// Keeps bookings whose earliest booking date is on or before `throughDate`
+// (YYYY-MM-DD), newest first.
+export function convertLegacyBookings({ bookings = [], contracts = [] }, { throughDate }) {
   const contractsByUniqueId = new Map();
   [...contracts]
     .sort((a, b) => Number(a.id) - Number(b.id))
@@ -401,7 +402,7 @@ export function convertLegacyBookings({ bookings = [], contracts = [] }, { befor
   bookings.forEach((row) => {
     const item = convertBooking(row, contractsByUniqueId.get(text(row.uniqueid)), importedAtLabel);
     if (!item.bookingDate) skippedNoDate += 1;
-    else if (item.bookingDate.year >= beforeYear) skippedTooNew += 1;
+    else if (item.bookingDate.sortKey.slice(0, 10) > throughDate) skippedTooNew += 1;
     else selected.push(item);
   });
   selected.sort((a, b) => (a.bookingDate.sortKey < b.bookingDate.sortKey ? 1 : -1));
