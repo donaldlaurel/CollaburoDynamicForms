@@ -22484,7 +22484,12 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
     insurance: "Insurance",
     "agco-license": "AGCO",
   };
-  const updateFilter = (patch) => setFilters((prev) => ({ ...prev, ...patch }));
+  const [pageSize, setPageSize] = React.useState(25);
+  const [page, setPage] = React.useState(1);
+  const updateFilter = (patch) => {
+    setFilters((prev) => ({ ...prev, ...patch }));
+    setPage(1);
+  };
   React.useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
@@ -22546,9 +22551,12 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
       })
       .map((item) => item.record);
   };
-  const toggleSort = (key) => setSort((prev) => prev.key === key
-    ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
-    : { key, dir: ["submitted", "booking", "people"].includes(key) ? "desc" : "asc" });
+  const toggleSort = (key) => {
+    setSort((prev) => prev.key === key
+      ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: ["submitted", "booking", "people"].includes(key) ? "desc" : "asc" });
+    setPage(1);
+  };
   const columns = [
     ["ID", "id"], ["Client", "client"], ["Description", "description"], ["Submitted Date", "submitted"], ["Space", "space"],
     ["No. of People", "people"], ["Booking Date/Time", "booking"], ["Interest Level", "interest"], ["Status", "status"],
@@ -22556,6 +22564,10 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
   ];
   const filtered = sortRecords(applyFilters(filters));
   const hiddenByAge = filtered.length === 0 && filters.age !== "All" ? applyFilters({ ...filters, age: "All" }).length : 0;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageRecords = filtered.slice(pageStart, pageStart + pageSize);
   const fmtDate = (value) => value ? new Date(value).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }) : "";
   const yesNoIcon = (value) => value ? <ProgressBadge tone="success">✓</ProgressBadge> : <ProgressBadge tone="danger">✕</ProgressBadge>;
   const updateStatus = (record, status) => {
@@ -22594,7 +22606,9 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, color: "var(--ink-3)", fontSize: 12 }}>
-          <select className="select" style={{ width: 76 }} defaultValue="25"><option>25</option><option>50</option><option>100</option></select>
+          <select className="select" style={{ width: 76 }} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
+            {[25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
           entries per page
         </div>
 
@@ -22617,7 +22631,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
               </tr>
             </thead>
             <tbody>
-              {filtered.map((record) => (
+              {pageRecords.map((record) => (
                 <tr key={record.id}>
                   <td className="progress-id" title={record.id}>{bookingCodeForRecord(record)}</td>
                   <td className="progress-client-cell">
@@ -22704,6 +22718,19 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
             </tbody>
           </table>
         </div>
+
+        {filtered.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 10, color: "var(--ink-3)", fontSize: 12 }}>
+            <div>Showing {pageStart + 1} to {pageStart + pageRecords.length} of {filtered.length} entries</div>
+            {totalPages > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button type="button" className="btn sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+                <span>Page {currentPage} of {totalPages}</span>
+                <button type="button" className="btn sm" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
