@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 import memory from "../../../../lib/memory-store";
+import { MAX_PROGRESS_RECORDS } from "../../../../lib/progress-records";
 
 // Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
 // bookings; every database route must opt out.
@@ -222,7 +223,7 @@ export async function POST(request) {
   if (!nextRecords.some((item) => recordMatchesBookingId(item, existing.id))) {
     nextRecords.unshift(nextRecord);
   }
-  await saveState(sql, { ...state, progressRecords: nextRecords.slice(0, 500) });
+  await saveState(sql, { ...state, progressRecords: nextRecords.slice(0, MAX_PROGRESS_RECORDS) });
 
   let emailResult = { sent: false };
   try {
