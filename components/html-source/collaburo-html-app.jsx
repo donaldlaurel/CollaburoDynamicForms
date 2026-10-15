@@ -14,6 +14,7 @@ import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-sit
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
 import { migrateToOldSiteParity } from "./old-site-parity-migration";
+import { LegacyImportModal } from "./legacy-import-modal";
 
 const SHOW_OLD_SITE_IMPORT_BUTTONS = false;
 
@@ -18873,6 +18874,7 @@ function normalizeProgressRecord(record = {}, index = 0) {
     emails: record.emails || [],
     log: record.log || [],
     adminAudit: record.adminAudit || [],
+    ...(record.legacy ? { legacy: record.legacy } : {}),
   };
   return defaults;
 }
@@ -22465,7 +22467,7 @@ function ReportsView({ records, venues = [], onOpenRecord }) {
   );
 }
 
-function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, onUpdateRecord, onEmail, onCopyLink, onDelete }) {
+function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, onImportLegacy, onUpdateRecord, onEmail, onCopyLink, onDelete }) {
   const Ic = window.Icons;
   const [now, setNow] = React.useState(Date.now());
   const [filters, setFilters] = React.useState({ query: "", space: "All", from: "", to: "", interest: "All", statuses: [], age: "Current and New" });
@@ -22512,7 +22514,10 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
             <h1>Rentals Progress List</h1>
             <p>Submitted event requests appear here. Open a client name to review the request, admin progress, documents, deposits, and internal notes.</p>
           </div>
-          <button className="btn dark sm" onClick={onAdd}><Ic.Plus size={13} /> Add Rental Progress</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {onImportLegacy && <button className="btn sm" onClick={onImportLegacy}><Ic.Download size={13} /> Import old bookings</button>}
+            <button className="btn dark sm" onClick={onAdd}><Ic.Plus size={13} /> Add Rental Progress</button>
+          </div>
         </div>
 
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
@@ -23525,6 +23530,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const [submittedAnswersRecordId, setSubmittedAnswersRecordId] = React.useState(null);
   const [adminEditRecordId, setAdminEditRecordId] = React.useState(() => new URLSearchParams(window.location.search).get("edit") || null);
   const [emailDraft, setEmailDraft] = React.useState(null);
+  const [legacyImportOpen, setLegacyImportOpen] = React.useState(false);
   const [activeStepId, setActiveStepId] = React.useState(() => (loadSteps() || seedSteps())[0]?.id || "s1");
   const [openFieldId, setOpenFieldId] = React.useState("f1");
   const [activeSection, setActiveSection] = React.useState(() => initialSection || new URLSearchParams(window.location.search).get("section") || "workflow");
@@ -24199,6 +24205,32 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       () => pushToast({ kind: "info", title: "Client link", desc: link, duration: 5000 })
     );
   };
+  // The server appends to the database copy; this tab must merge the same records
+  // and adopt the new updated_at, or its next Save would write the list back without them.
+  const importLegacyBookingBatch = (records, mode = "skip") => (
+    collaburoApi("/api/legacy-import", { method: "POST", body: JSON.stringify({ records, mode }) })
+      .then((result) => {
+        if (result.updatedAt) lastDatabaseUpdatedAt = result.updatedAt;
+        const incoming = normalizeProgressRecords(records);
+        const incomingById = new Map(incoming.map((record) => [String(record.id), record]));
+        let merged;
+        if (mode === "replace") {
+          merged = incoming;
+          setActiveProgressId(null);
+          setSubmittedAnswersRecordId(null);
+        } else if (mode === "overwrite") {
+          merged = mergeProgressRecords(progressRecordsRef.current.map((record) => incomingById.get(String(record.id)) || record), incoming);
+        } else {
+          merged = mergeProgressRecords(progressRecordsRef.current, incoming);
+        }
+        progressRecordsRef.current = merged;
+        setProgressRecords(merged);
+        try {
+          saveJsonSafely(PROGRESS_STORAGE_KEY, merged);
+        } catch (_) {}
+        return result;
+      })
+  );
   const deleteProgressRecord = (record) => {
     if (!record) return;
     const name = record.client?.name || `#${record.progressNo}`;
@@ -24361,7 +24393,14 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     const rentalStats = saveJsonSafely(RENTALS_STORAGE_KEY, rentalCatalogRef.current);
     const pricingStats = saveJsonSafely(PRICING_STORAGE_KEY, pricingRulesRef.current);
     const siteStats = saveJsonSafely(SITE_SETTINGS_STORAGE_KEY, siteSettingsRef.current);
-    const progressStats = saveJsonSafely(PROGRESS_STORAGE_KEY, progressRecordsRef.current);
+    // The progress list can outgrow browser storage once old bookings are imported;
+    // the database copy is the source of truth, so a full local cache must not block Save.
+    let progressStats = {};
+    try {
+      progressStats = saveJsonSafely(PROGRESS_STORAGE_KEY, progressRecordsRef.current);
+    } catch (error) {
+      console.warn("[collaburo] Progress records not cached in this browser:", error.message);
+    }
     const now = Date.now();
     localStorage.setItem(SAVED_KEY, String(now));
     pushHistoryEntry(historyLabel, stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
@@ -24653,6 +24692,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
             onOpenDetail={setActiveProgressId}
             onEditClient={openClientProgress}
             onAdd={() => openClientProgress({})}
+            onImportLegacy={() => setLegacyImportOpen(true)}
             onUpdateRecord={updateProgressRecord}
             onEmail={(recordId, typeId) => setEmailDraft({ recordId, typeId })}
             onCopyLink={copyProgressLink}
@@ -24908,6 +24948,9 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         />
       )}
 
+      {legacyImportOpen && (
+        <LegacyImportModal onClose={() => setLegacyImportOpen(false)} onImportBatch={importLegacyBookingBatch} />
+      )}
       {emailDraft && (
         <EmailSendModal
           record={progressRecords.find((record) => record.id === emailDraft.recordId)}

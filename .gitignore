@@ -9,3 +9,5 @@ out/
 cloudflare-env.d.ts
 .claude/
 .gstack/
+# Legacy-import output contains client personal data.
+import/

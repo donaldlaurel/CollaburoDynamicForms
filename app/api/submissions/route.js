@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 import memory from "../../../lib/memory-store";
+import { MAX_PROGRESS_RECORDS } from "../../../lib/progress-records";
 
 // Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
 // bookings; every database route must opt out.
@@ -215,7 +216,7 @@ async function appendProgressRecordToAdminState(sql, record) {
   const nextState = {
     ...current,
     savedAt: new Date().toISOString(),
-    progressRecords: [record, ...progressRecords].slice(0, 500),
+    progressRecords: [record, ...progressRecords].slice(0, MAX_PROGRESS_RECORDS),
   };
   await sql`
     insert into collaburo_app_config (key, payload, updated_at)
@@ -258,7 +259,7 @@ async function replaceProgressRecordInAdminState(sql, record, loadedState = null
   const nextState = {
     ...current,
     savedAt: new Date().toISOString(),
-    progressRecords: nextRecords.slice(0, 500),
+    progressRecords: nextRecords.slice(0, MAX_PROGRESS_RECORDS),
   };
   const rows = await sql`
     insert into collaburo_app_config (key, payload, updated_at)
@@ -347,7 +348,7 @@ export async function POST(request) {
       const records = Array.isArray(current.progressRecords) ? current.progressRecords : [];
       const nextRecords = records.map((item) => recordMatchesBookingId(item, result.record.id) ? result.record : item);
       if (!nextRecords.some((item) => recordMatchesBookingId(item, result.record.id))) nextRecords.unshift(result.record);
-      memory.state = { ...current, savedAt: result.editedAt, progressRecords: nextRecords.slice(0, 500) };
+      memory.state = { ...current, savedAt: result.editedAt, progressRecords: nextRecords.slice(0, MAX_PROGRESS_RECORDS) };
       memory.updatedAt = result.editedAt;
       memory.submissions = memory.submissions.map((item) => recordMatchesBookingId(item.payload, result.record.id) ? { ...item, payload: result.record } : item);
       updatedAt = memory.updatedAt;
@@ -370,7 +371,7 @@ export async function POST(request) {
       const nextRecords = progressRecords.map((item) => String(item?.id || "") === id
         ? { ...item, progress: { ...(item.progress || {}), lastActivityAt: touchedAt } }
         : item);
-      memory.state = { ...current, savedAt: touchedAt, progressRecords: nextRecords.slice(0, 500) };
+      memory.state = { ...current, savedAt: touchedAt, progressRecords: nextRecords.slice(0, MAX_PROGRESS_RECORDS) };
       memory.updatedAt = touchedAt;
       memory.submissions = memory.submissions.map((item) => item.payload?.id === id
         ? { ...item, payload: { ...item.payload, progress: { ...(item.payload.progress || {}), lastActivityAt: touchedAt } } }
@@ -491,7 +492,7 @@ export async function POST(request) {
       const progressRecords = Array.isArray(current.progressRecords) ? current.progressRecords : [];
       const nextRecords = progressRecords.map((item) => String(item?.id || "") === String(record.id) ? record : item);
       if (!nextRecords.some((item) => String(item?.id || "") === String(record.id))) nextRecords.unshift(record);
-      memory.state = { ...current, savedAt: new Date().toISOString(), progressRecords: nextRecords.slice(0, 500) };
+      memory.state = { ...current, savedAt: new Date().toISOString(), progressRecords: nextRecords.slice(0, MAX_PROGRESS_RECORDS) };
       memory.updatedAt = new Date().toISOString();
       memory.submissions = memory.submissions.map((item) => item.payload?.id === record.id ? { ...item, payload: record, client_name: record.client?.name || "New Client", client_email: record.client?.email || "", event_space: record.request?.space || "", status: record.progress?.status || "In Discussion", total: Number(record.costs?.totalWithDeposit || record.costs?.total || 0) } : item);
       return NextResponse.json({ ok: true, record, source: "memory" });
@@ -535,7 +536,7 @@ export async function POST(request) {
     memory.state = {
       ...current,
       savedAt: new Date().toISOString(),
-      progressRecords: [record, ...progressRecords].slice(0, 500),
+      progressRecords: [record, ...progressRecords].slice(0, MAX_PROGRESS_RECORDS),
     };
     memory.updatedAt = new Date().toISOString();
     return NextResponse.json({ ok: true, submission, source: "memory" }, { status: 201 });
