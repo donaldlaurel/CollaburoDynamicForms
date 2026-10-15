@@ -204,7 +204,6 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
               Done{result.mode === "replace" ? ": all previous bookings were deleted, and" : ":"} {result.added} new bookings imported
               {result.overwritten ? `, ${result.overwritten} existing bookings overwritten` : ""}
               {result.skipped ? `, ${result.skipped} already in the list and left unchanged` : ""}.
-              Imported bookings are marked "Archived"; choose Age "All" or "Archived" in the list filters to see them.
             </div>
           )}
 

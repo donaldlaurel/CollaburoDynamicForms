@@ -346,7 +346,7 @@ function convertBooking(row, contract, importedAtLabel) {
       progress: {
         interestLevel,
         status,
-        age: "Archived",
+        age: "",
         signed: agreement === "Signed",
         agreement,
         contract: contract ? "Generated" : "Not Generated",

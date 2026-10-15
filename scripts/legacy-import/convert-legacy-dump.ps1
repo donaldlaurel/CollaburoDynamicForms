@@ -290,7 +290,7 @@ function Convert-Booking($row, $contract) {
       progress = [ordered]@{
         interestLevel = $interestLevel
         status = $status
-        age = "Archived"
+        age = ""
         signed = ($agreement -eq "Signed")
         agreement = $agreement
         contract = if ($contract) { "Generated" } else { "Not Generated" }
