@@ -20934,6 +20934,11 @@ function normalizeProgressStatus(status, fallback = "In Discussion") {
   };
   return canonical[text.toLowerCase()] || text || fallback;
 }
+// "Archived" is disabled for now; records imported with it are treated as having no age.
+const progressAgeLabel = (record) => {
+  const age = record?.progress?.age || "";
+  return age === "Archived" ? "" : age;
+};
 const progressStatusClass = (status = "In Discussion") => String(status || "In Discussion").toLowerCase().replace(/[^a-z0-9]+/g, "-");
 const progressFileUrl = (file) => typeof file === "string" ? file : (file?.url || file?.secureUrl || "");
 const progressHasUploadedFile = (file) => !!progressFileUrl(file);
@@ -22490,8 +22495,9 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
     if (active.space !== "All" && record.request?.space !== active.space) return false;
     if (active.interest !== "All" && record.progress?.interestLevel !== active.interest) return false;
     if (active.statuses.length > 0 && !active.statuses.includes(normalizeProgressStatus(record.progress?.status))) return false;
-    if (active.age === "Current and New" && record.progress?.age && !["New", "Current", ""].includes(record.progress.age)) return false;
-    if (!["All", "Current and New"].includes(active.age) && (record.progress?.age || "") !== active.age) return false;
+    const age = progressAgeLabel(record);
+    if (active.age === "Current and New" && !["New", "Current", ""].includes(age)) return false;
+    if (!["All", "Current and New"].includes(active.age) && age !== active.age) return false;
     const submitted = new Date(record.submittedAt);
     if (active.from && submitted < new Date(active.from + "T00:00:00")) return false;
     if (active.to && submitted > new Date(active.to + "T23:59:59")) return false;
@@ -22582,7 +22588,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
             <div><label className="lbl">Bookings To</label><input className="input" type="date" value={filters.to} onChange={(e) => updateFilter({ to: e.target.value })} /></div>
             <div><label className="lbl">Interest Level</label><select className="select" value={filters.interest} onChange={(e) => updateFilter({ interest: e.target.value })}>{interestOptions.map((option) => <option key={option}>{option}</option>)}</select></div>
             <div><label className="lbl">Status</label><ProgressStatusMultiSelect value={filters.statuses} onChange={(statuses) => updateFilter({ statuses })} /></div>
-            <div><label className="lbl">Age</label><select className="select" value={filters.age} onChange={(e) => updateFilter({ age: e.target.value })}>{["Current and New", "All", "New", "Current", "Archived"].map((option) => <option key={option}>{option}</option>)}</select></div>
+            <div><label className="lbl">Age</label><select className="select" value={filters.age} onChange={(e) => updateFilter({ age: e.target.value })}>{["Current and New", "All", "New", "Current"].map((option) => <option key={option}>{option}</option>)}</select></div>
             <button className="btn dark sm" onClick={() => updateFilter({ ...filters })}>Filter</button>
           </div>
         </div>
@@ -22655,7 +22661,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
                     >
                       {PROGRESS_STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
                     </select>
-                    {record.progress?.age && <div className="progress-age">{record.progress.age}</div>}
+                    {progressAgeLabel(record) && <div className="progress-age">{progressAgeLabel(record)}</div>}
                   </td>
                   <td className="progress-check-cell">{yesNoIcon(progressAgreementComplete(record.progress || {}))}</td>
                   <td className="progress-money-cell">{record.progress?.securityDepositCost || "TBD"}{record.progress?.securityDepositNote && <div className="progress-subtle">{record.progress.securityDepositNote}</div>}</td>
