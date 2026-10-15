@@ -22484,18 +22484,72 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
-  const filtered = (records || []).filter((record) => {
+  const applyFilters = (active) => (records || []).filter((record) => {
     const hay = [record.client?.name, record.client?.organization, record.client?.email, record.request?.description].join(" ").toLowerCase();
-    if (filters.query && !hay.includes(filters.query.toLowerCase())) return false;
-    if (filters.space !== "All" && record.request?.space !== filters.space) return false;
-    if (filters.interest !== "All" && record.progress?.interestLevel !== filters.interest) return false;
-    if (filters.statuses.length > 0 && !filters.statuses.includes(normalizeProgressStatus(record.progress?.status))) return false;
-    if (filters.age === "Current and New" && record.progress?.age && !["New", "Current", ""].includes(record.progress.age)) return false;
+    if (active.query && !hay.includes(active.query.toLowerCase())) return false;
+    if (active.space !== "All" && record.request?.space !== active.space) return false;
+    if (active.interest !== "All" && record.progress?.interestLevel !== active.interest) return false;
+    if (active.statuses.length > 0 && !active.statuses.includes(normalizeProgressStatus(record.progress?.status))) return false;
+    if (active.age === "Current and New" && record.progress?.age && !["New", "Current", ""].includes(record.progress.age)) return false;
+    if (!["All", "Current and New"].includes(active.age) && (record.progress?.age || "") !== active.age) return false;
     const submitted = new Date(record.submittedAt);
-    if (filters.from && submitted < new Date(filters.from + "T00:00:00")) return false;
-    if (filters.to && submitted > new Date(filters.to + "T23:59:59")) return false;
+    if (active.from && submitted < new Date(active.from + "T00:00:00")) return false;
+    if (active.to && submitted > new Date(active.to + "T23:59:59")) return false;
     return true;
   });
+  const [sort, setSort] = React.useState({ key: "booking", dir: "desc" });
+  const bookingStartById = React.useMemo(() => {
+    const map = new Map();
+    (records || []).forEach((record) => {
+      const ranges = parseBookingCalendarRanges(record.request?.bookingDateTime, record.request?.space);
+      map.set(record.id, ranges.length ? Math.min(...ranges.map((range) => range.start.getTime())) : null);
+    });
+    return map;
+  }, [records]);
+  const sortValue = (record, key) => {
+    const progress = record.progress || {};
+    switch (key) {
+      case "id": return bookingCodeForRecord(record);
+      case "client": return record.client?.name || "";
+      case "description": return record.request?.description || record.request?.eventType || "";
+      case "submitted": return new Date(record.submittedAt).getTime() || null;
+      case "space": return record.request?.space || "";
+      case "people": return Number(record.request?.attendeeCount) || null;
+      case "booking": return bookingStartById.get(record.id) ?? null;
+      case "interest": return progress.interestLevel || "";
+      case "status": return normalizeProgressStatus(progress.status);
+      case "signed": return progressAgreementComplete(progress) ? 1 : 0;
+      case "deposit": return progress.securityDepositCost || "";
+      case "insure": return progressInsuranceComplete(progress) ? 1 : 0;
+      case "agco": return progressAgcoLicenseComplete(progress) ? 1 : 0;
+      default: return null;
+    }
+  };
+  const sortRecords = (list) => {
+    const direction = sort.dir === "asc" ? 1 : -1;
+    return list
+      .map((record) => ({ record, value: sortValue(record, sort.key) }))
+      .sort((a, b) => {
+        const aEmpty = a.value === null || a.value === "";
+        const bEmpty = b.value === null || b.value === "";
+        if (aEmpty || bEmpty) return aEmpty === bEmpty ? 0 : aEmpty ? 1 : -1;
+        const diff = typeof a.value === "number" && typeof b.value === "number"
+          ? a.value - b.value
+          : String(a.value).localeCompare(String(b.value), undefined, { numeric: true, sensitivity: "base" });
+        return diff * direction;
+      })
+      .map((item) => item.record);
+  };
+  const toggleSort = (key) => setSort((prev) => prev.key === key
+    ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+    : { key, dir: ["submitted", "booking", "people"].includes(key) ? "desc" : "asc" });
+  const columns = [
+    ["ID", "id"], ["Client", "client"], ["Description", "description"], ["Submitted Date", "submitted"], ["Space", "space"],
+    ["No. of People", "people"], ["Booking Date/Time", "booking"], ["Interest Level", "interest"], ["Status", "status"],
+    ["Signed", "signed"], ["Security Deposit", "deposit"], ["Insure", "insure"], ["AGCO License", "agco"], ["Email actions"], ["Actions"],
+  ];
+  const filtered = sortRecords(applyFilters(filters));
+  const hiddenByAge = filtered.length === 0 && filters.age !== "All" ? applyFilters({ ...filters, age: "All" }).length : 0;
   const fmtDate = (value) => value ? new Date(value).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }) : "";
   const yesNoIcon = (value) => value ? <ProgressBadge tone="success">✓</ProgressBadge> : <ProgressBadge tone="danger">✕</ProgressBadge>;
   const updateStatus = (record, status) => {
@@ -22542,9 +22596,18 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
           <table className="progress-list-table">
             <thead>
               <tr>
-                {["ID", "Client", "Description", "Submitted Date", "Space", "No. of People", "Booking Date/Time", "Interest Level", "Status", "Signed", "Security Deposit", "Insure", "AGCO License", "Email actions", "Actions"].map((head) => (
-                  <th key={head}>{head}</th>
-                ))}
+                {columns.map(([head, key]) => {
+                  if (!key) return <th key={head}>{head}</th>;
+                  const active = sort.key === key;
+                  return (
+                    <th key={head} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+                      <button type="button" className={"progress-sort-btn" + (active ? " active" : "")} onClick={() => toggleSort(key)}>
+                        {head}
+                        <span className="progress-sort-arrow">{active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -22622,7 +22685,15 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan="15" style={{ padding: 24, textAlign: "center", color: "var(--ink-3)" }}>No progress records match the filters.</td></tr>
+                <tr><td colSpan="15" style={{ padding: 24, textAlign: "center", color: "var(--ink-3)" }}>
+                  No progress records match the filters.
+                  {hiddenByAge > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      {hiddenByAge} record{hiddenByAge === 1 ? " is" : "s are"} hidden by the Age filter.{" "}
+                      <button type="button" className="btn ghost sm" onClick={() => updateFilter({ age: "All" })}>Show all ages</button>
+                    </div>
+                  )}
+                </td></tr>
               )}
             </tbody>
           </table>
