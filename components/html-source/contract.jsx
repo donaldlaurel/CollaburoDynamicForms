@@ -441,6 +441,14 @@ function sanitizeContractHtml(html = "") {
   const root = document.createElement("div");
   root.innerHTML = normalizeLegacyContractHtml(repairContractWaiverMarkup(html));
 
+  // Preserve legacy <center> alignment (not in allow-list; would otherwise unwrap left-aligned).
+  root.querySelectorAll("center").forEach((el) => {
+    const div = document.createElement("div");
+    div.setAttribute("style", "text-align:center");
+    while (el.firstChild) div.appendChild(el.firstChild);
+    el.parentNode?.replaceChild(div, el);
+  });
+
   const scrubNode = (node) => {
     if (node.nodeType === Node.COMMENT_NODE) {
       node.parentNode?.removeChild(node);
@@ -531,8 +539,18 @@ function sanitizeContractHtml(html = "") {
   root.querySelectorAll("table").forEach((table) => {
     const cls = String(table.getAttribute("class") || "").toLowerCase();
     const border = String(table.getAttribute("border") || "").trim();
-    if (/\bborder|\btable-bordered\b/.test(cls) || (border && border !== "0")) {
+    const style = String(table.getAttribute("style") || "");
+    const looksBordered = /\bborder|\btable-bordered\b/.test(cls) || (border && border !== "0");
+    const looksRateTable = /Private Event|Semi Event|Public Event/i.test(table.textContent || "");
+    if (looksBordered || looksRateTable) {
       table.setAttribute("data-bordered", "1");
+      // Legacy deposit matrix used width:40% and looked cramped on the sign page.
+      const nextStyle = style
+        .replace(/width\s*:\s*[^;]+;?/gi, "")
+        .replace(/;{2,}/g, ";")
+        .replace(/^;|;$/g, "")
+        .trim();
+      table.setAttribute("style", nextStyle ? `${nextStyle};width:100%` : "width:100%");
     }
   });
 
@@ -997,7 +1015,7 @@ export function ContractDocumentView({
   const heading = title || contract.title;
   return (
     <div className={"contract-document" + (interactive ? " contract-document-interactive" : "")} style={{ background: "#fff", border: interactive ? "none" : "1px solid var(--line)", borderRadius: interactive ? 0 : 12, padding: interactive ? "12px 9px 28px" : 22, maxHeight: interactive ? undefined : 420, overflow: interactive ? "visible" : "auto", minWidth: 0, maxWidth: interactive ? 720 : undefined, margin: interactive ? "0 auto" : undefined }}>
-      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:10px auto}.contract-document table{width:100%;border-collapse:collapse;margin:4px 0 8px;border:none}.contract-document th,.contract-document td{border:none;background:transparent;padding:1px 4px 1px 0;vertical-align:top;text-align:left}.contract-document table[data-bordered="1"],.contract-document table[data-bordered="1"] th,.contract-document table[data-bordered="1"] td{border:1px solid #212529!important;padding:4px 6px}.contract-document ul,.contract-document ol{margin:4px 0 8px 1.4em;padding:0}.contract-document li{margin:2px 0;line-height:1.5}.contract-rich-text{font-size:12px;line-height:1.5;color:#212529;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}.contract-document-interactive .contract-block-paragraph{margin-bottom:16px}`}</style>
+      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:10px auto}.contract-document table{width:100%;border-collapse:collapse;margin:4px 0 8px;border:none}.contract-document th,.contract-document td{border:none;background:transparent;padding:1px 4px 1px 0;vertical-align:top;text-align:left}.contract-document table[data-bordered="1"]{width:100%!important;table-layout:fixed;margin:12px 0 16px}.contract-document table[data-bordered="1"] th,.contract-document table[data-bordered="1"] td{border:1px solid #212529!important;padding:8px 10px;vertical-align:middle;text-align:center;white-space:normal}.contract-document table[data-bordered="1"] td:first-child,.contract-document table[data-bordered="1"] th:first-child{text-align:left;font-weight:700;width:18%}.contract-document ul,.contract-document ol{margin:4px 0 8px 1.4em;padding:0}.contract-document li{margin:2px 0;line-height:1.5}.contract-rich-text{font-size:12px;line-height:1.5;color:#212529;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}.contract-document-interactive .contract-block-paragraph{margin-bottom:16px}`}</style>
       {showTitle && heading ? <h2 style={{ margin: "0 0 16px", fontSize: 22 }}>{heading}</h2> : null}
       {(contract.blocks || []).map((block) => (
         <ContractBlockPreview
@@ -1402,7 +1420,9 @@ function buildSignedContractHtml(settings, tokenMap, signatures) {
     "body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;font-size:12px;line-height:1.5;color:#212529}",
     "table{width:100%;border-collapse:collapse;margin:4px 0 8px;font-size:12px;border:none}",
     "th,td{border:none;padding:1px 4px 1px 0;vertical-align:top;text-align:left;background:transparent}",
-    "table[data-bordered='1'],table[data-bordered='1'] th,table[data-bordered='1'] td{border:1px solid #212529;padding:4px 6px}",
+    "table[data-bordered='1']{width:100%!important;table-layout:fixed;margin:12px 0 16px}",
+    "table[data-bordered='1'] th,table[data-bordered='1'] td{border:1px solid #212529;padding:8px 10px;vertical-align:middle;text-align:center}",
+    "table[data-bordered='1'] td:first-child,table[data-bordered='1'] th:first-child{text-align:left;font-weight:700;width:18%}",
     "th{font-weight:700}",
     "p{margin:0 0 8px;line-height:1.5}",
     "ul,ol{margin:4px 0 8px 1.4em;padding:0}",
