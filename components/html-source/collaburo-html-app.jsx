@@ -13449,7 +13449,7 @@ function RentalDeliveryNote() {
   return <p className="cv-rental-detail-desc" style={{ fontStyle: "italic" }}>{note}</p>;
 }
 
-function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCount }) {
+function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCount, fieldId = "" }) {
   const Ic = window.Icons;
   const pricesVisible = useClientPricingVisible();
   const crossContext = React.useContext(RentalCrossContext);
@@ -13517,7 +13517,7 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
         ) : (
           !grouped && pricesVisible && <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{workflowRentalPriceLabel(item)}</div>
         )}
-        <RentalRecommendationsBox item={item} itemValue={itemValue} />
+        <RentalRecommendationsBox item={item} itemValue={itemValue} fieldId={fieldId} />
       </div>
     </div>
   );
@@ -13790,13 +13790,19 @@ function rentalStepMissingRequirements(fields = [], stepRentalState = {}, venueI
   return missing;
 }
 
-function RentalRecommendationsBox({ item, itemValue }) {
+function RentalRecommendationsBox({ item, itemValue, fieldId = "" }) {
   const ctx = React.useContext(RentalCrossContext);
   const active = activeRentalRecommendations(item, itemValue, ctx?.cross || null);
   if (!active.length) return null;
   const missing = active.filter((rec) => !rec.satisfied);
+  const fieldError = fieldId ? (ctx?.fieldErrors?.[fieldId] || "") : "";
+  const showError = missing.length > 0 && !!fieldError;
   return (
-    <div className="cv-rental-recommendations">
+    <div
+      className={"cv-rental-recommendations" + (showError ? " is-error" : "")}
+      data-cv-field-id={showError ? fieldId : undefined}
+      data-cv-rental-rec-error={showError ? fieldId : undefined}
+    >
       <strong>{item.recommendationHeading || "Based on your answers above, the minimum items required are:"}</strong>
       <ul>
         {active.map((rec) => (
@@ -13811,6 +13817,7 @@ function RentalRecommendationsBox({ item, itemValue }) {
           {item.recommendationAddLabel || "Add the missing items"}
         </button>
       )}
+      {showError && <div className="cv-field-error cv-rental-rec-error">{fieldError}</div>}
     </div>
   );
 }
@@ -14076,13 +14083,13 @@ function summaryDiscountRows(costs = {}) {
   ];
 }
 
-function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecommendations, venueId = "", booking = null }) {
+function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecommendations, venueId = "", booking = null, fieldErrors = {} }) {
   const Ic = window.Icons;
   const pricesVisible = useClientPricingVisible();
   const rentalState = value || {};
   const cross = buildRentalCrossContext(fields, rentalState, venueId, booking);
   const commitState = (nextState) => onChange(reconcileRentalPackageIncludes(rentalState, nextState, fields, venueId));
-  const crossContextValue = { cross, venueId, selectItems: (itemIds) => commitState(selectRentalItemsInState(rentalState, fields, venueId, itemIds)) };
+  const crossContextValue = { cross, venueId, fieldErrors, selectItems: (itemIds) => commitState(selectRentalItemsInState(rentalState, fields, venueId, itemIds)) };
   const isLockedInclude = (itemId) => !!rentalActiveInclusion(cross, itemId)?.locked;
   const itemPriceLabel = (item) => rentalActiveInclusion(cross, item.id)?.waivePrice ? "Included" : workflowRentalPriceLabel(item);
   const allTiles = [];
@@ -14174,6 +14181,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                   <RentalItemDetailPreview
                     key={field.id + "_" + item.id}
                     item={item}
+                    fieldId={field.id}
                     recommendedCount={layoutRecommendationCountForItem(item, layoutRecommendations)}
                     value={(fieldState.itemValues || {})[item.id]}
                     onChange={(nextItem) => setFieldState(field.id, { ...fieldState, itemValues: { ...(fieldState.itemValues || {}), [item.id]: nextItem } })}
@@ -14198,6 +14206,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                   <RentalItemDetailPreview
                     key={field.id + "_" + singleGroupedItem.id}
                     item={singleGroupedItem}
+                    fieldId={field.id}
                     recommendedCount={layoutRecommendationCountForItem(singleGroupedItem, layoutRecommendations)}
                     value={(fieldState.itemValues || {})[singleGroupedItem.id]}
                     onChange={(nextItem) => setFieldState(field.id, { ...fieldState, itemValues: { ...(fieldState.itemValues || {}), [singleGroupedItem.id]: nextItem } })}
@@ -14228,6 +14237,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                               <div className="cv-rental-subline">{item.name}</div>
                               <RentalItemDetailPreview
                                 item={item}
+                                fieldId={field.id}
                                 grouped
                                 recommendedCount={layoutRecommendationCountForItem(item, layoutRecommendations)}
                                 value={(fieldState.itemValues || {})[item.id]}
@@ -14269,6 +14279,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                         {itemOn && rentalItemNeedsDetail(item) && (
                           <RentalItemDetailPreview
                                 item={item}
+                                fieldId={field.id}
                                 grouped
                                 recommendedCount={layoutRecommendationCountForItem(item, layoutRecommendations)}
                                 value={rentalItemValueWithShared(item, (fieldState.itemValues || {})[item.id], fieldState)}
@@ -14291,7 +14302,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
   );
 }
 
-function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layoutRecommendations, venues = [], venueBookings = {} }) {
+function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layoutRecommendations, venues = [], venueBookings = {}, fieldErrors = {} }) {
   const rentalValue = value || {};
   const scopedVenues = (venues || []).filter((venue) => venue && venue.id);
   if (scopedVenues.length === 0) {
@@ -14303,6 +14314,7 @@ function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layout
         title={title}
         layoutRecommendations={layoutRecommendations}
         booking={rentalFirstBooking(venueBookings)}
+        fieldErrors={fieldErrors}
       />
     );
   }
@@ -14334,6 +14346,7 @@ function ClientVenueRentalGroupsPreview({ fields, value, onChange, title, layout
               layoutRecommendations={venueRecommendations}
               venueId={venue.id}
               booking={venueBookings?.[venue.id] || null}
+              fieldErrors={fieldErrors}
             />
           </section>
         );
@@ -14937,8 +14950,18 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       </div>
     ) : null;
   };
+  const rentalFieldErrors = Object.fromEntries(
+    rentalGroupFields
+      .map((field) => [field.id, fieldErrorFor(field.id)])
+      .filter(([, message]) => !!message)
+  );
   const renderRentalGroupErrors = () => {
-    const errors = rentalGroupFields.filter((field) => fieldErrorFor(field.id));
+    // Item-level recommendation errors render inside RentalRecommendationsBox.
+    // Keep group-level fallback for unanswered required questions only.
+    const errors = rentalGroupFields.filter((field) => {
+      const message = fieldErrorFor(field.id);
+      return message && rentalRequirementsForStep(step)[field.id] === "questions";
+    });
     if (errors.length === 0) return null;
     return (
       <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
@@ -15018,8 +15041,18 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       }
       setEmailVerificationStatus({ status: "sent", message: `We sent a verification link to ${targetEmail}. Open it to view pricing; your progress is saved.` });
     } catch (error) {
-      setEmailVerificationStatus({ status: "error", message: error.message || "Could not verify this email. Please try again." });
-      pulseEmailField();
+      const raw = String(error?.message || "");
+      const isDomainMissing = /email does not exist/i.test(raw);
+      const isSetupFailure = /not fully configured|resend\.dev|domain is not verified|verify your domain|RESEND_API_KEY|not configured|rejected the verification/i.test(raw)
+        || error?.status === 501;
+      const visitorMessage = isDomainMissing
+        ? "Email does not exist"
+        : isSetupFailure
+          ? "We couldn’t send a verification email right now. You can still submit your request; pricing unlocks after email verification."
+          : (raw || "Could not verify this email. Please try again.");
+      setEmailVerificationStatus({ status: "error", message: visitorMessage });
+      // Only yank focus for input/domain mistakes — not infrastructure failures.
+      if (isDomainMissing) pulseEmailField();
     }
   };
   React.useEffect(() => {
@@ -15116,7 +15149,10 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     setValidationPulseKey((key) => key + 1);
     window.setTimeout(() => {
       const firstField = missing[0]?.id;
-      const node = firstField ? document.querySelector(`[data-cv-field-id="${CSS.escape(firstField)}"]`) : null;
+      const recNode = firstField
+        ? document.querySelector(`[data-cv-rental-rec-error="${CSS.escape(firstField)}"]`)
+        : null;
+      const node = recNode || (firstField ? document.querySelector(`[data-cv-field-id="${CSS.escape(firstField)}"]`) : null);
       node?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 30);
     return false;
@@ -15530,9 +15566,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const checkoutAgreementValue = answers.__checkoutAgreements?.[step?.id] || {};
   const checkoutAgreements = step?.stepType === "checkout" ? (step.checkout?.agreements || []) : [];
   const missingCheckoutAgreements = checkoutAgreements.filter((agreement) => agreement.required !== false && !checkoutAgreementValue[agreement.id]);
+  // Email verification unlocks pricing only; Submit requires agreements, not verified email.
   const checkoutCanSubmit = adminEditMode || step?.stepType !== "checkout" || (
     missingCheckoutAgreements.length === 0
-    && (!validations.emailVerification || emailVerified)
   );
   const costModalGroups = costBreakdown ? Object.values((costBreakdown.lines || []).reduce((acc, line) => {
     const key = line.group || costBreakdown.title || "Details";
@@ -15824,7 +15860,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
           Pricing and cost summaries are available after email validation.
         </div>
         <p style={{ margin: "0 auto 22px", maxWidth: 560, color: "var(--ink)", fontSize: 13, lineHeight: 1.55 }}>
-          To see the pricing and cost summary, enter your email address in Step 1 and click Validate.
+          To see the pricing and cost summary, enter your email address in Step 1 and click Validate. You can still submit your booking request without verifying.
         </p>
         <button
           type="button"
@@ -16071,10 +16107,25 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
               {list.map((s, i) => (
                 <React.Fragment key={s.id}>
                   {i > 0 && <div className={"cv-progress-line" + (stepHasSavedData(s) ? " saved" : i <= stepIdx ? " done" : "")} />}
-                  <div className="cv-progress-step" data-progress-step={i} onClick={() => goTo(i)}>
+                  <div
+                    className="cv-progress-step"
+                    data-progress-step={i}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Step ${i + 1}: ${previewStepLabel(s.name) || s.name || "Untitled"}`}
+                    aria-current={i === stepIdx ? "step" : undefined}
+                    title={s.name}
+                    onClick={() => goTo(i)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        goTo(i);
+                      }
+                    }}
+                  >
                     <div className={"cv-progress-dot" + (i === stepIdx ? " active" : stepHasSavedData(s) ? " saved" : "")}>
                       <span>{i + 1}</span>
-                      {stepHasSavedData(s) && <span className="cv-progress-check">✓</span>}
+                      {stepHasSavedData(s) && <span className="cv-progress-check" aria-hidden="true">✓</span>}
                     </div>
                     <span
                       className={"cv-progress-label" + (i === stepIdx ? " active" : stepHasSavedData(s) ? " saved" : "")}
@@ -16147,6 +16198,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                           layoutRecommendations={layoutRecommendations}
                           venues={selectedRentalVenues}
                           venueBookings={answers._venueBookings || {}}
+                          fieldErrors={rentalFieldErrors}
                         />
                         {renderRentalGroupErrors()}
                       </>
@@ -16186,6 +16238,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                           layoutRecommendations={layoutRecommendations}
                           venues={selectedRentalVenues}
                           venueBookings={answers._venueBookings || {}}
+                          fieldErrors={rentalFieldErrors}
                         />
                         {renderRentalGroupErrors()}
                       </>
@@ -16230,6 +16283,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                               layoutRecommendations={layoutRecommendations}
                               venues={selectedRentalVenues}
                               venueBookings={answers._venueBookings || {}}
+                              fieldErrors={rentalFieldErrors}
                             />
                             {renderRentalGroupErrors()}
                           </>
@@ -16300,9 +16354,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                     disabled={submitState.status === "submitting"}
                     aria-disabled={isLast && !checkoutCanSubmit ? "true" : undefined}
 		                    title={isLast && !checkoutCanSubmit
-                      ? (costSummaryLocked
-                        ? costSummaryLockedMessage
-                        : "Complete the required checkout items before saving.")
+                      ? "Complete the required checkout items before saving."
                       : undefined}
 		                    onClick={async () => {
 		                      if (!canReachStep(stepIdx + 1, { forceCurrent: true })) return;
@@ -16316,22 +16368,16 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                           });
                           return;
                         }
-                        if (costSummaryLocked) {
-                          setClientNotice({
-                            kind: "danger",
-                            title: "Verify your email before submitting",
-                            message: "Your progress is saved, but the booking request was not submitted. Verify your email in Step 1, then return here to submit.",
-                            duration: 12000,
-                          });
-                          setSubmitState({
-                            status: "error",
-                            message: "Booking request not submitted until your email is verified.",
-                          });
-                          pulseEmailField();
-                          return;
-                        }
                         try {
                           await saveCurrentStep({ finalSubmit: true });
+                          if (costSummaryLocked) {
+                            setClientNotice({
+                              kind: "success",
+                              title: "Request saved",
+                              message: "Your booking request was submitted. Verify your email anytime to view pricing.",
+                              duration: 8000,
+                            });
+                          }
                         } catch (error) {
                           return;
                         }
@@ -25131,9 +25177,20 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   }
 
   if (bookingSummaryMode) {
-    return publicEditRecord
-      ? <ClientBookingAnswersView record={publicEditRecord} steps={steps} />
-      : <div className="booking-answers-loading">Loading booking answers…</div>;
+    const summaryRecordId = new URLSearchParams(window.location.search).get("record");
+    if (summaryRecordId && !publicRecordLookupDone) {
+      return <div className="booking-answers-loading">Loading booking answers…</div>;
+    }
+    if (!publicEditRecord) {
+      return (
+        <div className="booking-answers-loading" style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, textAlign: "center", fontWeight: 650, lineHeight: 1.45 }}>
+          {summaryRecordId
+            ? "This booking could not be found or is no longer available."
+            : "Open this page from a booking summary link that includes a record code."}
+        </div>
+      );
+    }
+    return <ClientBookingAnswersView record={publicEditRecord} steps={steps} />;
   }
 
   if (publicMode) {
