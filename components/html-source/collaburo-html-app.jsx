@@ -9,7 +9,7 @@ import "./icons";
 import "./runtime-widgets";
 import { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT } from "./navigation";
 import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-data";
-import { ContractSettingsView, ContractSignView, ContractLoadingView, normalizeContractSettings, createDefaultContractSettings, buildContractSnapshot } from "./contract";
+import { ContractSettingsView, ContractSignView, ContractLoadingView, normalizeContractSettings, createDefaultContractSettings, buildContractSnapshot, resolveContractVariant } from "./contract";
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
@@ -18425,6 +18425,22 @@ const DYNAMIC_EMAIL_FIELDS = [
   ["{{Contract_Status}}", "Not Generated / Generated / Sent"],
   ["{{Agreement_Status}}", "Not Signed / Signed"],
   ["{{Today_Date}}", "Today's date when contract is viewed"],
+  ["{{Client_Display_Name}}", "Client name with organization"],
+  ["{{Agreement_Day}}", "Ordinal day for agreement date (e.g. 18th)"],
+  ["{{Agreement_Month}}", "Month name for agreement date"],
+  ["{{Agreement_Year}}", "Year for agreement date"],
+  ["{{Agreement_Month_Year}}", "Month, Year for agreement date"],
+  ["{{Agreement_Time}}", "Time for agreement date"],
+  ["{{Floor_Layout_Instructions}}", "Floor layout special instructions"],
+  ["{{Stage_Layout_Instructions}}", "Stage layout special instructions"],
+  ["{{Buffet_Layout_Instructions}}", "Buffet layout special instructions"],
+  ["{{Blackboard_Sign_Message}}", "Blackboard sign message"],
+  ["{{Space_Extra_Total}}", "Space extra costs total"],
+  ["{{Space_Rental_Rooms_Label}}", "Space rental rooms label in cost summary"],
+  ["{{Additional_Discount}}", "Additional discount amount"],
+  ["{{Tech_Questions}}", "Tech / AV notes"],
+  ["{{Discount_Notes}}", "Discount notes"],
+  ["{{Multi_Day_Details}}", "Multi-day booking detail lines"],
 ];
 
 const DYNAMIC_CONTRACT_FIELDS = DYNAMIC_EMAIL_FIELDS;
@@ -21006,10 +21022,38 @@ function emailTokenMap(record = {}) {
     formatContractCostLines(costs.eventLines),
     formatContractCostLines(costs.cleanupLines),
   ].filter(Boolean).join("\n");
-  const today = new Date().toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
+  const now = new Date();
+  const today = now.toLocaleDateString("en-CA", { year: "numeric", month: "long", day: "numeric" });
+  const dayNum = now.getDate();
+  const ordinal = (n) => {
+    const j = n % 10;
+    const k = n % 100;
+    if (j === 1 && k !== 11) return `${n}st`;
+    if (j === 2 && k !== 12) return `${n}nd`;
+    if (j === 3 && k !== 13) return `${n}rd`;
+    return `${n}th`;
+  };
+  const agreementMonth = now.toLocaleDateString("en-US", { month: "long" });
+  const agreementYear = String(now.getFullYear());
+  const agreementTime = now
+    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+    .toLowerCase();
+  const clientName = record.client?.name || "";
+  const organization = record.client?.organization || "";
+  const clientDisplayName = organization
+    ? `${clientName}${clientName ? " " : ""}(${organization})`
+    : clientName;
+  const spaceExtraTotal = Array.isArray(costs.spaceExtraLines)
+    ? costs.spaceExtraLines.reduce((sum, line) => sum + Number(line?.total || line?.amount || 0), 0)
+    : Number(costs.spaceExtraTotal || 0);
+  const spaceLabel = record.request?.space
+    ? `(${String(record.request.space).replace(/\s*\/\s*/g, " / ")})`
+    : "";
   return {
-    "{{Client_Name}}": record.client?.name || "",
-    "{{Organization}}": record.client?.organization || "",
+    "{{Client_Name}}": clientName,
+    "{{Client_Display_Name}}": clientDisplayName,
+    "{{Organization}}": organization,
+    "{{Organization_Suffix}}": organization ? ` (${organization})` : "",
     "{{Email}}": record.client?.email || "",
     "{{Phone}}": record.client?.phone || "",
     "{{Booking_ID}}": bookingCodeForRecord(record),
@@ -21032,6 +21076,18 @@ function emailTokenMap(record = {}) {
     "{{Clean_up_Service}}": record.adminSections?.serviceNotes || "",
     "{{Special_Notes}}": record.adminSections?.specialNotes || record.adminSections?.instructions || "",
     "{{Catering_Specifics}}": record.adminSections?.cateringSpecifics || "",
+    "{{Floor_Layout_Instructions}}": record.adminSections?.floorLayoutInstructions || record.layoutSelections?.floorNotes || "",
+    "{{Stage_Layout_Instructions}}": record.adminSections?.stageLayoutInstructions || record.layoutSelections?.stageNotes || "",
+    "{{Buffet_Layout_Instructions}}": record.adminSections?.buffetLayoutInstructions || "",
+    "{{Blackboard_Sign_Message}}": record.adminSections?.blackboardSignMessage || "",
+    "{{Tech_Questions}}": record.adminSections?.techQuestions || "",
+    "{{Discount_Notes}}": record.adminSections?.discountNotes || "",
+    "{{Multi_Day_Details}}": record.adminSections?.multiDayDetails || "",
+    "{{Agreement_Day}}": ordinal(dayNum),
+    "{{Agreement_Month}}": agreementMonth,
+    "{{Agreement_Year}}": agreementYear,
+    "{{Agreement_Month_Year}}": `${agreementMonth}, ${agreementYear}`,
+    "{{Agreement_Time}}": agreementTime,
     "{{Security_Deposit}}": (() => {
       const raw = record.progress?.securityDepositCost;
       if (raw != null && String(raw).trim() !== "" && !Number.isFinite(Number(raw))) return String(raw);
@@ -21040,6 +21096,8 @@ function emailTokenMap(record = {}) {
     "{{Security_Deposit_Note}}": record.progress?.securityDepositNote || "",
     "{{Space_Rental_Total}}": formatContractMoney(costs.spaceRentalTotal),
     "{{Space_Content_Total}}": formatContractMoney(costs.spaceContentTotal),
+    "{{Space_Extra_Total}}": formatContractMoney(spaceExtraTotal),
+    "{{Space_Rental_Rooms_Label}}": spaceLabel,
     "{{Catering_Total}}": formatContractMoney(costs.cateringTotal),
     "{{Setup_Total}}": formatContractMoney(costs.setupTotal),
     "{{Event_Service_Total}}": formatContractMoney(costs.eventTotal),
@@ -21047,6 +21105,7 @@ function emailTokenMap(record = {}) {
     "{{Subtotal}}": formatContractMoney(costs.subtotal),
     "{{Fees_Total}}": formatContractMoney(feeTotal),
     "{{Discount_Total}}": formatContractMoney(discountTotal),
+    "{{Additional_Discount}}": formatContractMoney(costs.additionalDiscount || 0),
     "{{Total}}": formatContractMoney(costs.total),
     "{{Total_With_Deposit}}": formatContractMoney(costs.totalWithDeposit),
     "{{Space_Lines}}": formatContractCostLines(costs.spaceLines),
@@ -23771,6 +23830,18 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
                     )}
                   </div>
                 </div>
+                <p style={{ margin: "6px 0 0", fontSize: 11, color: "var(--ink-3)" }}>
+                  {(() => {
+                    const snapVariant = record.progress?.contractSnapshot?.variant;
+                    const liveVariant = resolveContractVariant(
+                      record.request?.eventType || "",
+                      window.CURRENT_SITE_SETTINGS?.contractSettings,
+                    );
+                    const label = (snapVariant || liveVariant) === "business" ? "Business" : "Social";
+                    if (snapVariant) return `Snapshot: ${label} template`;
+                    return `Will use: ${label} template (from event type)`;
+                  })()}
+                </p>
               </div>
             </div>
 
@@ -24497,7 +24568,12 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       ...current,
       progress: { ...(current.progress || {}), contract: "Generated", contractGeneratedAt: generatedAt },
     };
-    const snapshot = buildContractSnapshot(siteSettingsRef.current?.contractSettings, emailTokenMap(withStatus), generatedAt);
+    const snapshot = buildContractSnapshot(
+      siteSettingsRef.current?.contractSettings,
+      emailTokenMap(withStatus),
+      generatedAt,
+      withStatus.request?.eventType || "",
+    );
     const nextRecord = normalizeProgressRecord({
       ...withStatus,
       progress: { ...withStatus.progress, contractSnapshot: snapshot },
@@ -24513,7 +24589,8 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       } catch (error) {
         pushToast({ kind: "danger", title: "Save failed", desc: error.message });
       }
-      pushToast({ kind: "success", title: "Contract generated", desc: "Changes saved. The contract link now shows this booking's details." });
+      const variantLabel = snapshot.variant === "business" ? "Business" : "Social";
+      pushToast({ kind: "success", title: "Contract generated", desc: `${variantLabel} template saved. The contract link now shows this booking's details.` });
       return nextRecord;
     });
   };

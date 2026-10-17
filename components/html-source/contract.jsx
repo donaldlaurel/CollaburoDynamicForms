@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { createLegacyContractSettings } from "./contract-legacy-default";
+import { createLegacyBusinessContractSettings } from "./contract-legacy-business-default";
 
 const CONTRACT_BLOCK_TYPES = [
   { id: "header", label: "Header" },
@@ -9,93 +11,150 @@ const CONTRACT_BLOCK_TYPES = [
   { id: "signature", label: "Signature" },
 ];
 
+export const DEFAULT_BUSINESS_EVENT_TYPES = [
+  "Business / Board Meeting",
+  "Conference",
+  "Workshop / Training",
+  "Other - Business and non-alcoholic events",
+];
+
+export const DEFAULT_SOCIAL_EVENT_TYPES = [
+  "Lecture / Theater / Movie",
+  "Social Event with dancing / Party",
+  "Social Event without dancing / Banquet",
+  "Reception / Cocktail Party",
+  "Wedding & Reception",
+  "Ceremony / Graduation",
+  "Memorial / End of Life Celebration",
+  "Festival / Market / Show",
+  "Other - Social and/or alcoholic events",
+];
+
 function contractUid(prefix = "blk") {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function normalizeContractTemplate(template = {}, fallback = null) {
+  const sample = fallback || createLegacyContractSettings();
+  const source = template && typeof template === "object" ? template : {};
+  const blocks = Array.isArray(source.blocks) && source.blocks.length
+    ? source.blocks.map((block) => normalizeContractBlock(block))
+    : (sample.blocks || []).map((block) => normalizeContractBlock(block));
+  return {
+    title: String(source.title || sample.title || "Contract"),
+    blocks,
+  };
+}
+
+function isLegacyPlaceholderTemplate(template = {}) {
+  const blocks = Array.isArray(template.blocks) ? template.blocks : [];
+  if (!blocks.length) return true;
+  const ids = new Set(blocks.map((block) => block.id));
+  if (ids.has("blk_agreement")) return false;
+  if (!ids.has("blk_rental")) return false;
+  const rental = blocks.find((block) => block.id === "blk_rental");
+  return String(rental?.body || "").includes("This agreement is entered into between the venue owner");
+}
+
+function isDualContractSettings(settings = {}) {
+  return !!(settings && settings.templates && (settings.templates.social || settings.templates.business));
+}
+
+function isFlatContractTemplate(settings = {}) {
+  return !!(settings && Array.isArray(settings.blocks) && !settings.templates);
+}
+
 export function createDefaultContractSettings() {
   return {
-    version: 1,
-    title: "Event Space Rental Agreement",
-    blocks: [
-      {
-        id: "blk_header",
-        type: "header",
-        fields: [
-          { id: "fld_title", label: "Title", value: "Collaburo Event Space Rental Agreement" },
-          { id: "fld_address", label: "Address", value: "123 Example Street, Ottawa, ON" },
-          { id: "fld_contact", label: "Contact", value: "info@collaburo.com" },
-        ],
-      },
-      {
-        id: "blk_rental",
-        type: "paragraph",
-        title: "Rental Agreement",
-        body: "This agreement is entered into between the venue owner and {{Client_Name}} ({{Organization}}) for the booking of {{Space}} on {{Booking_Start_datetime}}.\n\nEvent type: {{Event_Type}}\nExpected attendees: {{Expected_Number_of_Attendees}}\n\nCost summary:\n{{Cost_Breakdown}}\n\nBy signing below, the client agrees to the rental terms, payment schedule, and house rules described in this contract.",
-        allowTokens: true,
-      },
-      {
-        id: "blk_waiver",
-        type: "paragraph",
-        title: "Liability Waiver & Release",
-        body: "The client acknowledges the risks associated with using the rented space and releases the venue from liability for injuries or damages arising from the event, except where prohibited by law.\n\nSelected items and services:\n{{Item_Details}}",
-        allowTokens: true,
-      },
-      {
-        id: "blk_addendum",
-        type: "paragraph",
-        title: "Addendum",
-        body: "Security deposit: {{Security_Deposit}} {{Security_Deposit_Note}}\nTotal with deposit: {{Total_With_Deposit}}\n\nAdditional policies covering payment, security deposits, insurance, furniture, and house rules apply to this booking. Contact the venue with any questions before signing.\n\nAgreement dated {{Today_Date}}.",
-        allowTokens: true,
-      },
-      {
-        id: "blk_owner_sig",
-        type: "signature",
-        role: "owner",
-        label: "Venue / Owner Signature",
-        required: true,
-        ownerImageUrl: "",
-        ownerName: "Managing Director",
-      },
-      {
-        id: "blk_client_sig",
-        type: "signature",
-        role: "client",
-        label: "Client Signature",
-        required: true,
-      },
-      {
-        id: "blk_client_sig2",
-        type: "signature",
-        role: "client",
-        label: "Client Signature (Liability Waiver)",
-        required: true,
-      },
-    ],
+    version: 3,
+    activeTab: "social",
+    businessEventTypes: [...DEFAULT_BUSINESS_EVENT_TYPES],
+    templates: {
+      social: createLegacyContractSettings(),
+      business: createLegacyBusinessContractSettings(),
+    },
   };
 }
 
 export function normalizeContractSettings(settings = {}) {
   const sample = createDefaultContractSettings();
   const source = settings && typeof settings === "object" ? settings : {};
-  const blocks = Array.isArray(source.blocks) && source.blocks.length
-    ? source.blocks.map((block) => normalizeContractBlock(block))
-    : sample.blocks;
+
+  let socialSource = source.templates?.social;
+  let businessSource = source.templates?.business;
+
+  // Migrate single-template shape into dual templates.
+  if (!socialSource && isFlatContractTemplate(source)) {
+    socialSource = isLegacyPlaceholderTemplate(source) ? sample.templates.social : source;
+  }
+  if (!socialSource) socialSource = sample.templates.social;
+  if (!businessSource) businessSource = sample.templates.business;
+
+  if (isLegacyPlaceholderTemplate(socialSource)) {
+    socialSource = sample.templates.social;
+  }
+
+  const businessEventTypes = Array.isArray(source.businessEventTypes) && source.businessEventTypes.length
+    ? source.businessEventTypes.map((item) => String(item || "").trim()).filter(Boolean)
+    : [...DEFAULT_BUSINESS_EVENT_TYPES];
+
   return {
-    version: Number(source.version || sample.version) || 1,
-    title: String(source.title || sample.title || "Contract"),
-    blocks,
+    version: 3,
+    activeTab: source.activeTab === "business" ? "business" : "social",
+    businessEventTypes,
+    templates: {
+      social: normalizeContractTemplate(socialSource, sample.templates.social),
+      business: normalizeContractTemplate(businessSource, sample.templates.business),
+    },
   };
 }
 
-export function buildContractSnapshot(settings, tokenMap = {}, generatedAt = new Date().toISOString()) {
+/** Accept dual site settings or a flat snapshot template and return { title, blocks }. */
+export function coerceContractTemplate(settingsOrTemplate = {}, variant = "social") {
+  if (isDualContractSettings(settingsOrTemplate)) {
+    return getContractTemplate(settingsOrTemplate, variant);
+  }
+  return normalizeContractTemplate(settingsOrTemplate);
+}
+
+export function resolveContractVariant(eventType = "", settings = {}) {
+  const normalized = normalizeContractSettings(settings);
+  const types = normalized.businessEventTypes || DEFAULT_BUSINESS_EVENT_TYPES;
+  const value = String(eventType || "").trim().toLowerCase();
+  if (!value) return "social";
+  const aliases = {
+    "other (b)": "other - business and non-alcoholic events",
+    "other - business": "other - business and non-alcoholic events",
+  };
+  const canonical = aliases[value] || value;
+  const isBusiness = types.some((type) => {
+    const t = String(type || "").trim().toLowerCase();
+    return t === canonical || t === value || canonical.includes(t) || t.includes(canonical);
+  });
+  return isBusiness ? "business" : "social";
+}
+
+export function getContractTemplate(settings = {}, variant = "social") {
+  const normalized = normalizeContractSettings(settings);
+  if (isFlatContractTemplate(settings) && !settings.templates) {
+    return normalizeContractTemplate(settings);
+  }
+  const key = variant === "business" ? "business" : "social";
+  return normalizeContractTemplate(normalized.templates?.[key], createDefaultContractSettings().templates[key]);
+}
+
+export function buildContractSnapshot(settings, tokenMap = {}, generatedAt = new Date().toISOString(), eventType = "") {
   const tokens = {};
   Object.entries(tokenMap || {}).forEach(([token, value]) => {
     tokens[token] = value == null ? "" : String(value);
   });
+  const eventFromToken = eventType || tokens["{{Event_Type}}"] || "";
+  const variant = resolveContractVariant(eventFromToken, settings);
+  const template = getContractTemplate(settings, variant);
   return {
     generatedAt,
-    settings: normalizeContractSettings(settings),
+    variant,
+    settings: template,
     tokenMap: tokens,
   };
 }
@@ -175,8 +234,23 @@ function fillContractTokensHtml(html, tokenMap = {}) {
 const CONTRACT_RICH_TAGS = new Set([
   "P", "BR", "DIV", "SPAN", "B", "STRONG", "I", "EM", "U", "FONT",
   "UL", "OL", "LI", "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TH", "TD",
-  "H1", "H2", "H3", "H4", "H5", "H6",
+  "H1", "H2", "H3", "H4", "H5", "H6", "IMG", "A",
 ]);
+
+function sanitizeContractHref(value = "") {
+  const v = String(value || "").trim();
+  if (!v) return "";
+  if (/^https?:\/\//i.test(v) || v.startsWith("mailto:") || v.startsWith("#")) return v;
+  return "";
+}
+
+function sanitizeContractImageSrc(value = "") {
+  const v = String(value || "").trim();
+  if (!v) return "";
+  if (/^https?:\/\//i.test(v)) return v;
+  if (/^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(v)) return v;
+  return "";
+}
 
 function sanitizeCssColor(value = "") {
   const v = String(value || "").trim();
@@ -217,6 +291,23 @@ function sanitizeContractStyleAttr(styleValue = "") {
     const size = sanitizeFontSizeValue(sizeMatch[1]);
     if (size) parts.push(`font-size:${size}`);
   }
+
+  const marginMatch = /margin(?:-left|-right|-top|-bottom)?\s*:\s*([^;]+)/i.exec(raw);
+  if (marginMatch) {
+    const margin = String(marginMatch[1] || "").trim();
+    if (/^\d+(\.\d+)?(px|em|rem|%)$/i.test(margin)) {
+      const prop = /margin-[a-z]+/i.exec(raw)?.[0]?.toLowerCase() || "margin";
+      parts.push(`${prop}:${margin}`);
+    }
+  }
+
+  ["width", "height", "max-width"].forEach((prop) => {
+    const re = new RegExp(`${prop}\\s*:\\s*([^;]+)`, "i");
+    const match = re.exec(raw);
+    if (!match) return;
+    const val = String(match[1] || "").trim();
+    if (/^\d+(\.\d+)?(px|em|rem|%|auto)$/i.test(val)) parts.push(`${prop}:${val}`);
+  });
 
   return parts.join(";");
 }
@@ -266,11 +357,34 @@ function sanitizeContractHtml(html = "") {
           return;
         }
       }
+      if (node.tagName === "IMG") {
+        if (name === "src") {
+          const src = sanitizeContractImageSrc(attr.value || "");
+          if (src) node.setAttribute("src", src);
+          else node.removeAttribute("src");
+          return;
+        }
+        if (name === "alt") return;
+        if ((name === "width" || name === "height") && /^\d{1,4}%?$/.test(attr.value || "")) return;
+      }
+      if (node.tagName === "A" && name === "href") {
+        const href = sanitizeContractHref(attr.value || "");
+        if (href) {
+          node.setAttribute("href", href);
+          node.setAttribute("target", "_blank");
+          node.setAttribute("rel", "noopener noreferrer");
+        } else node.removeAttribute("href");
+        return;
+      }
+      if (name === "target" || name === "rel") {
+        if (node.tagName === "A") return;
+      }
       if ((name === "colspan" || name === "rowspan") && (node.tagName === "TD" || node.tagName === "TH")) {
         if (!/^\d{1,2}$/.test(attr.value || "")) node.removeAttribute(attr.name);
         return;
       }
       if (name === "border" && node.tagName === "TABLE") return;
+      if (name === "type" && (node.tagName === "OL" || node.tagName === "UL")) return;
       node.removeAttribute(attr.name);
     });
 
@@ -704,13 +818,15 @@ export function ContractDocumentView({
   interactive = false,
   onSignatureChange,
   title,
+  variant = "social",
 }) {
-  const contract = normalizeContractSettings(settings);
+  const contract = coerceContractTemplate(settings, variant);
   const clientBlocks = (contract.blocks || []).filter((block) => block.type === "signature" && block.role === "client");
   const firstClientId = clientBlocks[0]?.id;
   const firstClientSignature = firstClientId ? signatures[firstClientId] || "" : "";
   return (
-    <div className="contract-document" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: 22 }}>
+    <div className="contract-document" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: 22, maxHeight: interactive ? undefined : 720, overflow: interactive ? "visible" : "auto" }}>
+      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:8px auto}.contract-document table{width:100%;border-collapse:collapse;margin:8px 0}.contract-rich-text{font-size:14px;line-height:1.55;color:#222}`}</style>
       <h2 style={{ margin: "0 0 16px", fontSize: 22 }}>{title || contract.title}</h2>
       {(contract.blocks || []).map((block) => (
         <ContractBlockPreview
@@ -785,49 +901,112 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
   const Ic = window.Icons || {};
   const site = settings || {};
   const contract = normalizeContractSettings(site.contractSettings);
+  const activeTab = contract.activeTab === "business" ? "business" : "social";
+  const activeTemplate = getContractTemplate(contract, activeTab);
+  const businessTypes = contract.businessEventTypes || DEFAULT_BUSINESS_EVENT_TYPES;
+  const socialTypes = DEFAULT_SOCIAL_EVENT_TYPES;
   const previewTokenMap = {
     "{{Client_Name}}": "Alex Client",
+    "{{Client_Display_Name}}": "Alex Client (Acme Co)",
     "{{Organization}}": "Acme Co",
+    "{{Organization_Suffix}}": " (Acme Co)",
     "{{Email}}": "alex@example.com",
     "{{Phone}}": "613-555-0100",
     "{{Booking_ID}}": "B12ABC",
     "{{Space}}": "Large Room",
-    "{{Event_Type}}": "Workshop / Training",
+    "{{Event_Type}}": activeTab === "business" ? "Workshop / Training" : "Social Event without dancing / Banquet",
+    "{{Event_Description}}": activeTab === "business" ? "Team training workshop" : "Birthday dinner",
+    "{{Event_Privacy}}": "Private",
+    "{{Alcohol_On_Site}}": "No",
     "{{Expected_Number_of_Attendees}}": "40",
-    "{{Booking_Start_datetime}}": "Jun 18, 2026 04:00 pm",
-    "{{Booking_end_datetime}}": "Jun 18, 2026 08:00 pm",
-    "{{Booking_DateTime}}": "Jun 18, 2026 04:00 pm - Jun 18, 2026 08:00 pm",
+    "{{Booking_Start_datetime}}": "June 18, 2026 04:00 pm",
+    "{{Booking_end_datetime}}": "June 18, 2026 08:00 pm",
+    "{{Booking_DateTime}}": "June 18, 2026 04:00 pm - June 18, 2026 08:00 pm",
+    "{{Agreement_Day}}": "18th",
+    "{{Agreement_Month}}": "June",
+    "{{Agreement_Year}}": "2026",
+    "{{Agreement_Month_Year}}": "June, 2026",
+    "{{Agreement_Time}}": "12:00 pm",
+    "{{Layout_Selections}}": "Theater",
+    "{{Floor_Layout_Instructions}}": "Rows facing the screen",
+    "{{Stage_Layout_Instructions}}": "Podium center stage",
+    "{{Buffet_Layout_Instructions}}": "",
+    "{{Blackboard_Sign_Message}}": "",
+    "{{Space_Lines}}": "Large Room: $450.00",
+    "{{Space_Rental_Rooms_Label}}": "(Large Room)",
+    "{{Space_Extra_Total}}": "$0.00",
     "{{Space_Rental_Total}}": "$450.00",
-    "{{Total}}": "$612.00",
-    "{{Total_With_Deposit}}": "$1,112.00",
+    "{{Space_Content_Total}}": "$80.00",
+    "{{Catering_Total}}": "$0.00",
+    "{{Setup_Total}}": "$0.00",
+    "{{Event_Service_Total}}": "$0.00",
+    "{{Cleanup_Total}}": "$0.00",
+    "{{Discount_Total}}": "$0.00",
+    "{{Additional_Discount}}": "$0.00",
+    "{{Subtotal}}": "$530.00",
+    "{{Fees_Total}}": "$68.90",
+    "{{Total}}": "$598.90",
+    "{{Total_With_Deposit}}": "$1,098.90",
     "{{Security_Deposit}}": "$500.00",
     "{{Security_Deposit_Note}}": "Refundable after inspection",
-    "{{Cost_Breakdown}}": "Space Rental ($450.00)\nLarge Room — 4 hrs: $450.00\n\nSpace Content / Rentals ($80.00)\nChairs x 40: $80.00\n\nSubtotal: $530.00\nTotal: $612.00\nSecurity Deposit: $500.00\nTotal with Deposit: $1,112.00",
-    "{{Item_Details}}": "Large Room — 4 hrs: $450.00\nChairs x 40: $80.00\nBasic catering package: $120.00",
+    "{{Cost_Breakdown}}": "Space Rental ($450.00)\nLarge Room — 4 hrs: $450.00\n\nSpace Content / Rentals ($80.00)\nChairs x 40: $80.00\n\nSubtotal: $530.00\nTotal: $598.90\nSecurity Deposit: $500.00\nTotal with Deposit: $1,098.90",
+    "{{Item_Details}}": "Chairs x 40: $80.00",
+    "{{Catering_Specifics}}": "",
+    "{{Special_Notes}}": "",
+    "{{Tech_Questions}}": "",
+    "{{Discount_Notes}}": "",
+    "{{Multi_Day_Details}}": "",
     "{{Today_Date}}": "September 6, 2026",
   };
-  const update = (patch) => {
+
+  const commit = (nextSettings) => {
     onChange({
       ...site,
-      contractSettings: normalizeContractSettings({ ...contract, ...patch }),
+      contractSettings: normalizeContractSettings(nextSettings),
     });
   };
-  const updateBlock = (id, patch) => {
+
+  const update = (patch) => commit({ ...contract, ...patch });
+
+  const updateActiveTemplate = (templatePatch) => {
+    const nextTemplate = normalizeContractTemplate({ ...activeTemplate, ...templatePatch }, activeTemplate);
     update({
-      blocks: contract.blocks.map((block) => (block.id === id ? normalizeContractBlock({ ...block, ...patch }) : block)),
+      templates: {
+        ...contract.templates,
+        [activeTab]: nextTemplate,
+      },
+    });
+  };
+
+  const setActiveTab = (tab) => update({ activeTab: tab === "business" ? "business" : "social" });
+
+  const loadLegacyTemplate = () => {
+    const label = activeTab === "business" ? "Business (contract_b)" : "Social (contract_s)";
+    if (typeof window !== "undefined" && !window.confirm(`Replace the ${label} template with the legacy Collabüro wording?`)) {
+      return;
+    }
+    const legacy = activeTab === "business"
+      ? createLegacyBusinessContractSettings()
+      : createLegacyContractSettings();
+    updateActiveTemplate(legacy);
+  };
+
+  const updateBlock = (id, patch) => {
+    updateActiveTemplate({
+      blocks: activeTemplate.blocks.map((block) => (block.id === id ? normalizeContractBlock({ ...block, ...patch }) : block)),
     });
   };
   const moveBlock = (id, direction) => {
-    const index = contract.blocks.findIndex((block) => block.id === id);
+    const index = activeTemplate.blocks.findIndex((block) => block.id === id);
     if (index < 0) return;
     const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= contract.blocks.length) return;
-    const blocks = contract.blocks.slice();
+    if (nextIndex < 0 || nextIndex >= activeTemplate.blocks.length) return;
+    const blocks = activeTemplate.blocks.slice();
     const [item] = blocks.splice(index, 1);
     blocks.splice(nextIndex, 0, item);
-    update({ blocks });
+    updateActiveTemplate({ blocks });
   };
-  const removeBlock = (id) => update({ blocks: contract.blocks.filter((block) => block.id !== id) });
+  const removeBlock = (id) => updateActiveTemplate({ blocks: activeTemplate.blocks.filter((block) => block.id !== id) });
   const addBlock = (type) => {
     let block;
     if (type === "header") {
@@ -839,7 +1018,17 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
     } else {
       block = { id: contractUid("blk"), type: "paragraph", title: "Section", body: "", allowTokens: true };
     }
-    update({ blocks: [...contract.blocks, normalizeContractBlock(block)] });
+    updateActiveTemplate({ blocks: [...activeTemplate.blocks, normalizeContractBlock(block)] });
+  };
+
+  const chipStyle = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "3px 8px",
+    borderRadius: 99,
+    background: "var(--surface-3)",
+    fontSize: 11,
+    margin: "0 4px 4px 0",
   };
 
   return (
@@ -849,13 +1038,56 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
           <div>
             <span className="editor-head-tag">{Ic.File ? <Ic.File size={11} /> : null} Contract</span>
             <h1>Contract</h1>
-            <p>Build a flexible contract template with headers, paragraphs, images, and signature areas. Format paragraph text with bold, italic, alignment, and tables. Other customers can reshape blocks without code changes.</p>
+            <p>
+              Edit separate Social and Business templates (legacy contract_s / contract_b). When a contract is generated, the booking&apos;s event type picks which template is used.
+            </p>
           </div>
+          <button
+            type="button"
+            className="btn dark sm"
+            onClick={loadLegacyTemplate}
+            title={`Replace the ${activeTab} template with legacy wording`}
+          >
+            Load legacy {activeTab === "business" ? "Business" : "Social"} template
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {[
+            { id: "social", label: "Social" },
+            { id: "business", label: "Business" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={activeTab === tab.id ? "btn dark sm" : "btn-gray sm"}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Used when the booking event type is:</div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4 }}>
+              {activeTab === "business" ? "Business template" : "Social template"}
+            </div>
+            <div>
+              {(activeTab === "business" ? businessTypes : socialTypes).map((type) => (
+                <span key={type} style={chipStyle}>{type}</span>
+              ))}
+            </div>
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "var(--ink-3)" }}>
+            Routing matches the legacy site: business types use the Business template; all other event types use Social.
+          </p>
         </div>
 
         <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
-          <label className="lbl">Contract Title</label>
-          <input className="input" value={contract.title || ""} onChange={(e) => update({ title: e.target.value })} />
+          <label className="lbl">{activeTab === "business" ? "Business" : "Social"} contract title</label>
+          <input className="input" value={activeTemplate.title || ""} onChange={(e) => updateActiveTemplate({ title: e.target.value })} />
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
@@ -868,13 +1100,13 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
 
         <div style={{ display: "grid", gridTemplateColumns: "minmax(320px,1fr) minmax(280px,.9fr)", gap: 18, alignItems: "start" }}>
           <div style={{ display: "grid", gap: 14 }}>
-            {contract.blocks.map((block, index) => (
+            {activeTemplate.blocks.map((block, index) => (
               <div key={block.id} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 12, alignItems: "center" }}>
                   <strong style={{ textTransform: "capitalize" }}>{block.type} block</strong>
                   <div style={{ display: "flex", gap: 6 }}>
                     <button type="button" className="btn icon sm ghost" title="Move up" disabled={index === 0} onClick={() => moveBlock(block.id, -1)}>↑</button>
-                    <button type="button" className="btn icon sm ghost" title="Move down" disabled={index === contract.blocks.length - 1} onClick={() => moveBlock(block.id, 1)}>↓</button>
+                    <button type="button" className="btn icon sm ghost" title="Move down" disabled={index === activeTemplate.blocks.length - 1} onClick={() => moveBlock(block.id, 1)}>↓</button>
                     <button type="button" className="btn icon sm ghost danger-ghost" title="Delete" onClick={() => removeBlock(block.id)}>{Ic.Trash ? <Ic.Trash size={13} /> : "×"}</button>
                   </div>
                 </div>
@@ -953,7 +1185,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
                 )}
               </div>
             ))}
-            {contract.blocks.length === 0 && (
+            {activeTemplate.blocks.length === 0 && (
               <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 10, padding: 24, textAlign: "center", color: "var(--ink-3)" }}>
                 No blocks yet. Add a header, paragraph, image, or signature block.
               </div>
@@ -963,8 +1195,8 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
           <div>
             <div style={{ position: "sticky", top: 12, display: "grid", gap: 14 }}>
               <div>
-                <h3 style={{ margin: "0 0 10px", fontSize: 14 }}>Live preview</h3>
-                <ContractDocumentView settings={contract} tokenMap={previewTokenMap} />
+                <h3 style={{ margin: "0 0 10px", fontSize: 14 }}>Live preview ({activeTab === "business" ? "Business" : "Social"})</h3>
+                <ContractDocumentView settings={activeTemplate} tokenMap={previewTokenMap} variant={activeTab} />
               </div>
               <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 14 }}>
                 <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Dynamic Fields List</h3>
@@ -993,7 +1225,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
 }
 
 function buildSignedContractHtml(settings, tokenMap, signatures) {
-  const contract = normalizeContractSettings(settings);
+  const contract = coerceContractTemplate(settings);
   const escape = escapeHtmlText;
   const tableStyles = [
     "table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}",
@@ -1048,7 +1280,11 @@ export function ContractLoadingView({ steps = [] }) {
 
 export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap = {}, onSigned, onError }) {
   const snapshot = record?.progress?.contractSnapshot;
-  const contract = normalizeContractSettings(snapshot?.settings || siteSettings?.contractSettings);
+  const eventType = record?.request?.eventType || liveTokenMap?.["{{Event_Type}}"] || snapshot?.tokenMap?.["{{Event_Type}}"] || "";
+  const variant = snapshot?.variant || resolveContractVariant(eventType, siteSettings?.contractSettings);
+  const contract = snapshot?.settings
+    ? coerceContractTemplate(snapshot.settings, variant)
+    : getContractTemplate(siteSettings?.contractSettings, variant);
   const tokenMap = snapshot?.tokenMap ? { ...liveTokenMap, ...snapshot.tokenMap } : liveTokenMap;
   const [signatures, setSignatures] = React.useState({});
   const [submitting, setSubmitting] = React.useState(false);
@@ -1160,6 +1396,7 @@ export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap 
           signatures={signatures}
           interactive
           onSignatureChange={setSignature}
+          variant={variant}
         />
         {message ? <div style={{ marginTop: 12, color: message.includes("success") ? "var(--ok, #1a7f37)" : "var(--danger)" }}>{message}</div> : null}
       </div>
@@ -1178,4 +1415,4 @@ export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap 
   );
 }
 
-export { CONTRACT_BLOCK_TYPES, fillContractTokens, buildSignedContractHtml };
+export { CONTRACT_BLOCK_TYPES, fillContractTokens, buildSignedContractHtml, normalizeContractTemplate };
