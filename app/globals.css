@@ -3053,7 +3053,8 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .cv-minmax-hint{font-size:11px;color:#999;margin-top:3px}
 
 @media(max-width:860px){
-  .cv-body{flex-direction:column;padding:24px 24px 176px}
+  /* Extra bottom padding so the fixed cost tab does not cover radios/checkboxes near the footer. */
+  .cv-body{flex-direction:column;padding:24px 24px calc(228px + env(safe-area-inset-bottom))}
   .cv-cost-sidebar-desktop{display:none}
   .cv-fields-grid{grid-template-columns:1fr}
   .cv-nav{padding:14px 24px calc(14px + env(safe-area-inset-bottom))}

@@ -16274,14 +16274,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 	                )}
 
 		                <div className="cv-nav">
-	                  {step?.stepType === "checkout" && (costSummaryLocked || missingCheckoutAgreements.length > 0) && (
+	                  {step?.stepType === "checkout" && missingCheckoutAgreements.length > 0 && (
                     <div className="cv-nav-notices">
-                      {costSummaryLocked && (
-                        <div className="cv-nav-notice">{costSummaryLockedMessage}</div>
-                      )}
-                      {missingCheckoutAgreements.length > 0 && (
-                        <div className="cv-nav-notice">Check all required agreement boxes before submitting.</div>
-                      )}
+                      <div className="cv-nav-notice">Check all required agreement boxes before submitting.</div>
                     </div>
                   )}
                   {stepIdx > 0 && (
@@ -16292,14 +16287,32 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                   <button
                     className="cv-btn-next"
                     disabled={submitState.status === "submitting"}
-		                    title={isLast && !checkoutCanSubmit ? "Complete the required checkout items before saving." : undefined}
+                    aria-disabled={isLast && !checkoutCanSubmit ? "true" : undefined}
+		                    title={isLast && !checkoutCanSubmit
+                      ? (costSummaryLocked
+                        ? costSummaryLockedMessage
+                        : "Complete the required checkout items before saving.")
+                      : undefined}
 		                    onClick={async () => {
 		                      if (!canReachStep(stepIdx + 1, { forceCurrent: true })) return;
 		                      if (isLast) {
 	                        if (missingCheckoutAgreements.length > 0) {
+                          setClientNotice({
+                            kind: "danger",
+                            title: "Agreements required",
+                            message: "Check all required agreement boxes before submitting.",
+                            duration: 4600,
+                          });
                           return;
                         }
                         if (costSummaryLocked) {
+                          setClientNotice({
+                            kind: "danger",
+                            title: "Verify your email",
+                            message: costSummaryLockedMessage,
+                            duration: 5200,
+                          });
+                          pulseEmailField();
                           return;
                         }
                         try {
@@ -16328,11 +16341,11 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
           {/* Dynamic cost summary sidebar */}
           {showCostSidebar && renderCostSummaryCard("cv-cost-sidebar cv-cost-sidebar-desktop")}
         </div>
-        {showCostSidebar && (
+        {showCostSidebar && !costSummaryLocked && (
           <>
             <button type="button" className="cv-mobile-cost-tab" onClick={() => setMobileCostOpen(true)}>
               <span>Summary of Cost</span>
-              <strong>{costSummaryLocked ? "Validate email" : checkoutCostData.fmt(checkoutCostData.totalWithDeposit)}</strong>
+              <strong>{checkoutCostData.fmt(checkoutCostData.totalWithDeposit)}</strong>
             </button>
             {mobileCostOpen && (
               <div className="cv-mobile-cost-backdrop" onClick={() => setMobileCostOpen(false)}>
@@ -17633,6 +17646,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
           data-collaburo-email-field="1"
           type="email"
           placeholder={f.placeholder || "name@example.com"}
+          aria-label={f.label || "Email"}
           value={value || ""}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -18080,7 +18094,17 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       return (
         <div className="cv-form-group">
           {labelEl}
-          <ClampedNumberInput className="cv-input" placeholder={f.placeholder || ""} value={value ?? ""} onChange={onChange} min={f.min} max={f.max} step={f.step || 1} autoComplete={f.autoComplete || undefined} />
+          <ClampedNumberInput
+            className="cv-input"
+            placeholder={numberFieldPlaceholder(f)}
+            value={value ?? ""}
+            onChange={onChange}
+            min={f.min}
+            max={f.max}
+            step={f.step || 1}
+            autoComplete={f.autoComplete || undefined}
+            aria-label={f.label || undefined}
+          />
           {(f.min != null || f.max != null) && (
             <span className="cv-minmax-hint">
               {f.min != null && f.max != null ? `Between ${f.min} and ${f.max}` : f.min != null ? `Minimum: ${f.min}` : `Maximum: ${f.max}`}
@@ -18166,7 +18190,14 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       return (
         <div className="cv-form-group">
           {labelEl}
-          <input className="cv-input" type="text" placeholder={f.placeholder || ""} value={value || ""} onChange={(e) => onChange(e.target.value)} />
+          <input
+            className="cv-input"
+            type="text"
+            placeholder={textFieldPlaceholder(f)}
+            aria-label={f.label || undefined}
+            value={value || ""}
+            onChange={(e) => onChange(e.target.value)}
+          />
         </div>
       );
   }
@@ -18590,6 +18621,15 @@ function normalizeWorkflowField(field = {}) {
       linkedToPricing: field.linkedToPricing !== false,
     };
   }
+  if (field.type === "number") {
+    const placeholder = String(field.placeholder || "").trim();
+    if (/^\d+(\.\d+)?$/.test(placeholder)) {
+      return { ...field, placeholder: `e.g. ${placeholder}` };
+    }
+  }
+  if ((field.type === "text" || !field.type) && !String(field.placeholder || "").trim() && field.label) {
+    return { ...field, placeholder: textFieldPlaceholder(field) };
+  }
   if (field.type !== "dietary") return field;
   const options = (field.dietaryOptions || field.options || ["Halal", "Kosher", "Vegetarian", "Vegan", "Allergen Free", "Gluten-free"])
     .map((option) => typeof option === "string" ? { label: option } : { label: option.label || String(option) });
@@ -18735,6 +18775,31 @@ function normalizePricingRules(rules = {}) {
   };
 }
 
+function sanitizeValidationMessage(value, fallback) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  // Reject garbled admin copy like "fielllddd requireddd" (multiple triple-letter runs).
+  const tripleRuns = text.match(/(.)\1{2,}/gi) || [];
+  if (tripleRuns.length >= 2) return fallback;
+  return text;
+}
+
+function numberFieldPlaceholder(field) {
+  const raw = String(field?.placeholder || "").trim();
+  if (!raw) return "";
+  // Pure numeric placeholders look like filled values in empty number inputs.
+  if (/^\d+(\.\d+)?$/.test(raw)) return `e.g. ${raw}`;
+  return raw;
+}
+
+function textFieldPlaceholder(field) {
+  const raw = String(field?.placeholder || "").trim();
+  if (raw) return raw;
+  const label = String(field?.label || "").replace(/\s*\*$/, "").trim();
+  if (!label) return "";
+  return `Enter ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+}
+
 function normalizeSiteSettings(settings = {}) {
   const sample = SAMPLE_SITE_SETTINGS;
   const source = settings && typeof settings === "object" ? settings : sample;
@@ -18750,6 +18815,10 @@ function normalizeSiteSettings(settings = {}) {
     if (!email || email === "info@collaburo.com" || email === "kristelleddc@gmail.com") return DEFAULT_EMAIL_ADDRESS;
     return email;
   };
+  const mergedValidations = {
+    ...sample.validations,
+    ...(source.validations || {}),
+  };
   return {
     branding: {
       ...sample.branding,
@@ -18758,12 +18827,15 @@ function normalizeSiteSettings(settings = {}) {
       fonts,
     },
     validations: {
-      ...sample.validations,
-      ...(source.validations || {}),
+      ...mergedValidations,
       strictProgression: !!source.validations?.strictProgression,
       emailVerification: source.validations?.emailVerification !== false,
       emailVerificationMode: source.validations?.emailVerificationMode === "instant" ? "instant" : "link",
       checkEmailDomain: source.validations?.checkEmailDomain !== false,
+      requiredFieldMessage: sanitizeValidationMessage(mergedValidations.requiredFieldMessage, sample.validations.requiredFieldMessage),
+      requiredSubOptionMessage: sanitizeValidationMessage(mergedValidations.requiredSubOptionMessage, sample.validations.requiredSubOptionMessage),
+      dateTimeRequirementMessage: sanitizeValidationMessage(mergedValidations.dateTimeRequirementMessage, sample.validations.dateTimeRequirementMessage),
+      emailVerificationMessage: sanitizeValidationMessage(mergedValidations.emailVerificationMessage, sample.validations.emailVerificationMessage),
       pricesBeforeVerification: { ...sample.validations.pricesBeforeVerification, ...(source.validations?.pricesBeforeVerification || {}) },
     },
     display: { ...sample.display, ...(source.display || {}) },

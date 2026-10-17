@@ -82,7 +82,7 @@ const SAMPLE_STEPS = [
         ],
         category: "Event" },
       { id: "f14", label: "Expected Number of Attendees", type: "number", required: true,
-        placeholder: "30", visibleToClient: true, category: "Event", min: 10, max: 500 },
+        placeholder: "Enter expected number", visibleToClient: true, category: "Event", min: 10, max: 500 },
       { id: "f14_insurance", label: "Event Insurance required", type: "instructional", visibleToClient: true, category: "Event",
         noticeStyle: "info", noticeIcon: "Shield",
         fieldDescription: "Since your event has a social aspect to it, we require you to obtain an Event insurance from Duuo. Estimated cost is {{Insurance_Estimate}}. See last step for details.",
