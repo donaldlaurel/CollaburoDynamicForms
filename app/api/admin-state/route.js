@@ -51,12 +51,22 @@ export async function GET(request) {
     return NextResponse.json({ ok: true, state, updatedAt: memory.updatedAt, source: "memory" });
   }
 
-  const rows = await sql`
-    select payload, updated_at
-    from collaburo_app_config
-    where key = ${APP_STATE_KEY}
-    limit 1
-  `;
+  // Public visitors only need form/catalog/pricing/site config. Dropping
+  // progressRecords in SQL avoids shipping up to thousands of bookings from Neon
+  // to the Worker on every /book (and contract) page load.
+  const rows = admin
+    ? await sql`
+        select payload, updated_at
+        from collaburo_app_config
+        where key = ${APP_STATE_KEY}
+        limit 1
+      `
+    : await sql`
+        select (payload - 'progressRecords') as payload, updated_at
+        from collaburo_app_config
+        where key = ${APP_STATE_KEY}
+        limit 1
+      `;
   const payload = rows[0]?.payload || null;
   const state = admin ? payload : sanitizeForPublic(payload);
   return NextResponse.json({ ok: true, state, updatedAt: rows[0]?.updated_at || null, source: "database" });

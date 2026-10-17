@@ -480,23 +480,36 @@ export async function POST(request) {
     const id = String(body.recordId || "");
     if (!id) return NextResponse.json({ ok: false, error: "Missing record id." }, { status: 400 });
     const sql = database();
-    const source = sql ? (await sql`
-      select payload
-      from collaburo_app_config
-      where key = ${APP_STATE_KEY}
-      limit 1
-    `)[0]?.payload : memory.state;
-    const fromState = (source?.progressRecords || []).find((item) => recordMatchesBookingId(item, id)) || null;
+    let fromState = null;
     let fromSubmissions = null;
     if (sql) {
-      const rows = await sql`
-        select payload
-        from collaburo_submissions
-        where payload->>'id' = ${id} or payload->>'bookingCode' = ${id}
-        order by created_at desc
-        limit 1
-      `;
-      fromSubmissions = rows[0]?.payload || null;
+      // Contract/sign links hit this on every open. Loading the whole admin-state
+      // blob (up to MAX_PROGRESS_RECORDS bookings) made "Loading booking details"
+      // hang for tens of seconds after a legacy import — pull one record instead.
+      const [submissionRows, stateRows] = await Promise.all([
+        sql`
+          select payload
+          from collaburo_submissions
+          where payload->>'id' = ${id} or payload->>'bookingCode' = ${id}
+          order by created_at desc
+          limit 1
+        `,
+        sql`
+          select elem as payload
+          from collaburo_app_config,
+          lateral jsonb_array_elements(
+            case
+              when jsonb_typeof(payload->'progressRecords') = 'array' then payload->'progressRecords'
+              else '[]'::jsonb
+            end
+          ) as elem
+          where key = ${APP_STATE_KEY}
+            and (elem->>'id' = ${id} or elem->>'bookingCode' = ${id})
+          limit 1
+        `,
+      ]);
+      fromSubmissions = submissionRows[0]?.payload || null;
+      fromState = stateRows[0]?.payload || null;
       if (!fromSubmissions && fromState?.id) {
         const byId = await sql`
           select payload
@@ -507,6 +520,7 @@ export async function POST(request) {
         fromSubmissions = byId[0]?.payload || null;
       }
     } else {
+      fromState = (memory.state?.progressRecords || []).find((item) => recordMatchesBookingId(item, id)) || null;
       fromSubmissions = memory.submissions.find((item) => recordMatchesBookingId(item.payload, id))?.payload || null;
     }
     const record = freshestProgressRecord(fromState, fromSubmissions);

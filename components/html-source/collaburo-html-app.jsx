@@ -25454,12 +25454,16 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     const publicAction = new URLSearchParams(window.location.search).get("action");
     if (publicAction === "sign") {
       const recordLoaded = publicRecordLookupDone || !clientRecordId;
-      if (!recordLoaded || !databaseStateLoaded) {
+      // Generated contracts embed the template in contractSnapshot, so the sign
+      // page can render as soon as the booking loads without waiting on admin-state.
+      const hasContractSnapshot = Boolean(publicEditRecord?.progress?.contractSnapshot?.settings);
+      const templateReady = databaseStateLoaded || hasContractSnapshot;
+      if (!recordLoaded || !templateReady) {
         return (
           <ContractLoadingView
             steps={[
               { label: "Opening secure contract page", done: true },
-              { label: "Loading contract template", done: databaseStateLoaded },
+              { label: "Loading contract template", done: templateReady },
               { label: "Loading booking details", done: recordLoaded },
             ]}
           />
