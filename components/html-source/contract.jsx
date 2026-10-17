@@ -197,9 +197,62 @@ function normalizeContractBlock(block = {}) {
     id,
     type: "paragraph",
     title: String(block.title || ""),
-    body: String(block.body || ""),
+    body: repairContractSection3(String(block.body || "")),
     allowTokens: block.allowTokens !== false,
   };
+}
+
+/** Correct section-3 layout from collaburo.space/contract_s.php (separated option groups). */
+const LEGACY_SECTION3_HTML = [
+  '3. <strong>Detail of Space Rental</strong> – The Organisation will provide the Client with the facilities, equipment and/or services during the period starting <strong><u>{{Booking_Start_Date}}</u></strong> from <strong><u>{{Booking_Start_Time}}</u></strong> to <strong><u>{{Booking_End_DateTime}}</u></strong> .<br/>',
+  " This will be a:<br/>",
+  ' <table> <tr> <td> <div style="margin-left:50px">☐ One-time event</div> </td> </tr>',
+  ' <tr> <td> <div style="margin-left:50px">☐ Mutli-Day Event</div> </td> </tr>',
+  ' <tr> <td> <div style="margin-left:50px">{{Multi_Day_Details}}</div> </td> </tr> </table><br/>',
+  " Space Rental will include the following space(s):",
+  ' <table> <tr> <td> <div style="margin-left:50px">☐ Main Hall</div> </td> <td> <div style="margin-left:50px">☐ Lounge Area</div> </td> </tr>',
+  ' <tr> <td> <div style="margin-left:50px">☐ Large Room</div> </td> <td> <div style="margin-left:50px">☐ Small Room</div> </td> </tr>',
+  ' <tr> <td> <div style="margin-left:50px">☐ Elevated Area</div> </td> <td> <div style="margin-left:50px">☐ Back Patio</div> </td> </tr>',
+  ' <tr> <td colspan="2"> <div style="margin-left:50px">☐ Other: __________________________________________ </div> </td> </tr> </table><br/>',
+  " The Event is classed as:",
+  ' <table> <tr> <td> <div style="margin-left:50px">☐ Private - Invitation list to those known to Client such as family, friends, coworkers, etc.</div> </td> </tr>',
+  ' <tr> <td> <div style="margin-left:50px">☐ Semi Private - Invitation list to those mostly known to Client.</div> </td> </tr>',
+  ' <tr> <td> <div style="margin-left:50px">☐ Public - Events that are advertised publicly, tickets sold/given in advance or at the door.</div> </td> </tr>',
+  ' <tr> <td> <div style="margin-left:50px">☐ Other: __________________________________________ </div> </td> </tr> </table><br/>',
+  " Alcohol for the Event:",
+  ' <table> <tr> <td> <div style="margin-left:50px">☐ No Alcohol on the premises</div> </td> </tr>',
+  ' <tr> <td> <div style="margin-left:50px">☐ Guests will be served alcohol / allowed to bring their own alcohol / will pay for alcohol</div> </td> </tr> </table><br/>',
+  " Add-Ons required: ",
+].join("");
+
+function repairContractSection3(body = "") {
+  let s = String(body || "");
+  if (!/Detail of Space Rental/i.test(s)) return s;
+
+  const mangledTogether = /☐ One-time event/i.test(s)
+    && /☐ Private -/i.test(s)
+    && !/Space Rental will include the following space/i.test(s);
+  const emptyFromToken = /from <strong><u><\/u><\/strong>\s*to/i.test(s)
+    || /starting <strong><u>\{\{Booking_Start_datetime\}\}<\/u><\/strong> from <strong><u><\/u><\/strong>/i.test(s);
+
+  if (mangledTogether || emptyFromToken) {
+    const replaced = s.replace(
+      /3\.\s*<strong>Detail of Space Rental<\/strong>[\s\S]*?Add-Ons required:\s*/i,
+      LEGACY_SECTION3_HTML
+    );
+    if (replaced !== s) return replaced;
+  }
+
+  // Mild fix: map old start/end tokens into the three-part legacy wording.
+  return s
+    .replace(
+      /starting <strong><u>\{\{Booking_Start_datetime\}\}<\/u><\/strong> from <strong><u>(?:\{\{Booking_Start_Time\}\})?<\/u><\/strong> to <strong><u>\{\{Booking_end_datetime\}\}<\/u><\/strong>/gi,
+      "starting <strong><u>{{Booking_Start_Date}}</u></strong> from <strong><u>{{Booking_Start_Time}}</u></strong> to <strong><u>{{Booking_End_DateTime}}</u></strong>"
+    )
+    .replace(
+      /starting <strong><u>\{\{Booking_Start_datetime\}\}<\/u><\/strong> from <strong><u><\/u><\/strong> to <strong><u>\{\{Booking_end_datetime\}\}<\/u><\/strong>/gi,
+      "starting <strong><u>{{Booking_Start_Date}}</u></strong> from <strong><u>{{Booking_Start_Time}}</u></strong> to <strong><u>{{Booking_End_DateTime}}</u></strong>"
+    );
 }
 
 function resolveContractTokenValue(name, value) {
