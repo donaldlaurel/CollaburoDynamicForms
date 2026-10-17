@@ -271,6 +271,46 @@ async function replaceProgressRecordInAdminState(sql, record, loadedState = null
   return rows[0]?.updated_at || null;
 }
 
+async function removeProgressRecordFromAdminState(sql, recordId, loadedState = null) {
+  if (!sql || !recordId) return null;
+  let current = loadedState && typeof loadedState === "object" ? loadedState : null;
+  if (!current) {
+    const rows = await sql`
+      select payload
+      from collaburo_app_config
+      where key = ${APP_STATE_KEY}
+      limit 1
+    `;
+    current = rows[0]?.payload && typeof rows[0].payload === "object" ? rows[0].payload : {};
+  }
+  const progressRecords = Array.isArray(current.progressRecords) ? current.progressRecords : [];
+  const nextRecords = progressRecords.filter((item) => !recordMatchesBookingId(item, recordId));
+  if (nextRecords.length === progressRecords.length) return null;
+  const nextState = {
+    ...current,
+    savedAt: new Date().toISOString(),
+    progressRecords: nextRecords.slice(0, MAX_PROGRESS_RECORDS),
+  };
+  const rows = await sql`
+    insert into collaburo_app_config (key, payload, updated_at)
+    values (${APP_STATE_KEY}, ${JSON.stringify(nextState)}, now())
+    on conflict (key)
+    do update set payload = excluded.payload, updated_at = now()
+    returning updated_at
+  `;
+  return rows[0]?.updated_at || null;
+}
+
+async function deleteSubmissionByRecordId(sql, recordId) {
+  if (!sql || !recordId) return;
+  const id = String(recordId);
+  await sql`
+    delete from collaburo_submissions
+    where payload->>'id' = ${id}
+       or payload->>'bookingCode' = ${id}
+  `;
+}
+
 async function replaceSubmissionPayload(sql, record) {
   if (!sql || !record?.id) return;
   const total = Number(record.costs?.totalWithDeposit || record.costs?.total || 0);
@@ -319,6 +359,34 @@ async function replaceSubmissionPayload(sql, record) {
 
 export async function POST(request) {
   const body = await request.json().catch(() => null);
+  if (body?.action === "delete-progress-record") {
+    if (request.headers.get("x-collaburo-admin") !== "1") {
+      return NextResponse.json({ ok: false, error: "Admin authentication required." }, { status: 401 });
+    }
+    const recordId = String(body.recordId || body.id || "").trim();
+    if (!recordId) return NextResponse.json({ ok: false, error: "Missing record id." }, { status: 400 });
+    const sql = database();
+    let updatedAt = null;
+    if (!sql) {
+      const current = memory.state && typeof memory.state === "object" ? memory.state : {};
+      const records = Array.isArray(current.progressRecords) ? current.progressRecords : [];
+      const nextRecords = records.filter((item) => !recordMatchesBookingId(item, recordId));
+      const deletedAt = new Date().toISOString();
+      memory.state = { ...current, savedAt: deletedAt, progressRecords: nextRecords.slice(0, MAX_PROGRESS_RECORDS) };
+      memory.updatedAt = deletedAt;
+      memory.submissions = memory.submissions.filter((item) => !recordMatchesBookingId(item.payload, recordId));
+      updatedAt = memory.updatedAt;
+    } else {
+      const state = (await sql`
+        select payload from collaburo_app_config where key = ${APP_STATE_KEY} limit 1
+      `)[0]?.payload;
+      [updatedAt] = await Promise.all([
+        removeProgressRecordFromAdminState(sql, recordId, state),
+        deleteSubmissionByRecordId(sql, recordId),
+      ]);
+    }
+    return NextResponse.json({ ok: true, recordId, updatedAt, source: sql ? "database" : "memory" });
+  }
   if (body?.action === "admin-update-booking") {
     if (request.headers.get("x-collaburo-admin") !== "1") {
       return NextResponse.json({ ok: false, error: "Admin authentication required." }, { status: 401 });

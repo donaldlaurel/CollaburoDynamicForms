@@ -24620,10 +24620,37 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       itemType: "progress record",
       itemName: name,
       onConfirm: () => {
-        setProgressRecords((records) => records.filter((item) => item.id !== record.id));
+        // Bookings live in admin-state and collaburo_submissions; removing only
+        // from React state lets a refresh (or the submissions merge on load)
+        // bring the record back.
+        const previous = progressRecordsRef.current;
+        const nextRecords = previous.filter((item) => item.id !== record.id);
+        progressRecordsRef.current = nextRecords;
+        setProgressRecords(nextRecords);
         if (activeProgressId === record.id) setActiveProgressId(null);
-        markDirty();
-        pushToast({ kind: "success", title: "Progress record deleted", desc: name });
+        if (submittedAnswersRecordId === record.id) setSubmittedAnswersRecordId(null);
+        if (String(adminEditRecordId || "") === String(record.id) || bookingCodeForRecord(record) === String(adminEditRecordId || "")) {
+          setAdminEditRecordId(null);
+        }
+        try {
+          saveJsonSafely(PROGRESS_STORAGE_KEY, nextRecords);
+        } catch (_) {}
+        collaburoApi("/api/submissions", {
+          method: "POST",
+          body: JSON.stringify({ action: "delete-progress-record", recordId: record.id }),
+        })
+          .then((result) => {
+            if (result.updatedAt) lastDatabaseUpdatedAt = result.updatedAt;
+            pushToast({ kind: "success", title: "Progress record deleted", desc: name });
+          })
+          .catch((error) => {
+            progressRecordsRef.current = previous;
+            setProgressRecords(previous);
+            try {
+              saveJsonSafely(PROGRESS_STORAGE_KEY, previous);
+            } catch (_) {}
+            pushToast({ kind: "danger", title: "Delete failed", desc: error.message || "Please try again." });
+          });
       },
     });
   };
