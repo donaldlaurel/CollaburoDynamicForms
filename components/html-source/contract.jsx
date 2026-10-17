@@ -825,7 +825,7 @@ export function ContractDocumentView({
   const firstClientId = clientBlocks[0]?.id;
   const firstClientSignature = firstClientId ? signatures[firstClientId] || "" : "";
   return (
-    <div className="contract-document" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: 22, maxHeight: interactive ? undefined : 720, overflow: interactive ? "visible" : "auto" }}>
+    <div className="contract-document" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: 22, maxHeight: interactive ? undefined : 420, overflow: interactive ? "visible" : "auto", minWidth: 0 }}>
       <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:8px auto}.contract-document table{width:100%;border-collapse:collapse;margin:8px 0}.contract-rich-text{font-size:14px;line-height:1.55;color:#222}`}</style>
       <h2 style={{ margin: "0 0 16px", fontSize: 22 }}>{title || contract.title}</h2>
       {(contract.blocks || []).map((block) => (
@@ -1033,7 +1033,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
 
   return (
     <div className="editor-col" style={{ flex: 1 }}>
-      <div className="editor-inner">
+      <div className="editor-inner contract-settings-page">
         <div className="editor-head">
           <div>
             <span className="editor-head-tag">{Ic.File ? <Ic.File size={11} /> : null} Contract</span>
@@ -1068,7 +1068,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
           ))}
         </div>
 
-        <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+        <div className="contract-settings-block-card" style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Used when the booking event type is:</div>
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 4 }}>
@@ -1085,7 +1085,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
           </p>
         </div>
 
-        <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <div className="contract-settings-block-card" style={{ marginBottom: 16 }}>
           <label className="lbl">{activeTab === "business" ? "Business" : "Social"} contract title</label>
           <input className="input" value={activeTemplate.title || ""} onChange={(e) => updateActiveTemplate({ title: e.target.value })} />
         </div>
@@ -1098,10 +1098,10 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
           ))}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(320px,1fr) minmax(280px,.9fr)", gap: 18, alignItems: "start" }}>
-          <div style={{ display: "grid", gap: 14 }}>
+        <div className="contract-settings-layout">
+          <div className="contract-settings-blocks" style={{ display: "grid", gap: 14 }}>
             {activeTemplate.blocks.map((block, index) => (
-              <div key={block.id} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16 }}>
+              <div key={block.id} className="contract-settings-block-card">
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 12, alignItems: "center" }}>
                   <strong style={{ textTransform: "capitalize" }}>{block.type} block</strong>
                   <div style={{ display: "flex", gap: 6 }}>
@@ -1192,18 +1192,18 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
             )}
           </div>
 
-          <div>
-            <div style={{ position: "sticky", top: 12, display: "grid", gap: 14 }}>
+          <div className="contract-settings-aside">
+            <div className="contract-settings-aside-sticky">
               <div>
                 <h3 style={{ margin: "0 0 10px", fontSize: 14 }}>Live preview ({activeTab === "business" ? "Business" : "Social"})</h3>
                 <ContractDocumentView settings={activeTemplate} tokenMap={previewTokenMap} variant={activeTab} />
               </div>
-              <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 14 }}>
+              <div className="contract-settings-block-card">
                 <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Dynamic Fields List</h3>
                 <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--ink-3)" }}>
                   Type these tokens in header fields or paragraph content (including inside formatted text and tables). They are replaced from the Progress List record when the contract is generated / signed.
                 </p>
-                <div style={{ columns: 1, fontSize: 12, lineHeight: 1.55, maxHeight: 360, overflow: "auto" }}>
+                <div style={{ columns: 1, fontSize: 12, lineHeight: 1.55, maxHeight: 280, overflow: "auto" }}>
                   {(dynamicFields.length ? dynamicFields : [
                     ["{{Client_Name}}", "Name of Client"],
                     ["{{Space}}", "Selected space"],
