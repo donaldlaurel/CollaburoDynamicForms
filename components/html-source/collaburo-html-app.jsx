@@ -15,6 +15,7 @@ import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
 import { migrateToOldSiteParity } from "./old-site-parity-migration";
 import { LegacyImportModal } from "./legacy-import-modal";
+import { mergeLegacyRepairBatch } from "../../lib/legacy-import-merge";
 
 const SHOW_OLD_SITE_IMPORT_BUTTONS = false;
 
@@ -24311,9 +24312,10 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   };
   // The server appends to the database copy; this tab must merge the same records
   // and adopt the new updated_at, or its next Save would write the list back without them.
-  const importLegacyBookingBatch = (records, mode = "skip") => (
-    collaburoApi("/api/legacy-import", { method: "POST", body: JSON.stringify({ records, mode }) })
+  const importLegacyBookingBatch = (records, mode = "skip", options = {}) => (
+    collaburoApi("/api/legacy-import", { method: "POST", body: JSON.stringify({ records, mode, preflight: options.preflight === true }) })
       .then((result) => {
+        if (options.preflight) return result;
         if (result.updatedAt) lastDatabaseUpdatedAt = result.updatedAt;
         const incoming = normalizeProgressRecords(records);
         const incomingById = new Map(incoming.map((record) => [String(record.id), record]));
@@ -24324,6 +24326,8 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           setSubmittedAnswersRecordId(null);
         } else if (mode === "overwrite") {
           merged = mergeProgressRecords(progressRecordsRef.current.map((record) => incomingById.get(String(record.id)) || record), incoming);
+        } else if (mode === "repair") {
+          merged = mergeLegacyRepairBatch(progressRecordsRef.current, incoming).records;
         } else {
           merged = mergeProgressRecords(progressRecordsRef.current, incoming);
         }

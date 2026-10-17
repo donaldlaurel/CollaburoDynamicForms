@@ -3,7 +3,9 @@
 // limit, so only the converted records are sent to /api/legacy-import.
 // Keep the mapping in sync with scripts/legacy-import/convert-legacy-dump.ps1.
 
-const WANTED_TABLES = ["addrentalprogress", "contract"];
+import { buildLegacyFieldAudit, MAIN_MAPPED } from "./legacy-import-field-map";
+
+const WANTED_TABLES = ["addrentalprogress", "contract", "addrentalprogress_bp", "addrentalprogress_la"];
 const READ_CHUNK_BYTES = 4 * 1024 * 1024;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MYSQL_ESCAPES = { n: "\n", r: "\r", t: "\t", 0: "", Z: "", b: "\b" };
@@ -112,10 +114,8 @@ export async function parseLegacyDump(file, { onProgress } = {}) {
     }
     const create = line.match(/^CREATE TABLE (?:IF NOT EXISTS )?`([^`]+)`/i);
     if (create) {
-      if (WANTED_TABLES.includes(create[1])) {
-        createTable = create[1];
-        createColumns[createTable] = [];
-      }
+      createTable = create[1];
+      createColumns[createTable] = [];
       return;
     }
     const insert = line.match(/^INSERT INTO `([^`]+)`\s*(?:\(([^)]*)\))?\s*VALUES\s*/i);
@@ -154,7 +154,14 @@ export async function parseLegacyDump(file, { onProgress } = {}) {
   if (!tables.addrentalprogress.length) {
     throw new Error("No bookings found. Choose the .sql export of the old Collaburo database (it must contain the addrentalprogress table).");
   }
-  return { bookings: tables.addrentalprogress, contracts: tables.contract, mismatchedRows };
+  return {
+    bookings: tables.addrentalprogress,
+    contracts: tables.contract,
+    backPatios: tables.addrentalprogress_bp,
+    lounges: tables.addrentalprogress_la,
+    schemas: createColumns,
+    mismatchedRows,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -172,14 +179,54 @@ const yesNo = (value) => (/^(yes|on|1|true)$/i.test(text(value)) ? "Yes" : "No")
 const pad2 = (value) => String(value).padStart(2, "0");
 
 function parseBookingDate(value) {
+  const match = text(value).replace(/\s+/g, " ").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m))?$/i);
+  if (!match) return null;
+  const [, month, day, year, hour12 = "12", minute = "00", meridiem = "am"] = match;
+  const monthNumber = Number(month);
+  const dayNumber = Number(day);
+  const hourNumber = Number(hour12);
+  const minuteNumber = Number(minute);
+  if (monthNumber < 1 || monthNumber > 12 || dayNumber < 1 || dayNumber > 31 || hourNumber < 1 || hourNumber > 12 || minuteNumber > 59) return null;
+  const local = new Date(Number(year), monthNumber - 1, dayNumber);
+  if (local.getFullYear() !== Number(year) || local.getMonth() !== monthNumber - 1 || local.getDate() !== dayNumber) return null;
+  const hour = (hourNumber % 12) + (/pm/i.test(meridiem) ? 12 : 0);
+  return {
+    year: Number(year),
+    sortKey: `${year}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${minute}`,
+    label: `${MONTHS[Number(month) - 1]} ${pad2(day)}, ${year} ${pad2(hour % 12 || 12)}:${minute} ${hour >= 12 ? "pm" : "am"}`,
+  };
+}
+
+function parsePreviousBookingDate(value) {
   const match = text(value).replace(/\s+/g, " ").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?: (\d{1,2}):(\d{2}) ?([ap]m))?$/i);
   if (!match) return null;
   const [, month, day, year, hour12 = "12", minute = "00", meridiem = "am"] = match;
   const hour = (Number(hour12) % 12) + (/pm/i.test(meridiem) ? 12 : 0);
   return {
-    year: Number(year),
     sortKey: `${year}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${minute}`,
     label: `${MONTHS[Number(month) - 1]} ${pad2(day)}, ${year} ${pad2(hour % 12 || 12)}:${minute} ${hour >= 12 ? "pm" : "am"}`,
+  };
+}
+
+function parseContractDate(contract, prefix) {
+  if (!contract) return null;
+  const monthRaw = text(contract[`${prefix}_month`]).replace(/\.$/, "");
+  const monthIndex = /^\d+$/.test(monthRaw)
+    ? Number(monthRaw) - 1
+    : MONTHS.findIndex((month) => month.toLowerCase() === monthRaw.slice(0, 3).toLowerCase());
+  const day = Number(text(contract[`${prefix}_day`]));
+  const year = Number(text(contract[`${prefix}_year`]));
+  const hour12 = Number(text(contract[`${prefix}_hour`]) || 12);
+  const minute = Number(text(contract[`${prefix}_min`]) || 0);
+  const meridiem = text(contract[`${prefix}_mrdn`]) || "am";
+  if (monthIndex < 0 || monthIndex > 11 || !year || day < 1 || day > 31 || hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
+  const local = new Date(year, monthIndex, day);
+  if (local.getFullYear() !== year || local.getMonth() !== monthIndex || local.getDate() !== day) return null;
+  const hour = (hour12 % 12) + (/pm/i.test(meridiem) ? 12 : 0);
+  return {
+    year,
+    sortKey: `${year}-${pad2(monthIndex + 1)}-${pad2(day)}T${pad2(hour)}:${pad2(minute)}`,
+    label: `${MONTHS[monthIndex]} ${pad2(day)}, ${year} ${pad2(hour % 12 || 12)}:${pad2(minute)} ${hour >= 12 ? "pm" : "am"}`,
   };
 }
 
@@ -225,43 +272,111 @@ const SOURCE_MAP = {
 
 // Columns mapped to dedicated fields; every other filled-in column is listed
 // under "Old booking details" in adminSections.specialNotes.
-const MAPPED_COLUMNS = new Set([
-  "id", "uniqueid", "requesteddate", "clientname", "lastname", "organization", "email", "phonenumber",
-  "notforprofit", "studentbody", "interestlevel", "eventprivacy", "eventtype", "brief_desc_event", "alcoholserved",
-  "exp_noofattendees", "exp_guestarrtime", "mh_space", "lr_space", "sr_space", "la_space", "ea_space", "bs_space",
-  "mh_booking_start_date", "mh_booking_end_date", "lr_booking_start_date", "lr_booking_end_date",
-  "sr_booking_start_date", "sr_booking_end_date", "internal_notes", "record_issues", "status", "source",
-  "agreement", "insurance", "agco_license", "damage_waiver", "damage_waiver_custom", "damage_waiverrefund",
-  "infocomplete", "lockform_user", "record_accesslink", "duuoeventtype", "catering", "catering_delivery_time",
-  "setupservices", "clearupservices", "thirdpartyrentals", "age_status_new", "age_status_past", "generateBtnClick",
-  "mh_layout_floorlayoutinstruction", "mh_layout_buffetlayoutinstructions", "mh_layout_stagelayoutinstructions",
-  "lr_layout_floorlayoutinstruction", "lr_layout_buffetlayoutinstructions",
-  "sr_layout_floorlayoutinstruction", "sr_layout_buffetlayoutinstructions",
-]);
+const MAPPED_COLUMNS = MAIN_MAPPED;
 
-// ---------------------------------------------------------------------------
-// Conversion
-// ---------------------------------------------------------------------------
-
-function convertBooking(row, contract, importedAtLabel) {
-  const oldId = text(row.id);
-  const id = `legacy_${oldId}`;
-
+function previousImportValues(row) {
   const spaceNames = [];
   const dateSegments = [];
-  let earliest = null;
   Object.entries(SPACES).forEach(([prefix, spaceName]) => {
-    const start = parseBookingDate(row[`${prefix}_booking_start_date`]);
-    const end = parseBookingDate(row[`${prefix}_booking_end_date`]);
+    const start = parsePreviousBookingDate(row[`${prefix}_booking_start_date`]);
+    const end = parsePreviousBookingDate(row[`${prefix}_booking_end_date`]);
     if (text(row[`${prefix}_space`]) || start) spaceNames.push(spaceName);
-    if (!start) return;
-    if (!earliest || start.sortKey < earliest.sortKey) earliest = start;
-    dateSegments.push(`${spaceName}: ${start.label}${end ? ` - ${end.label}` : ""}`);
+    if (start) dateSegments.push(`${spaceName}: ${start.label}${end ? ` - ${end.label}` : ""}`);
   });
   Object.entries(EXTRA_SPACES).forEach(([column, spaceName]) => {
     const value = text(row[column]);
     if (value && value !== "0") spaceNames.push(spaceName);
   });
+  return {
+    bookingDateTime: dateSegments.join("; "),
+    space: Array.from(new Set(spaceNames)).join(", "),
+  };
+}
+
+function contractSpaceNames(contract = {}) {
+  const columns = {
+    space_mainhall: "Main Hall",
+    space_largeroom: "Large Room",
+    space_smallroom: "Small Room",
+    space_loungearea: "Lounge Area",
+    space_elevatedarea: "Elevated Area",
+    space_patio: "Back Patio",
+  };
+  const names = Object.entries(columns)
+    .filter(([column]) => {
+      const value = text(contract[column]);
+      return value && value !== "0" && !/^no$/i.test(value);
+    })
+    .map(([, name]) => name);
+  if (text(contract.space_other_input)) names.push(text(contract.space_other_input));
+  return names;
+}
+
+function newestByCommonId(rows = [], commonColumn, idColumn) {
+  const result = new Map();
+  let duplicates = 0;
+  rows.forEach((row) => {
+    const key = text(row[commonColumn]);
+    if (!key) return;
+    const existing = result.get(key);
+    if (existing) duplicates += 1;
+    if (!existing || Number(row[idColumn]) >= Number(existing[idColumn])) result.set(key, row);
+  });
+  return { rows: result, duplicates };
+}
+
+// ---------------------------------------------------------------------------
+// Conversion
+// ---------------------------------------------------------------------------
+
+function convertBooking(row, contract, backPatio, lounge, importedAtLabel) {
+  const oldId = text(row.id);
+  const id = `legacy_${oldId}`;
+  const previous = previousImportValues(row);
+  const spaceNames = [];
+  const dateSegments = [];
+  const dateSources = [];
+  const parseFailures = [];
+  let earliest = null;
+  const addRange = (spaceName, startValue, endValue, source) => {
+    const rawStart = text(startValue);
+    const rawEnd = text(endValue);
+    const start = parseBookingDate(rawStart);
+    const end = parseBookingDate(rawEnd);
+    if (rawStart && !start) parseFailures.push({ source, field: "start", value: rawStart });
+    if (rawEnd && !end) parseFailures.push({ source, field: "end", value: rawEnd });
+    if (!start) return false;
+    if (!earliest || start.sortKey < earliest.sortKey) earliest = start;
+    dateSegments.push(`${spaceName}: ${start.label}${end ? ` - ${end.label}` : ""}`);
+    dateSources.push(source);
+    spaceNames.push(spaceName);
+    return true;
+  };
+  Object.entries(SPACES).forEach(([prefix, spaceName]) => {
+    const hasRange = addRange(spaceName, row[`${prefix}_booking_start_date`], row[`${prefix}_booking_end_date`], `addrentalprogress.${prefix}`);
+    if (!hasRange && text(row[`${prefix}_space`])) spaceNames.push(spaceName);
+  });
+  Object.entries(EXTRA_SPACES).forEach(([column, spaceName]) => {
+    const value = text(row[column]);
+    if (value && value !== "0") spaceNames.push(spaceName);
+  });
+  const backPatioRange = addRange("Back Patio", backPatio?.bookingstartdate_bp, backPatio?.bookingenddate_bp, "addrentalprogress_bp");
+  const loungeRange = addRange("Lounge Area", lounge?.bookingstartdate_la, lounge?.bookingenddate_la, "addrentalprogress_la");
+
+  let contractDateFallback = false;
+  if (!earliest && contract) {
+    const start = parseContractDate(contract, "bookingstartdate");
+    const end = parseContractDate(contract, "bookingenddate");
+    if (start) {
+      const names = contractSpaceNames(contract);
+      const label = names.join(", ") || "Legacy contract";
+      earliest = start;
+      dateSegments.push(`${label}: ${start.label}${end ? ` - ${end.label}` : ""}`);
+      names.forEach((name) => spaceNames.push(name));
+      dateSources.push("contract");
+      contractDateFallback = true;
+    }
+  }
 
   const oldStatus = text(row.status);
   const status = STATUS_MAP[oldStatus.toLowerCase()] || oldStatus || "In Discussion";
@@ -291,6 +406,12 @@ function convertBooking(row, contract, importedAtLabel) {
     const prefix = column.split("_")[0];
     details.push(`${SPACES[prefix] ? `${SPACES[prefix]} - ` : ""}${columnLabel(column)}: ${value}`);
   });
+  if (text(backPatio?.multipledates_bp)) details.push(`Back Patio - Additional dates: ${text(backPatio.multipledates_bp)}`);
+  if (text(backPatio?.floorlayout_bp)) details.push(`Back Patio - Floor layout: ${text(backPatio.floorlayout_bp)}`);
+  if (text(backPatio?.layoutinstruction_bp)) details.push(`Back Patio - Layout instructions: ${text(backPatio.layoutinstruction_bp)}`);
+  if (text(backPatio?.buffetlayoutinstruction_bp)) details.push(`Back Patio - Buffet layout instructions: ${text(backPatio.buffetlayoutinstruction_bp)}`);
+  if (text(lounge?.floor_layout_la)) details.push(`Lounge Area - Floor layout: ${text(lounge.floor_layout_la)}`);
+  if (text(lounge?.layout_instructions_la)) details.push(`Lounge Area - Layout instructions: ${text(lounge.layout_instructions_la)}`);
 
   const costs = {
     spaceRentalTotal: 0, spaceContentTotal: 0, cateringTotal: 0, setupTotal: 0, eventTotal: 0, cleanupTotal: 0,
@@ -321,6 +442,10 @@ function convertBooking(row, contract, importedAtLabel) {
   return {
     bookingDate: earliest,
     hasContract: !!contract,
+    backPatioRange,
+    loungeRange,
+    contractDateFallback,
+    parseFailures,
     record: {
       id,
       bookingCode: bookingCodeFromId(id),
@@ -382,51 +507,106 @@ function convertBooking(row, contract, importedAtLabel) {
       },
       emails: [],
       log: [{ label: "Legacy import", at: importedAtLabel, action: `Imported from old site (record #${oldId}, status "${oldStatus}")` }],
-      legacy: { id: Number(oldId), uniqueid: text(row.uniqueid), status: oldStatus },
+      legacy: {
+        id: Number(oldId),
+        uniqueid: text(row.uniqueid),
+        status: oldStatus,
+        dateMigrationVersion: 1,
+        dateSources,
+        repairExpected: previous,
+      },
     },
   };
 }
 
 // Keeps bookings whose earliest booking date is on or before `throughDate`
 // (YYYY-MM-DD), newest first.
-export function convertLegacyBookings({ bookings = [], contracts = [] }, { throughDate }) {
+export function convertLegacyBookings(parsed = {}, { throughDate }) {
+  const {
+    bookings = [],
+    contracts = [],
+    backPatios = [],
+    lounges = [],
+  } = parsed;
   const contractsByUniqueId = new Map();
+  let duplicateContractIds = 0;
   [...contracts]
     .sort((a, b) => Number(a.id) - Number(b.id))
-    .forEach((contract) => contractsByUniqueId.set(text(contract.uniqueid), contract));
+    .forEach((contract) => {
+      const key = text(contract.uniqueid);
+      if (key && contractsByUniqueId.has(key)) duplicateContractIds += 1;
+      if (key) contractsByUniqueId.set(key, contract);
+    });
+  const backPatioLookup = newestByCommonId(backPatios, "bp_common_id", "bp_id");
+  const loungeLookup = newestByCommonId(lounges, "la_common_id", "la_id");
   const importedAtLabel = new Date().toLocaleString();
 
   const selected = [];
+  const repairable = [];
   let skippedNoDate = 0;
   let skippedTooNew = 0;
+  let recoveredBackPatio = 0;
+  let recoveredLounge = 0;
+  let contractDateFallbacks = 0;
+  let parseFailures = 0;
   bookings.forEach((row) => {
-    const item = convertBooking(row, contractsByUniqueId.get(text(row.uniqueid)), importedAtLabel);
-    if (!item.bookingDate) skippedNoDate += 1;
-    else if (item.bookingDate.sortKey.slice(0, 10) > throughDate) skippedTooNew += 1;
+    const item = convertBooking(
+      row,
+      contractsByUniqueId.get(text(row.uniqueid)),
+      backPatioLookup.rows.get(text(row.id)),
+      loungeLookup.rows.get(text(row.id)),
+      importedAtLabel
+    );
+    parseFailures += item.parseFailures.length;
+    if (!item.bookingDate) {
+      skippedNoDate += 1;
+      return;
+    }
+    if (item.backPatioRange) recoveredBackPatio += 1;
+    if (item.loungeRange) recoveredLounge += 1;
+    if (item.contractDateFallback) contractDateFallbacks += 1;
+    const importEligible = item.bookingDate.sortKey.slice(0, 10) <= throughDate;
+    item.record.legacy.importEligible = importEligible;
+    repairable.push(item);
+    if (!importEligible) skippedTooNew += 1;
     else selected.push(item);
   });
   selected.sort((a, b) => (a.bookingDate.sortKey < b.bookingDate.sortKey ? 1 : -1));
+  repairable.sort((a, b) => (a.bookingDate.sortKey < b.bookingDate.sortKey ? 1 : -1));
 
   const records = selected.map((item) => item.record);
+  const repairRecords = repairable.map((item) => item.record);
   const countBy = (list, keyFor) => list.reduce((acc, item) => {
     const key = keyFor(item);
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
   const withTotals = records.filter((record) => record.costs.totalWithDeposit > 0);
+  const summary = {
+    totalBookings: bookings.length,
+    selected: records.length,
+    repairable: repairRecords.length,
+    skippedNoDate,
+    skippedTooNew,
+    byYear: countBy(selected, (item) => item.bookingDate.year),
+    byStatus: countBy(records, (record) => record.progress.status),
+    withContract: selected.filter((item) => item.hasContract).length,
+    withTotals: withTotals.length,
+    totalsSum: withTotals.reduce((sum, record) => sum + record.costs.totalWithDeposit, 0),
+    missingName: records.filter((record) => !record.client.name).length,
+    missingEmail: records.filter((record) => !record.client.email).length,
+    recoveredBackPatio,
+    recoveredLounge,
+    contractDateFallbacks,
+    parseFailures,
+    duplicateBackPatioRows: backPatioLookup.duplicates,
+    duplicateLoungeRows: loungeLookup.duplicates,
+    duplicateContractIds,
+  };
   return {
     records,
-    summary: {
-      totalBookings: bookings.length,
-      selected: records.length,
-      skippedNoDate,
-      skippedTooNew,
-      byYear: countBy(selected, (item) => item.bookingDate.year),
-      byStatus: countBy(records, (record) => record.progress.status),
-      withContract: selected.filter((item) => item.hasContract).length,
-      withTotals: withTotals.length,
-      totalsSum: withTotals.reduce((sum, record) => sum + record.costs.totalWithDeposit, 0),
-      missingEmail: records.filter((record) => !record.client.email).length,
-    },
+    repairRecords,
+    summary,
+    audit: buildLegacyFieldAudit(parsed, summary),
   };
 }

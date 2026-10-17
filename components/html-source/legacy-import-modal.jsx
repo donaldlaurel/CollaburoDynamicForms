@@ -6,6 +6,11 @@ import { convertLegacyBookings, parseLegacyDump } from "./legacy-import";
 const IMPORT_BATCH_SIZE = 50;
 const IMPORT_MODES = [
   {
+    id: "repair",
+    label: "Repair legacy dates and spaces (recommended)",
+    description: "Safely updates only legacy date/space values that are blank or still match the previous importer, preserves later edits, and adds newly recovered bookings.",
+  },
+  {
     id: "skip",
     label: "Import and ignore existing data",
     description: "Adds bookings that are not in the list yet. Bookings already imported are left exactly as they are, including any edits made since.",
@@ -57,7 +62,7 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
   const [throughDate, setThroughDate] = React.useState(todayIsoDate);
   const [result, setResult] = React.useState(null);
   const [error, setError] = React.useState("");
-  const [mode, setMode] = React.useState("skip");
+  const [mode, setMode] = React.useState("repair");
   const [confirmText, setConfirmText] = React.useState("");
   const busy = phase === "reading" || phase === "importing";
   const needsConfirm = mode === "replace" && confirmText.trim().toUpperCase() !== "DELETE";
@@ -66,6 +71,17 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
     () => (parsed ? convertLegacyBookings(parsed, { throughDate: throughDate || todayIsoDate() }) : null),
     [parsed, throughDate]
   );
+
+  const downloadAudit = () => {
+    if (!conversion?.audit) return;
+    const blob = new Blob([JSON.stringify(conversion.audit, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "legacy-import-audit.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const readFile = async (file) => {
     if (!file) return;
@@ -85,13 +101,14 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
   };
 
   const runImport = async () => {
-    const records = conversion?.records || [];
+    const records = mode === "repair" ? (conversion?.repairRecords || []) : (conversion?.records || []);
     if (!records.length || needsConfirm) return;
     setPhase("importing");
     setError("");
     setProgress(0);
-    const totals = { mode, added: 0, overwritten: 0, skipped: 0 };
+    const totals = { mode, added: 0, overwritten: 0, skipped: 0, updated: 0, conflicted: 0, unchanged: 0, conflictDetails: [] };
     try {
+      await onImportBatch(records, mode, { preflight: true });
       for (let start = 0; start < records.length; start += IMPORT_BATCH_SIZE) {
         const batch = records.slice(start, start + IMPORT_BATCH_SIZE);
         // Only the first batch clears; later batches add to the now-empty list.
@@ -100,19 +117,25 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
         totals.added += Number(response?.added || 0);
         totals.overwritten += Number(response?.overwritten || 0);
         totals.skipped += Number(response?.skipped || 0);
+        totals.updated += Number(response?.updated || 0);
+        totals.conflicted += Number(response?.conflicted || 0);
+        totals.unchanged += Number(response?.unchanged || 0);
+        totals.conflictDetails.push(...(response?.conflictDetails || []));
         setProgress(Math.min(1, (start + batch.length) / records.length));
       }
       setResult(totals);
       setPhase("done");
     } catch (importError) {
       setResult(totals);
-      setError(`${importError.message || "Import failed."} ${totals.added + totals.overwritten} bookings were saved before the error. To finish, run the import again with "Import and ignore existing data".`);
+      const completed = totals.added + totals.overwritten + totals.updated;
+      setError(`${importError.message || "Import failed."} ${completed} bookings were saved before the error. To finish, run the same ${mode === "repair" ? "repair" : "import"} again.`);
       setConfirmText("");
       setPhase("review");
     }
   };
 
   const summary = conversion?.summary;
+  const actionCount = mode === "repair" ? (conversion?.repairRecords.length || 0) : (conversion?.records.length || 0);
   return (
     <div className="rental-modal-backdrop" onClick={busy ? undefined : onClose}>
       <div className="rental-modal" style={{ width: 640 }} onClick={(e) => e.stopPropagation()}>
@@ -140,7 +163,7 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
             <>
               <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "end" }}>
                 <div className="rental-muted">
-                  {fileName}: {summary.totalBookings} bookings found. Bookings dated after the date on the right, and bookings with no booking date, are left out.
+                  {fileName}: {summary.totalBookings} bookings found. Bookings after the cutoff are not added; repair mode can still correct matching records already in the workspace. Bookings with no event date are left out.
                 </div>
                 <div>
                   <label className="lbl">Bookings dated up to</label>
@@ -159,10 +182,23 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
                 <div style={{ gridColumn: "1 / -1", display: "grid", gap: 4 }}>
                   <div>Left out: {summary.skippedTooNew} dated after {throughDate}, {summary.skippedNoDate} with no booking date</div>
                   <div>With prices from the old contract: {summary.withTotals} (total {money(summary.totalsSum)})</div>
+                  <div>Additional date sources: {summary.recoveredBackPatio} Patio, {summary.recoveredLounge} Lounge, {summary.contractDateFallbacks} contract fallbacks</div>
+                  <div>Validation: {summary.parseFailures} date values could not be parsed, {summary.duplicateBackPatioRows} duplicate Patio rows, {summary.duplicateContractIds} duplicate contract links</div>
+                  {summary.missingName > 0 && <div>Without a client name: {summary.missingName}</div>}
                   {summary.missingEmail > 0 && <div>Without an email address: {summary.missingEmail}</div>}
                   {parsed?.mismatchedRows > 0 && <div style={{ color: "var(--danger, #b42318)" }}>{parsed.mismatchedRows} rows in the file could not be read and were skipped.</div>}
                 </div>
               </div>
+              {conversion?.audit && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", border: "1px solid var(--line)", borderRadius: 8, padding: 12, fontSize: 13 }}>
+                  <div>
+                    <b>Field coverage:</b>{" "}
+                    {conversion.audit.counts.mapped} mapped, {conversion.audit.counts.partial} partial, {conversion.audit.counts.notesOnly} notes-only, {conversion.audit.counts.notImported} not imported.
+                    {conversion.audit.records.suspiciousEncodingValues > 0 ? ` ${conversion.audit.records.suspiciousEncodingValues} populated values contain suspicious encoding.` : ""}
+                  </div>
+                  <button className="btn sm" type="button" onClick={downloadAudit}>Download audit JSON</button>
+                </div>
+              )}
               {phase !== "done" && (
                 <div style={{ display: "grid", gap: 8 }}>
                   <div className="lbl">How to import</div>
@@ -203,7 +239,16 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
             <div style={{ color: "var(--success, #067647)" }}>
               Done{result.mode === "replace" ? ": all previous bookings were deleted, and" : ":"} {result.added} new bookings imported
               {result.overwritten ? `, ${result.overwritten} existing bookings overwritten` : ""}
+              {result.updated ? `, ${result.updated} existing bookings repaired` : ""}
+              {result.conflicted ? `, ${result.conflicted} records kept manual date/space edits for review` : ""}
+              {result.unchanged ? `, ${result.unchanged} existing bookings already matched` : ""}
               {result.skipped ? `, ${result.skipped} already in the list and left unchanged` : ""}.
+              {result.conflictDetails?.length > 0 && (
+                <span style={{ display: "block", marginTop: 6 }}>
+                  Review: {result.conflictDetails.slice(0, 10).map((item) => `${item.id} (${item.fields.join(", ")})`).join("; ")}
+                  {result.conflictDetails.length > 10 ? `; and ${result.conflictDetails.length - 10} more` : ""}.
+                </span>
+              )}
             </div>
           )}
 
@@ -212,8 +257,8 @@ export function LegacyImportModal({ onClose, onImportBatch }) {
         <div className="rental-modal-actions">
           <button className="btn" onClick={onClose} disabled={busy}>{phase === "done" ? "Close" : "Cancel"}</button>
           {phase !== "done" && (
-            <button className="btn dark" onClick={runImport} disabled={busy || !conversion?.records.length || needsConfirm}>
-              {mode === "replace" ? "Delete all and import" : "Import"} {conversion?.records.length || ""} bookings
+            <button className="btn dark" onClick={runImport} disabled={busy || !actionCount || needsConfirm}>
+              {mode === "replace" ? "Delete all and import" : mode === "repair" ? "Repair" : "Import"} {actionCount || ""} bookings
             </button>
           )}
         </div>

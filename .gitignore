@@ -11,3 +11,5 @@ cloudflare-env.d.ts
 .gstack/
 # Legacy-import output contains client personal data.
 import/
+# Raw legacy database dump contains client data and credentials.
+muslim19_collaburospace.sql
