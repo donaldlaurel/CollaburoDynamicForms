@@ -105,13 +105,18 @@ function senderSetupError(from = "") {
 function resendSenderError(message = "", from = "") {
   const text = String(message || "");
   const domain = String(from || "").split("@").pop()?.replace(/[>\s]/g, "") || "";
-  if (domain === "resend.dev" || /testing emails to your own email address/i.test(text)) {
+  if (/testing emails to your own email address/i.test(text)) {
     return "Resend test mode can only send verification emails to the email address on your Resend account, or to Resend test addresses like delivered@resend.dev. To send to Gmail/Yahoo/client emails, verify one real sending domain in Resend and update EMAIL_VERIFICATION_FROM.";
   }
-  if (/domain is not verified|verify your domain|resend\.com\/domains/i.test(text)) {
+  if (domain === "resend.dev" || /domain is not verified|verify your domain|resend\.com\/domains/i.test(text)) {
     return senderSetupError(from);
   }
   return text || "Resend rejected the verification email.";
+}
+
+function senderDomainIsUnverifiedPlaceholder(from = "") {
+  const domain = String(from || "").split("@").pop()?.replace(/[>\s]/g, "") || "";
+  return !domain || domain === "resend.dev";
 }
 
 async function sendVerificationEmail(email, link) {
@@ -121,8 +126,8 @@ async function sendVerificationEmail(email, link) {
   }
 
   const from = String(process.env.EMAIL_VERIFICATION_FROM || process.env.RESEND_FROM_EMAIL || "").trim();
-  if (!from) {
-    return { ok: false, error: senderSetupError(), status: 501 };
+  if (!from || senderDomainIsUnverifiedPlaceholder(from)) {
+    return { ok: false, error: senderSetupError(from), status: 501 };
   }
   const subject = "Verify your email to view Collaburo pricing";
   const text = [
