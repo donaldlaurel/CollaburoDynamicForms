@@ -219,7 +219,26 @@ function escapeHtmlText(value = "") {
 }
 
 function looksLikeHtml(value = "") {
-  return /<\/?[a-z][\s\S]*>/i.test(String(value || ""));
+  return /<\/?[a-z][!a-z0-9:-]*\b[^>]*>/i.test(String(value || "")) || /<!--/.test(String(value || ""));
+}
+
+/** Normalize legacy PHP / import markup before it is parsed into the contract DOM. */
+function normalizeLegacyContractHtml(html = "") {
+  let s = String(html || "");
+  s = s.replace(/<\/br>/gi, "<br/>");
+  s = s.replace(/<!--[\s\S]*?-->/g, "");
+  // Protect existing lists, then wrap orphan <li> rows (common in old add-on dumps).
+  const protectedLists = [];
+  s = s.replace(/<(ul|ol)\b[^>]*>[\s\S]*?<\/\1>/gi, (block) => {
+    const key = `%%CONTRACT_LIST_${protectedLists.length}%%`;
+    protectedLists.push(block);
+    return key;
+  });
+  s = s.replace(/(?:<li\b[^>]*>[\s\S]*?<\/li>\s*)+/gi, (block) => `<ul>${block}</ul>`);
+  protectedLists.forEach((block, index) => {
+    s = s.replace(`%%CONTRACT_LIST_${index}%%`, block);
+  });
+  return s;
 }
 
 function fillContractTokensHtml(html, tokenMap = {}) {
@@ -227,7 +246,31 @@ function fillContractTokensHtml(html, tokenMap = {}) {
     const canonical = `{{${name}}}`;
     const value = tokenMap[canonical];
     if (value == null) return token;
-    return escapeHtmlText(String(value)).replace(/\n/g, "<br/>");
+    const text = String(value);
+    // Legacy notes / cost dumps often contain real HTML — inject, then sanitize.
+    if (looksLikeHtml(text)) return normalizeLegacyContractHtml(text);
+    return escapeHtmlText(text).replace(/\n/g, "<br/>");
+  });
+}
+
+/** Turn text nodes that still contain raw/legacy HTML tags into real elements. */
+function rehydrateHtmlTextNodes(root) {
+  if (!root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const pending = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    const text = node.nodeValue || "";
+    if (looksLikeHtml(text)) pending.push(node);
+  }
+  pending.forEach((textNode) => {
+    const parent = textNode.parentNode;
+    if (!parent) return;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = normalizeLegacyContractHtml(textNode.nodeValue || "");
+    const frag = document.createDocumentFragment();
+    while (wrap.firstChild) frag.appendChild(wrap.firstChild);
+    parent.replaceChild(frag, textNode);
   });
 }
 
@@ -317,7 +360,7 @@ function sanitizeContractHtml(html = "") {
     return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, "");
   }
   const root = document.createElement("div");
-  root.innerHTML = String(html || "");
+  root.innerHTML = normalizeLegacyContractHtml(html);
 
   const scrubNode = (node) => {
     if (node.nodeType === Node.COMMENT_NODE) {
@@ -394,6 +437,10 @@ function sanitizeContractHtml(html = "") {
     Array.from(node.childNodes).forEach(scrubNode);
   };
 
+  // First pass: scrub known markup
+  Array.from(root.childNodes).forEach(scrubNode);
+  // Second pass: legacy/import dumps often leave raw tags as text (e.g. Special Notes)
+  rehydrateHtmlTextNodes(root);
   Array.from(root.childNodes).forEach(scrubNode);
   return root.innerHTML;
 }
@@ -404,7 +451,12 @@ function contractBodyDisplayHtml(body = "", tokenMap = {}) {
   if (looksLikeHtml(raw)) {
     return sanitizeContractHtml(fillContractTokensHtml(raw, tokenMap));
   }
-  return escapeHtmlText(fillContractTokens(raw, tokenMap)).replace(/\n/g, "<br/>");
+  const filled = fillContractTokens(raw, tokenMap);
+  // Plain-text bodies can still receive HTML-bearing token values from legacy imports.
+  if (looksLikeHtml(filled)) {
+    return sanitizeContractHtml(normalizeLegacyContractHtml(filled).replace(/\n/g, "<br/>"));
+  }
+  return escapeHtmlText(filled).replace(/\n/g, "<br/>");
 }
 
 const CONTRACT_FONT_SIZE_PX = [10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48];
@@ -768,16 +820,16 @@ function ContractBlockPreview({ block, tokenMap = {}, signatures = {}, interacti
   }
   if (block.type === "paragraph") {
     return (
-      <div style={{ marginBottom: 18 }}>
-        {block.title ? <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>{fillContractTokens(block.title, tokenMap)}</h3> : null}
+      <div className="contract-block contract-block-paragraph" style={{ marginBottom: 28 }}>
+        {block.title ? <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>{fillContractTokens(block.title, tokenMap)}</h3> : null}
         <ContractRichTextDisplay value={block.body} tokenMap={tokenMap} />
       </div>
     );
   }
   if (block.type === "image") {
     return (
-      <div style={{ marginBottom: 18 }}>
-        {block.label ? <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>{block.label}</div> : null}
+      <div className="contract-block contract-block-image" style={{ marginBottom: 28 }}>
+        {block.label ? <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 8 }}>{block.label}</div> : null}
         {block.url
           ? <img src={block.url} alt={block.alt || ""} style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid var(--line)" }} />
           : <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 8, padding: 24, color: "var(--ink-3)", textAlign: "center" }}>No image</div>}
@@ -787,8 +839,8 @@ function ContractBlockPreview({ block, tokenMap = {}, signatures = {}, interacti
   if (block.type === "signature") {
     const signedUrl = signatures[block.id] || (block.role === "owner" ? block.ownerImageUrl : "");
     return (
-      <div style={{ marginBottom: 18, border: "1px solid var(--line)", borderRadius: 10, padding: 14, background: "#fff" }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>{block.label}{block.required ? <span style={{ color: "var(--danger)" }}> *</span> : null}</div>
+      <div className="contract-block contract-block-signature" style={{ marginTop: 8, marginBottom: 24, border: "1px solid var(--line)", borderRadius: 10, padding: "16px 18px", background: "#fff" }}>
+        <div style={{ fontWeight: 700, marginBottom: 10 }}>{block.label}{block.required ? <span style={{ color: "var(--danger)" }}> *</span> : null}</div>
         {block.role === "owner" ? (
           signedUrl
             ? <img src={signedUrl} alt="Owner signature" style={{ maxWidth: 280, maxHeight: 120, objectFit: "contain" }} />
@@ -830,8 +882,8 @@ export function ContractDocumentView({
   const firstClientSignature = firstClientId ? signatures[firstClientId] || "" : "";
   const heading = title || contract.title;
   return (
-    <div className="contract-document" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: interactive ? "28px 32px" : 22, maxHeight: interactive ? undefined : 420, overflow: interactive ? "visible" : "auto", minWidth: 0 }}>
-      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:8px auto}.contract-document table{width:100%;border-collapse:collapse;margin:6px 0;border:none!important}.contract-document th,.contract-document td{border:none!important;background:transparent;padding:2px 8px 2px 0;vertical-align:top;text-align:left}.contract-document td>div[style*="margin-left"]{margin-left:0!important}.contract-rich-text{font-size:14px;line-height:1.6;color:#222}`}</style>
+    <div className={"contract-document" + (interactive ? " contract-document-interactive" : "")} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: interactive ? "36px 40px" : 22, maxHeight: interactive ? undefined : 420, overflow: interactive ? "visible" : "auto", minWidth: 0 }}>
+      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:12px auto}.contract-document table{width:100%;border-collapse:collapse;margin:12px 0 18px;border:none!important}.contract-document th,.contract-document td{border:none!important;background:transparent;padding:4px 10px 4px 0;vertical-align:top;text-align:left}.contract-document td>div[style*="margin-left"]{margin-left:0!important}.contract-document ul,.contract-document ol{margin:8px 0 14px 1.25em;padding:0}.contract-document li{margin:4px 0;line-height:1.55}.contract-rich-text{font-size:14.5px;line-height:1.7;color:#222}.contract-document-interactive .contract-block-paragraph{padding-bottom:4px}`}</style>
       {showTitle && heading ? <h2 style={{ margin: "0 0 16px", fontSize: 22 }}>{heading}</h2> : null}
       {(contract.blocks || []).map((block) => (
         <ContractBlockPreview
@@ -1233,10 +1285,12 @@ function buildSignedContractHtml(settings, tokenMap, signatures) {
   const contract = coerceContractTemplate(settings);
   const escape = escapeHtmlText;
   const tableStyles = [
-    "table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;border:none}",
-    "th,td{border:none;padding:3px 8px 3px 0;vertical-align:top;text-align:left;background:transparent}",
+    "table{width:100%;border-collapse:collapse;margin:12px 0 18px;font-size:14px;border:none}",
+    "th,td{border:none;padding:4px 10px 4px 0;vertical-align:top;text-align:left;background:transparent}",
     "th{font-weight:700}",
-    "p{margin:0 0 10px}",
+    "p{margin:0 0 14px;line-height:1.7}",
+    "ul,ol{margin:8px 0 16px 1.25em;padding:0}",
+    "li{margin:5px 0}",
   ].join("");
   const parts = [`<h1>${escape(contract.title)}</h1>`];
   (contract.blocks || []).forEach((block) => {
@@ -1391,9 +1445,9 @@ export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap 
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--surface-2, #f5f5f5)", padding: "24px 16px 120px" }}>
-      <div style={{ maxWidth: 860, margin: "0 auto" }}>
-        <div style={{ marginBottom: 14, color: "var(--ink-3)", fontSize: 13 }}>
+    <div style={{ minHeight: "100vh", background: "var(--surface-2, #f5f5f5)", padding: "32px 16px 140px" }}>
+      <div style={{ maxWidth: 880, margin: "0 auto" }}>
+        <div style={{ marginBottom: 18, color: "var(--ink-3)", fontSize: 13 }}>
           Booking {record.bookingCode || record.id} · {record.client?.name || "Client"}
         </div>
         <ContractDocumentView

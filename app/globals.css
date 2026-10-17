@@ -1258,7 +1258,7 @@ a { color: inherit; text-decoration: none; }
   background:transparent;
 }
 .contract-rich-text th,.contract-rich-text td{
-  padding:2px 8px 2px 0;
+  padding:4px 10px 4px 0;
   vertical-align:top;
   text-align:left;
 }
@@ -1267,12 +1267,28 @@ a { color: inherit; text-decoration: none; }
   margin-left:0!important;
 }
 .contract-rich-text th{font-weight:700}
-.contract-rich-text p{margin:0 0 10px}
+.contract-rich-text{
+  font-size:14.5px;
+  line-height:1.7;
+}
+.contract-rich-text p{margin:0 0 14px}
+.contract-rich-text table{margin:12px 0 18px}
+.contract-rich-text ul,.contract-rich-text ol{
+  margin:8px 0 16px 1.25em;
+  padding:0;
+}
+.contract-rich-text li{margin:5px 0}
 .contract-rich-text h1,.contract-rich-text h2,.contract-rich-text h3,
 .contract-rich-text h4,.contract-rich-text h5,.contract-rich-text h6{
-  margin:0 0 12px;
+  margin:0 0 16px;
   line-height:1.35;
   font-weight:700;
+}
+.contract-document-interactive{
+  box-shadow:0 10px 36px rgba(0,0,0,.06);
+}
+.contract-block-signature{
+  box-shadow:0 1px 0 rgba(0,0,0,.02);
 }
 /* Editors keep visible cell borders so admins can see structure while editing */
 .contract-rich-editor-input th,.contract-rich-editor-input td,
