@@ -7,8 +7,9 @@
 // stable because the seed state is migrated again on every page load.
 
 import { OLD_SITE_TOOLTIPS } from "./old-site-tooltip-catalog";
+import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
 
-export const OLD_SITE_PARITY_VERSION = 4;
+export const OLD_SITE_PARITY_VERSION = 5;
 
 const SYS_VENUE_SOURCE = "__sys:venue";
 
@@ -67,7 +68,7 @@ const VENUE_PRICING = [
 ];
 
 const ELEVATED_AREA_PRICES = [
-  { match: /deep half/i, price: 600 },
+  { match: /deep/i, price: 600 },
   { match: /half/i, price: 500 },
   { match: /full/i, price: 900 },
 ];
@@ -158,6 +159,7 @@ export function migrateToOldSiteParity(input = {}) {
   if (currentVersion < 2) applyV2(state, parityContext(state), log);
   if (currentVersion < 3) applyV3(state, parityContext(state), log);
   if (currentVersion < 4) applyV4(state, parityContext(state), log);
+  if (currentVersion < 5) applyV5(state, parityContext(state), log);
 
   state.siteSettings = {
     ...(state.siteSettings || {}),
@@ -1249,3 +1251,371 @@ function applyV4(state, ctx, log) {
     log("Additional Info: shortened the on-site gap field label.");
   }
 }
+
+// ===== v5: live createevent.php dropdown / choice parity (2026-10) =====
+
+const LIVE_EVENT_PRIVACY_OPTIONS = [
+  "Public|Events that are advertised publicly, tickets sold/given in advance or at the door.",
+  "Semi Private|Invitation list to those mostly known to Client.",
+  "Private|Invitation list to those known to Client such as family, friends, coworkers, etc.",
+];
+
+const LIVE_EVENT_TYPE_OPTIONS = [
+  { type: "group", label: "Business", options: [
+    { label: "Business / Board Meeting" },
+    { label: "Conference" },
+    { label: "Workshop / Training" },
+    { label: "Other - Business and non-alcoholic events" },
+  ] },
+  { type: "group", label: "Social", options: [
+    { label: "Lecture / Theater / Movie" },
+    { label: "Social Event with dancing / Party" },
+    { label: "Social Event without dancing / Banquet" },
+    { label: "Reception / Cocktail Party" },
+    { label: "Wedding & Reception" },
+    { label: "Ceremony / Graduation" },
+    { label: "Memorial / End of Life Celebration" },
+    { label: "Festival / Market / Show" },
+    { label: "Other - Social and/or alcoholic events" },
+  ] },
+];
+
+const LIVE_ALCOHOL_OPTIONS = [
+  "Yes|There will be alcohol/liquor/wine served at the party.",
+  "No|There will not be any alcohol/liquor/wine served at the party.",
+];
+
+const LIVE_SEX_OPTIONS = ["Male", "Female", "Does Not Matter"];
+
+const LABEL_RENAMES = [
+  [/^other\s*-\s*business$/i, "Other - Business and non-alcoholic events"],
+  [/^other\s*-\s*social$/i, "Other - Social and/or alcoholic events"],
+  [/^semi[-\s]?private$/i, "Semi Private"],
+];
+
+function renameLiveLabel(value) {
+  const text = String(value ?? "");
+  for (const [pattern, next] of LABEL_RENAMES) {
+    if (pattern.test(text.trim())) return next;
+  }
+  return text;
+}
+
+function rewriteLabelsDeep(value) {
+  if (Array.isArray(value)) return value.map(rewriteLabelsDeep);
+  if (!value || typeof value !== "object") return typeof value === "string" ? renameLiveLabel(value) : value;
+  const out = {};
+  Object.entries(value).forEach(([key, child]) => {
+    out[key] = rewriteLabelsDeep(child);
+  });
+  return out;
+}
+
+function layoutFromOldSitePreset(preset) {
+  return {
+    id: parityId("fl"),
+    name: preset.name,
+    image: preset.image || "",
+    capacityMin: preset.guestMin ?? 0,
+    capacityMax: preset.guestMax ?? 0,
+    applicableEventTypes: [...(preset.eventTypes || [])],
+    applicableSpaceReqs: [],
+    recommendedFor: preset.recommendedFor || 0,
+    recommendedDescription: Array.isArray(preset.description) ? preset.description.join("\n") : String(preset.description || ""),
+    rentalRecommendations: {},
+    oldSitePresetId: preset.presetId,
+  };
+}
+
+function mergeFloorLayouts(existingLayouts, presets) {
+  const next = Array.isArray(existingLayouts) ? [...existingLayouts] : [];
+  let added = 0;
+  presets.forEach((preset) => {
+    const exists = next.some((layout) =>
+      layout.oldSitePresetId === preset.presetId
+      || (norm(layout.name) === norm(preset.name) && String(layout.image || "") === String(preset.image || "")));
+    if (exists) return;
+    next.push(layoutFromOldSitePreset(preset));
+    added += 1;
+  });
+  return { layouts: next, added };
+}
+
+function shouldReplacePlaceholderLayouts(layouts) {
+  if (!Array.isArray(layouts) || layouts.length === 0) return true;
+  if (layouts.length >= 10) return false;
+  const imported = layouts.filter((layout) => layout.oldSitePresetId).length;
+  if (imported > 0) return false;
+  return layouts.every((layout) => /max #|extra seating|placeholder|rectangular tables with|lounge style|outdoor rectangular/i.test(layout.name || ""));
+}
+
+function applyV5(state, ctx, log) {
+  const { steps, fieldBy, optionBy, mainHall, largeRoom, patio, smallRoom, lounge } = ctx;
+  const catalog = state.rentalCatalog;
+  const pricing = state.pricingRules;
+
+  // ----- Event Details choice labels -----
+  const privacy = fieldBy("f10", /event privacy/i);
+  if (privacy) {
+    privacy.options = [...LIVE_EVENT_PRIVACY_OPTIONS];
+    privacy.displayAs = privacy.displayAs || "radio";
+    log("Event Privacy: aligned labels/descriptions with live createevent.php (Semi Private).");
+  }
+
+  const eventType = fieldBy("f11", /event type/i);
+  if (eventType) {
+    eventType.options = clone(LIVE_EVENT_TYPE_OPTIONS);
+    eventType.groupOptions = true;
+    eventType.hasOptions = true;
+    eventType.displayAs = "select";
+    log("Event Type: full live option labels (Other - Business/Social long forms).");
+  }
+
+  const alcohol = fieldBy("f13", /alcohol on site/i);
+  if (alcohol) {
+    alcohol.options = [...LIVE_ALCOHOL_OPTIONS];
+    log("Alcohol on Site: live help text (party wording).");
+  }
+
+  const cateringYes = fieldBy("f53", /require catering/i);
+  const yesOption = (cateringYes?.options || []).find((option) => /yes, please provide/i.test(optionLabel(option)));
+  if (yesOption && typeof yesOption === "object") {
+    yesOption.label = "Yes, please provide me catering options for";
+    log("Catering: yes-option wording matches live form.");
+  }
+
+  // ----- Elevated Area names + prices -----
+  if (mainHall?.subSpace) {
+    mainHall.subSpace.enabled = true;
+    mainHall.subSpace.title = mainHall.subSpace.title || "Optional Extension (Elevated Area)";
+    const options = Array.isArray(mainHall.subSpace.options) ? mainHall.subSpace.options : [];
+    const rename = [
+      { match: /deep/i, name: "Deep Area", price: 600, description: "The Deep Half Elevated Area adds about 225 sqft to the Main Hall\n+ 10 seats for round tables\n+ 10 seats for rectangular tables" },
+      { match: /half/i, name: "Half Area", price: 500, description: "The Half Elevated Area adds about 200 sqft to the Main Hall\n+ 10 seats for round tables\n+ 23 seats for rectangular tables\n+ 50 seats for theater seating" },
+      { match: /full/i, name: "Full Area", price: 900, description: "The Full Elevated Area adds about 300 sqft to the Main Hall\n+ 30 seats for round tables\n+ 33 seats for rectangular tables\n+ 65 seats for theater seating" },
+    ];
+    options.forEach((option) => {
+      const rule = rename.find((item) => item.match.test(option.name || ""));
+      if (!rule) return;
+      option.name = rule.name;
+      option.price = rule.price;
+      if (isBlank(option.description) || /half of the elevated|deep section|full elevated area adds about 300/i.test(option.description || "")) {
+        option.description = rule.description;
+      }
+    });
+    // Ensure prices even if names already match live
+    options.forEach((option) => {
+      const priceRule = ELEVATED_AREA_PRICES.find((item) => item.match.test(option.name || ""));
+      if (priceRule) option.price = priceRule.price;
+    });
+    mainHall.subSpace.options = options;
+    log("Elevated Area: Full $900 / Half $500 / Deep $600 with live names.");
+  }
+
+  // ----- Space requirement labels -----
+  const layoutStep = steps.find((step) => step.stepType === "layout");
+  if (layoutStep?.spaceRequirements) {
+    layoutStep.spaceRequirements.forEach((req) => {
+      if (/^dance area$/i.test(req.name || "")) req.name = "Dedicated Dance Area";
+      if (/^dj table\s*\/\s*area$/i.test(req.name || "")) req.name = "DJ Table/Area";
+      if (/welcome\s*\/\s*registration/i.test(req.name || "")) req.name = "Welcome/Registration Table";
+      if (/favours?\s*\/\s*guestbook/i.test(req.name || "")) req.name = "Favours/Guestbook Table";
+    });
+    log("Layout: space requirement labels aligned with live form.");
+  }
+
+  // ----- Floor layouts from old-site catalog (live production set) -----
+  if (layoutStep) {
+    layoutStep.floorLayouts = layoutStep.floorLayouts && typeof layoutStep.floorLayouts === "object" ? layoutStep.floorLayouts : {};
+    const venueMap = [
+      { venue: mainHall, groupKey: "mh_floor" },
+      { venue: largeRoom, groupKey: "lr_floor" },
+      { venue: patio, groupKey: "bp_floor" },
+      { venue: smallRoom, groupKey: "sr_floor" },
+    ];
+    venueMap.forEach(({ venue, groupKey }) => {
+      if (!venue?.id) return;
+      const group = OLD_SITE_LAYOUT_GROUPS.find((candidate) => candidate.key === groupKey);
+      if (!group?.layouts?.length) return;
+      const current = layoutStep.floorLayouts[venue.id] || { layouts: [], blankFloorPlan: "", hasFloorLayoutPlan: true };
+      if (shouldReplacePlaceholderLayouts(current.layouts)) {
+        layoutStep.floorLayouts[venue.id] = {
+          ...current,
+          hasFloorLayoutPlan: true,
+          layouts: group.layouts.map(layoutFromOldSitePreset),
+        };
+        log(`${venue.name}: replaced placeholder floor layouts with ${group.layouts.length} live layouts.`);
+        return;
+      }
+      const merged = mergeFloorLayouts(current.layouts, group.layouts);
+      if (merged.added) {
+        layoutStep.floorLayouts[venue.id] = { ...current, hasFloorLayoutPlan: true, layouts: merged.layouts };
+        log(`${venue.name}: added ${merged.added} missing live floor layouts.`);
+      }
+    });
+
+    // Elevated sub-space layout packs
+    const subMap = [
+      { match: /^full/i, groupKey: "mh_raised_full" },
+      { match: /^half/i, groupKey: "mh_raised_half" },
+      { match: /^deep/i, groupKey: "mh_raised_deep" },
+    ];
+    (mainHall?.subSpace?.options || []).forEach((sub) => {
+      const mapping = subMap.find((item) => item.match.test(sub.name || ""));
+      if (!mapping || !sub.id) return;
+      const group = OLD_SITE_LAYOUT_GROUPS.find((candidate) => candidate.key === mapping.groupKey);
+      if (!group?.layouts?.length) return;
+      const current = layoutStep.floorLayouts[sub.id] || { layouts: [], blankFloorPlan: "", hasFloorLayoutPlan: true };
+      if (shouldReplacePlaceholderLayouts(current.layouts) || (current.layouts || []).length < 3) {
+        layoutStep.floorLayouts[sub.id] = {
+          ...current,
+          hasFloorLayoutPlan: true,
+          layouts: group.layouts.map(layoutFromOldSitePreset),
+        };
+        log(`${sub.name}: loaded ${group.layouts.length} elevated-area layouts.`);
+      }
+    });
+  }
+
+  // ----- Napkin colours (full live lists) -----
+  const napkins = catalog.find((entry) => /^napkins \(linens\)$/i.test(entry.name || "") || /^napkins - linen$/i.test(entry.name || ""));
+  if (napkins) {
+    let colour = (napkins.optionGroups || []).find((group) => /colou?r/i.test(group.label || ""));
+    if (!colour) {
+      colour = { id: parityId("napkin_color"), type: "select", label: "Napkin Colour", options: [], required: true, quantitySource: "fixed" };
+      napkins.optionGroups = [...(napkins.optionGroups || []), colour];
+    }
+    setChoices(colour, NAPKIN_COLOURS.map((label) => ({ label, price: 0 })), { quantitySource: "fixed", exclusive: true });
+    const patioColours = new Set(PATIO_NAPKIN_COLOURS.map(norm));
+    colour.options.forEach((option) => {
+      option.excludedVenueIds = patio && !patioColours.has(norm(option.label)) ? [patio.id] : [];
+    });
+    colour.required = true;
+    log(`Napkins: ${NAPKIN_COLOURS.length} live colours (${PATIO_NAPKIN_COLOURS.length} on Back Patio).`);
+  }
+
+  // ----- Cocktail linen colours + table linen colour prices -----
+  const cocktail = catalog.find((entry) => /^cocktail tables?$/i.test(entry.name || ""));
+  if (cocktail) {
+    const cover = (cocktail.optionGroups || []).find((group) => /spandex|colou?r|linen/i.test(group.label || ""));
+    if (cover) {
+      setChoices(cover, [
+        { label: "White", price: 13.5 }, { label: "Black", price: 13.5 }, { label: "Ivory", price: 13.5 },
+        { label: "Other Solid Colour", match: /^other/i, price: 13.5 },
+        { label: "Gold", price: 16.75 }, { label: "Silver", price: 16.75 }, { label: "Wavy Ivory", price: 16.75 },
+      ], { exclusive: true });
+      cover.required = true;
+      log("Cocktail linens: 7 live colour/price options.");
+    }
+  }
+
+  // ----- Chair type dropdown (live per-venue prices) -----
+  const chairsGroup = catalog.find((entry) => entry.category === "Chairs" && /^chairs$/i.test(entry.name || ""));
+  const chairTypes = (chairsGroup?.optionGroups || []).find((group) => /type/i.test(group.label || ""));
+  if (chairTypes) {
+    setChoices(chairTypes, [
+      { label: "Venue chairs", match: /^venue chairs/i, rename: true, price: 0, extra: largeRoom ? { venuePrices: { [largeRoom.id]: 2 } } : {} },
+      { label: "Blue chairs", match: /^blue chairs/i, rename: true, price: 0 },
+      { label: "White Resin Chairs", match: /white resin/i, rename: true, price: 5.5 },
+      { label: "Gold Chiavari Chairs", match: /gold chiavari/i, rename: true, price: 11.25 },
+      { label: "Silver Chiavari Chairs", match: /silver chiavari/i, rename: true, price: 11.25 },
+      { label: "Clear Chiavari Chairs", match: /clear chiavari/i, rename: true, price: 11, extra: patio ? { venuePrices: { [patio.id]: 11.25 } } : {} },
+      { label: "Phoenix Chiavari Chair - Crystal", match: /phoenix.*crystal/i, rename: true, price: 8.5 },
+      { label: "Phoenix Chiavari Chair - Black", match: /phoenix.*black/i, rename: true, price: 8.5 },
+      { label: "Crystal Chiavari Chair", match: /^crystal chiavari/i, rename: true, price: 8.5 },
+      { label: "Black Folding Chair", match: /black folding/i, rename: true, price: 2 },
+      { label: "White Folding Chair", match: /white folding/i, rename: true, price: 2.25 },
+    ], { exclusive: true });
+    chairTypes.required = true;
+    // Patio: hide free venue/blue chairs; Large Room keeps Blue; Main Hall Venue free
+    (chairTypes.options || []).forEach((option) => {
+      if (!option || typeof option !== "object") return;
+      if (/^venue chairs/i.test(option.label || "")) {
+        option.excludedVenueIds = [patio, smallRoom].filter(Boolean).map((venue) => venue.id);
+      }
+      if (/^blue chairs/i.test(option.label || "")) {
+        option.excludedVenueIds = [mainHall, patio, smallRoom].filter(Boolean).map((venue) => venue.id);
+      }
+      if (/folding chair/i.test(option.label || "")) {
+        option.excludedVenueIds = [mainHall, largeRoom, smallRoom].filter(Boolean).map((venue) => venue.id);
+      }
+    });
+    log("Chairs: live type list with per-venue availability and prices.");
+  }
+
+  const table5 = catalog.find((entry) => /^rectangular 5'/i.test(entry.name || ""));
+  const table5Colour = (table5?.optionGroups || []).find((group) => /colou?r/i.test(group.label || ""));
+  if (table5Colour) {
+    setChoices(table5Colour, [{ label: "White", price: 5 }, { label: "Blue", price: 5 }, { label: "Other", price: 11 }], { exclusive: true });
+    table5Colour.required = true;
+  }
+
+  // ----- Backdrop colours (White/Black only, matching live) -----
+  const backdrop = catalog.find((entry) => /^backdrop$/i.test(entry.name || ""));
+  const backdropColour = (backdrop?.optionGroups || []).find((group) => /colou?r/i.test(group.label || ""));
+  if (backdropColour) {
+    setChoices(backdropColour, [{ label: "White", price: 0 }, { label: "Black", price: 0 }], { quantitySource: "fixed", exclusive: true });
+    log("Backdrop: White/Black colour options (live).");
+  }
+
+  // ----- Services hours / people / sex -----
+  const eventServices = fieldBy("f61", /event services/i);
+  const thirdParty = fieldBy("f63", /3rd party services/i);
+  const patchServiceOption = (option) => {
+    if (!option || typeof option !== "object") return;
+    if (option.hasSexOption || (option.sexOptions || []).length) {
+      option.hasSexOption = true;
+      option.sexOptions = [...LIVE_SEX_OPTIONS];
+    }
+    if (option.hasHoursOption || option.hoursRange) {
+      option.hasHoursOption = true;
+      option.hoursRange = { ...(option.hoursRange || {}), min: 3, max: 10, startBlank: true };
+    }
+    if (option.hasPeopleOption || option.peopleRange) {
+      option.hasPeopleOption = true;
+      const isServer = /^server/i.test(option.label || "") || /smart serve/i.test(option.label || "");
+      const isGuards = /security/i.test(option.label || "");
+      option.peopleRange = {
+        ...(option.peopleRange || {}),
+        min: 1,
+        max: isServer ? 8 : (isGuards ? 4 : 4),
+        startBlank: true,
+      };
+    }
+  };
+  (eventServices?.options || []).forEach(patchServiceOption);
+  (thirdParty?.options || []).forEach((option) => {
+    if (/officiant/i.test(option?.label || "")) {
+      option.hasHoursOption = false;
+      option.hasSexOption = false;
+      return;
+    }
+    patchServiceOption(option);
+  });
+  // Event Planner / Coordinator keep hour pickers but use live 3-10 window when present
+  ["Event Planner", "Coordinator Services during event", "IT Services"].forEach((label) => {
+    const option = optionBy(eventServices, new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"));
+    if (option?.hasHoursOption) option.hoursRange = { ...(option.hoursRange || {}), min: 3, max: 10, startBlank: true };
+  });
+  log("Services: live hours 3–10, sex Male/Female/Does Not Matter, server people 1–8.");
+
+  // ----- Pricing rules: privacy + other-type renames -----
+  if (Array.isArray(pricing.securityDeposits)) {
+    pricing.securityDeposits.forEach((row) => {
+      row.eventPrivacy = renameLiveLabel(row.eventPrivacy);
+      row.eventType = renameLiveLabel(row.eventType);
+    });
+  }
+  if (pricing.eventInsurance?.groups) {
+    pricing.eventInsurance.groups.forEach((group) => {
+      group.eventTypes = (group.eventTypes || []).map(renameLiveLabel);
+    });
+  }
+  // Deep rewrite remaining short labels in steps (layout event types, etc.)
+  state.steps = rewriteLabelsDeep(state.steps);
+  state.pricingRules = rewriteLabelsDeep(state.pricingRules);
+  log("Pricing/layout labels: Semi Private + Other* long forms rewritten across saved config.");
+
+  void lounge;
+}
+

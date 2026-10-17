@@ -42,7 +42,7 @@ const SAMPLE_PRICING_RULES = {
   securityDeposits: [
     { id: "dep_main_private_social_yes", venueId: "v1", venueName: "Main Hall", eventPrivacy: "Private", eventType: "Social Event without dancing / Banquet", alcoholOnSite: "Yes", amount: 500, active: true },
     { id: "dep_main_private_business_yes", venueId: "v1", venueName: "Main Hall", eventPrivacy: "Private", eventType: "Business / Board Meeting", alcoholOnSite: "Yes", amount: 750, active: true },
-    { id: "dep_main_semiprivate_social_no", venueId: "v1", venueName: "Main Hall", eventPrivacy: "Semi-private", eventType: "Social Event without dancing / Banquet", alcoholOnSite: "No", amount: 500, active: true },
+    { id: "dep_main_semiprivate_social_no", venueId: "v1", venueName: "Main Hall", eventPrivacy: "Semi Private", eventType: "Social Event without dancing / Banquet", alcoholOnSite: "No", amount: 500, active: true },
     { id: "dep_main_public_all_no", venueId: "v1", venueName: "Main Hall", eventPrivacy: "Public", eventType: "All", alcoholOnSite: "No", amount: 1000, active: true },
   ],
   // Rate cells are keyed "<attendee tier index>_<yes|no alcohol>"; a cell holds a base price,
@@ -54,9 +54,9 @@ const SAMPLE_PRICING_RULES = {
     attendeeLimits: [30, 175],
     groups: [
       { id: "ins_wedding_tier", name: "Weddings, parties & ceremonies", eventTypes: ["Social Event with dancing / Party", "Ceremony / Graduation", "Wedding & Reception"], rates: { "0_no": 13.75, "0_yes": 109.75, "1_no": 20.63, "1_yes": 144.63, "2_no": 41.25, "2_yes": 189.25 } },
-      { id: "ins_standard_social", name: "Standard social events", eventTypes: ["Other - Social", "Social Event without dancing / Banquet", "Memorial / End of Life Celebration", "Lecture / Theater / Movie", "Reception / Cocktail Party"], rates: { "0_no": 9.75, "0_yes": 105.75, "1_no": 14.63, "1_yes": 138.63, "2_no": 29.25, "2_yes": 177.25 } },
+      { id: "ins_standard_social", name: "Standard social events", eventTypes: ["Other - Social and/or alcoholic events", "Social Event without dancing / Banquet", "Memorial / End of Life Celebration", "Lecture / Theater / Movie", "Reception / Cocktail Party"], rates: { "0_no": 9.75, "0_yes": 105.75, "1_no": 14.63, "1_yes": 138.63, "2_no": 29.25, "2_yes": 177.25 } },
       { id: "ins_business", name: "Business events", eventTypes: ["Business / Board Meeting", "Conference", "Workshop / Training"], rates: { "0_no": 0, "0_yes": 103.5, "1_no": 0, "1_yes": 135.25, "2_no": 0, "2_yes": 170.5 } },
-      { id: "ins_other_business", name: "Other business, festivals & markets", eventTypes: ["Other - Business", "Festival / Market / Show"], rates: { "0_no": 0, "0_yes": 105.75, "1_no": 0, "1_yes": 138.63, "2_no": 0, "2_yes": 177.25 } },
+      { id: "ins_other_business", name: "Other business, festivals & markets", eventTypes: ["Other - Business and non-alcoholic events", "Festival / Market / Show"], rates: { "0_no": 0, "0_yes": 105.75, "1_no": 0, "1_yes": 138.63, "2_no": 0, "2_yes": 177.25 } },
     ],
   },
   noticeVariables: [
@@ -496,7 +496,14 @@ const LEGACY_RENTAL_ARCHITECTURE = {
         label: "Napkin Colour",
         type: "select",
         quantitySource: "fixed",
-        options: ["White", "Black", "Ivory", "Other"],
+        options: [
+          "White", "Ivory", "Black", "Apple Green", "Blush", "Burgundy", "Burnt Orange", "Champagne", "Chocolate Brown",
+          "Chocolate Brown Classic", "Coral", "Dusty Rose", "Dusty Sage Green", "Eggplant", "Eggplant Classic", "Forest Green",
+          "Fuchsia", "Gold", "Hot Pink", "Hunter Green", "Ivory Classic", "Jade", "Kiwi Green", "Lavender", "Lilac", "Lime Green",
+          "Maize", "Mint Green", "Mustard", "Navy Blue", "Navy Blue Classic", "Navy Pink", "Nude", "Pink Classic", "Pumpkin",
+          "Purple", "Purple Classic", "Red", "Red Classic", "Robins Egg Blue", "Royal Blue", "Ruby Red", "Sage Green",
+          "School Bus Yellow", "Silver", "Silver Classic", "Teal", "Terra Cotta", "Turquoise", "Wedgewood Blue", "Willow Green", "Yellow",
+        ],
       },
       {
         id: "wrapped_napkin",
@@ -509,7 +516,7 @@ const LEGACY_RENTAL_ARCHITECTURE = {
         ],
       },
     ],
-    migrationNotes: ["Napkin color and wrapped-cutlery are options on the Napkins rental item."],
+    migrationNotes: ["Napkin color and wrapped-cutlery are options on the Napkins rental item (52 live colours)."],
   },
   ro_helper_labour: {
     schemaVersion: 1,
@@ -533,11 +540,11 @@ const LEGACY_RENTAL_ARCHITECTURE = {
         label: "Backdrop color",
         type: "select",
         quantitySource: "fixed",
-        options: ["White", "Black", "Other"],
+        options: ["White", "Black"],
         placeholder: "Select color",
       },
     ],
-    migrationNotes: ["Old site shows a color dropdown after Backdrop is selected."],
+    migrationNotes: ["Old site shows a White/Black color dropdown after Backdrop is selected."],
   },
   ro_whiteboards: {
     schemaVersion: 1,
@@ -7785,13 +7792,13 @@ const STEP_PRESETS = {
     { label: "Community Organization", type: "toggle", required: false, linkedToPricing: true, fieldDescription: "(only check this if you are a community group with an established public identity, such as a sports team, community theater, cultural or identity group or a religious gathering that are not a registered Not for Profit Group - proof may be requested)", category: "Discount" },
   ],
   "Event Details": [
-    { label: "Event Privacy", type: "radio", required: true, options: ["Public|Events advertised publicly, tickets sold/given in advance or at the door.", "Semi-private|A mostly private event but some guests may be from the general public.", "Private|A private event for family, friends, coworkers, or invited guests only."], category: "Event" },
+    { label: "Event Privacy", type: "radio", required: true, options: ["Public|Events that are advertised publicly, tickets sold/given in advance or at the door.", "Semi Private|Invitation list to those mostly known to Client.", "Private|Invitation list to those known to Client such as family, friends, coworkers, etc."], category: "Event" },
     { label: "Event Type", type: "select", hasOptions: true, displayAs: "select", groupOptions: true, required: true, placeholder: "Select one event type", options: [
       { type: "group", label: "Business", options: [
         { label: "Business / Board Meeting" },
         { label: "Conference" },
         { label: "Workshop / Training" },
-        { label: "Other - Business" },
+        { label: "Other - Business and non-alcoholic events" },
       ]},
       { type: "group", label: "Social", options: [
         { label: "Lecture / Theater / Movie" },
@@ -7802,11 +7809,11 @@ const STEP_PRESETS = {
         { label: "Ceremony / Graduation" },
         { label: "Memorial / End of Life Celebration" },
         { label: "Festival / Market / Show" },
-        { label: "Other - Social" },
+        { label: "Other - Social and/or alcoholic events" },
       ]},
     ], category: "Event" },
     { label: "Brief Description of Event", type: "text", required: true, placeholder: 'What type of event is this?', category: "Event" },
-    { label: "Alcohol on Site", type: "radio", required: true, options: ["Yes|There will be alcohol/liquor/wine served at the event.", "No|There will not be any alcohol served at the event."], category: "Event" },
+    { label: "Alcohol on Site", type: "radio", required: true, options: ["Yes|There will be alcohol/liquor/wine served at the party.", "No|There will not be any alcohol/liquor/wine served at the party."], category: "Event" },
     { label: "Expected Number of Attendees", type: "number", required: true, placeholder: "Enter expected number", min: 10, max: 500, category: "Event" },
   ],
   "Venue Space": [
@@ -8680,7 +8687,7 @@ function ServiceGroupCard({ field, onUpdate, onDelete, sourceHandlers = {}, targ
 }
 
 // Default option values for the 3 admin-controlled selectors.
-const DEFAULT_SEX_OPTIONS = ["No Preference", "Male Only", "Female Only"];
+const DEFAULT_SEX_OPTIONS = ["Male", "Female", "Does Not Matter"];
 const DEFAULT_PEOPLE_RANGE = { min: 1, max: 50 };
 const DEFAULT_HOURS_RANGE = { min: 1, max: 24 };
 
@@ -15234,7 +15241,14 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const matchesRuleValue = (ruleValue, actualValue) => {
       const rule = String(ruleValue || "All").trim().toLowerCase();
       const actual = String(actualValue || "").trim().toLowerCase();
-      return rule === "all" || rule === "" || (!!actual && rule === actual);
+      if (rule === "all" || rule === "") return true;
+      if (!actual) return false;
+      if (rule === actual) return true;
+      // Treat "Semi-private" / "Semi Private" (and short/long Other* event types) as equal.
+      const compact = (value) => value.replace(/[^a-z0-9]+/g, "");
+      const rc = compact(rule);
+      const ac = compact(actual);
+      return !!rc && !!ac && (rc === ac || rc.startsWith(ac) || ac.startsWith(rc));
     };
     const ruleSpecificity = (row, context) => {
       let score = 0;
@@ -18367,7 +18381,7 @@ const DYNAMIC_EMAIL_FIELDS = [
   ["{{Contract_Link}}", "Contract or sign form link"],
   ["{{Insurance_Link}}", "Insurance quote link"],
   ["{{AGCO_Link}}", "AGCO application link"],
-  ["{{Event_Privacy}}", "Public, Semi-private, or Private"],
+  ["{{Event_Privacy}}", "Public, Semi Private, or Private"],
   ["{{Event_Type}}", "Event type"],
   ["{{Event_Description}}", "Brief event description"],
   ["{{Alcohol_On_Site}}", "Alcohol on site answer"],
@@ -20063,7 +20077,7 @@ function PricingRulesView({ rules, steps, onChange }) {
     ? groupedEventTypes.flatMap((group) => group.options || []).map((option) => option.label || String(option)).filter(Boolean)
     : (eventTypeField?.options || []).map((option) => typeof option === "string" ? option.split("|")[0] : option.label).filter(Boolean);
   const eventTypes = ["All", ...Array.from(new Set(flatEventTypes))];
-  const eventPrivacyOptions = ["All", "Private", "Semi-private", "Public"];
+  const eventPrivacyOptions = ["All", "Private", "Semi Private", "Public"];
   const alcoholOptions = ["All", "Yes", "No"];
   const update = (patch) => onChange({ ...pricingRules, ...patch });
   const updateFee = (id, patch) => update({ fees: fees.map((fee) => fee.id === id ? { ...fee, ...patch } : fee) });
@@ -24019,22 +24033,24 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           return;
         }
         const loadedLive = next.liveState || buildPublicStatePayload(next.steps, next.rentalCatalog, next.pricingRules, next.siteSettings);
-        const parity = publicMode ? null : migrateLoadedStateToParity(next, loadedLive);
+        // Always migrate in memory so /book picks up live createevent.php parity even
+        // before an admin session persists it. Only admin auto-saves the result.
+        const parity = migrateLoadedStateToParity(next, loadedLive);
         const draft = parity ? parity.draft : next;
         const live = parity ? parity.live : loadedLive;
-        setSteps(draft.steps);
-        setRentalCatalog(draft.rentalCatalog);
-        setRecommendedRentalCatalogSnapshot(draft.rentalCatalog);
-        setPricingRules(draft.pricingRules);
-        setSiteSettings(draft.siteSettings);
+        setSteps(publicMode ? live.steps : draft.steps);
+        setRentalCatalog(publicMode ? live.rentalCatalog : draft.rentalCatalog);
+        setRecommendedRentalCatalogSnapshot(publicMode ? live.rentalCatalog : draft.rentalCatalog);
+        setPricingRules(publicMode ? live.pricingRules : draft.pricingRules);
+        setSiteSettings(publicMode ? live.siteSettings : draft.siteSettings);
         setProgressRecords(next.progressRecords);
         setPublishedState(live);
-        setActiveStepId(draft.steps[0]?.id || "s1");
-        setOpenFieldId(draft.steps[0]?.fields?.[0]?.id || null);
+        setActiveStepId((publicMode ? live.steps : draft.steps)[0]?.id || "s1");
+        setOpenFieldId((publicMode ? live.steps : draft.steps)[0]?.fields?.[0]?.id || null);
         setIsDirty(false);
         if (data.updatedAt) setLastSavedAt(new Date(data.updatedAt).getTime());
         if (!publicMode) pushToast({ kind: "success", title: "Loaded database draft", desc: "Admin data was restored from the database." });
-        if (parity) {
+        if (parity && !publicMode) {
           pushHistoryEntry("Before old-site parity update", next.steps, next.rentalCatalog, next.pricingRules, next.siteSettings, next.progressRecords);
           buildDatabaseAdminStatePayload(draft.steps, draft.rentalCatalog, draft.pricingRules, draft.siteSettings, next.progressRecords, live)
             .then((databaseState) => putAdminStateToDatabase(databaseState))
@@ -24050,6 +24066,8 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
               setIsDirty(true);
               pushToast({ kind: "danger", title: "Old-site settings not saved", desc: `${error.message || "Unknown error."} Review the changes and click Save.`, duration: 10000 });
             });
+        } else if (parity && publicMode) {
+          console.info("[collaburo] Live form using in-memory old-site parity update:\n- " + parity.changes.join("\n- "));
         }
         if (!publicMode && collectRemoteImageUrls({ draft, live }).size) {
           copyRemoteImagesToCloudinary({ draft, live })
