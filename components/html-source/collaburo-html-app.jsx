@@ -18388,8 +18388,11 @@ const DYNAMIC_EMAIL_FIELDS = [
   ["{{Expected_Number_of_Attendees}}", "Guest count"],
   ["{{Space}}", "Selected space"],
   ["{{Booking_DateTime}}", "Full booking date/time range"],
-  ["{{Booking_Start_datetime}}", "Starting date/time of booking"],
-  ["{{Booking_end_datetime}}", "Ending date/time of booking"],
+  ["{{Booking_Start_datetime}}", "Starting date of booking (legacy alias)"],
+  ["{{Booking_end_datetime}}", "Ending date/time of booking (legacy alias)"],
+  ["{{Booking_Start_Date}}", "Booking start date (e.g. September 27, 2026)"],
+  ["{{Booking_Start_Time}}", "Booking start time (e.g. 12:00 am)"],
+  ["{{Booking_End_DateTime}}", "Booking end date and time"],
   ["{{Guests_Arrival}}", "Guests arrival notes"],
   ["{{No_One_On_Site}}", "No one on site notes"],
   ["{{Set_up_Service}}", "Selected set-up / service notes"],
@@ -20975,6 +20978,103 @@ function formatContractLayoutSelections(selections = []) {
     .join("\n");
 }
 
+function parseContractDateTimeValue(text = "") {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (iso) {
+    return new Date(
+      Number(iso[1]),
+      Number(iso[2]) - 1,
+      Number(iso[3]),
+      Number(iso[4]),
+      Number(iso[5]),
+      Number(iso[6] || 0)
+    );
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatContractLegacyDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function formatContractLegacyTime(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return date
+    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function formatContractLegacyDateTime(date) {
+  const day = formatContractLegacyDate(date);
+  const time = formatContractLegacyTime(date);
+  return day && time ? `${day} ${time}` : day || time || "";
+}
+
+function formatContractMultiDayStamp(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  return `${mm}/${dd}/${yyyy} ${formatContractLegacyTime(date)}`;
+}
+
+/** Pull primary start/end + extra room ranges from bookingDateTime / venue bookings (legacy contract_s shape). */
+function contractBookingScheduleParts(record = {}) {
+  const text = String(record.request?.bookingDateTime || "").trim();
+  const segments = text
+    .split(/\s*;\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const colon = part.indexOf(":");
+      const room = colon >= 0 ? part.slice(0, colon).trim() : "";
+      const rest = colon >= 0 ? part.slice(colon + 1).trim() : part;
+      const [startRaw = "", endRaw = ""] = rest.split(/\s+-\s+/).map((item) => item.trim());
+      return {
+        room,
+        start: parseContractDateTimeValue(startRaw),
+        end: parseContractDateTimeValue(endRaw || startRaw),
+        startRaw,
+        endRaw,
+      };
+    })
+    .filter((row) => row.start || row.end || row.startRaw);
+
+  const primary = segments[0] || null;
+  const start = primary?.start || null;
+  const end = primary?.end || null;
+
+  const multiLines = segments.slice(1).map((row) => {
+    const startStamp = row.start ? formatContractMultiDayStamp(row.start) : row.startRaw;
+    const endStamp = row.end ? formatContractMultiDayStamp(row.end) : (row.endRaw || startStamp);
+    if (!startStamp) return "";
+    const label = row.room || "Space";
+    const range = endStamp && endStamp !== startStamp ? `${startStamp} to ${endStamp}` : startStamp;
+    return `${label}: <u>${range}</u>`;
+  }).filter(Boolean);
+
+  const fromAdmin = String(record.adminSections?.multiDayDetails || "").trim();
+  const multiDayDetails = multiLines.length
+    ? multiLines.join("<br/>")
+    : (looksLikeHtmlForContract(fromAdmin) ? fromAdmin : fromAdmin.replace(/\n/g, "<br/>"));
+
+  return {
+    startDate: formatContractLegacyDate(start) || (primary?.startRaw || ""),
+    startTime: formatContractLegacyTime(start) || "",
+    endDateTime: formatContractLegacyDateTime(end) || (primary?.endRaw || ""),
+    multiDayDetails,
+  };
+}
+
+function looksLikeHtmlForContract(value = "") {
+  return /<\/?[a-z][!a-z0-9:-]*\b[^>]*>/i.test(String(value || ""));
+}
+
 function buildContractCostBreakdown(costs = {}) {
   const sections = [
     ["Space Rental", costs.spaceRentalTotal, costs.spaceLines],
@@ -21006,6 +21106,7 @@ function buildContractCostBreakdown(costs = {}) {
 function emailTokenMap(record = {}) {
   const bookingText = record.request?.bookingDateTime || "";
   const [bookingStart = bookingText, bookingEnd = ""] = String(bookingText).split(/\s+-\s+/);
+  const schedule = contractBookingScheduleParts(record);
   const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "https://collaburo.app";
   const costs = record.costs || {};
   const feeTotal = Array.isArray(costs.feeLines)
@@ -21068,8 +21169,11 @@ function emailTokenMap(record = {}) {
     "{{Expected_Number_of_Attendees}}": record.request?.attendeeCount || "",
     "{{Space}}": record.request?.space || "",
     "{{Booking_DateTime}}": bookingText,
-    "{{Booking_Start_datetime}}": bookingStart.trim(),
-    "{{Booking_end_datetime}}": bookingEnd.trim(),
+    "{{Booking_Start_datetime}}": schedule.startDate || bookingStart.trim(),
+    "{{Booking_end_datetime}}": schedule.endDateTime || bookingEnd.trim(),
+    "{{Booking_Start_Date}}": schedule.startDate || bookingStart.trim(),
+    "{{Booking_Start_Time}}": schedule.startTime || "",
+    "{{Booking_End_DateTime}}": schedule.endDateTime || bookingEnd.trim(),
     "{{Guests_Arrival}}": record.request?.guestsArrival || "",
     "{{No_One_On_Site}}": record.request?.noOneOnSite || "",
     "{{Set_up_Service}}": record.adminSections?.serviceNotes || "",
@@ -21091,7 +21195,7 @@ function emailTokenMap(record = {}) {
     "{{Blackboard_Sign_Message}}": record.adminSections?.blackboardSignMessage || "",
     "{{Tech_Questions}}": record.adminSections?.techQuestions || "",
     "{{Discount_Notes}}": record.adminSections?.discountNotes || "",
-    "{{Multi_Day_Details}}": record.adminSections?.multiDayDetails || "",
+    "{{Multi_Day_Details}}": schedule.multiDayDetails || record.adminSections?.multiDayDetails || "",
     "{{Agreement_Day}}": ordinal(dayNum),
     "{{Agreement_Month}}": agreementMonth,
     "{{Agreement_Year}}": agreementYear,

@@ -66,8 +66,10 @@ function stripPhpToHtml(src) {
     if (/echo\s+\$lwr_year|echo\s+\$iww_year/.test(b)) return "{{Agreement_Year}}";
     if (/\$event_type_description|\$brief_desc_event/.test(b)) return "{{Event_Description}}";
     if (/\$noof_attendees|\$exp_noofattendees/.test(b)) return "{{Expected_Number_of_Attendees}}";
-    if (/bookingstartdate_month/.test(b)) return "{{Booking_Start_datetime}}";
-    if (/bookingenddate_month/.test(b)) return "{{Booking_end_datetime}}";
+    if (/bookingstartdate_month/.test(b) && /bookingstartdate_day|bookingstartdate_year/.test(b)) return "{{Booking_Start_Date}}";
+    if (/bookingstartdate_hour|bookingstarttime|bookingstartdate_time/.test(b)) return "{{Booking_Start_Time}}";
+    if (/bookingstartdate_month/.test(b)) return "{{Booking_Start_Date}}";
+    if (/bookingenddate_month/.test(b)) return "{{Booking_End_DateTime}}";
     if (/\$floorlayout/.test(b)) return "{{Layout_Selections}}";
     if (/nl2br\(\$layoutinstruction/.test(b)) return "{{Floor_Layout_Instructions}}";
     if (/nl2br\(\$blackboard/.test(b)) return "{{Blackboard_Sign_Message}}";
