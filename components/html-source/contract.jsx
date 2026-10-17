@@ -197,9 +197,33 @@ function normalizeContractBlock(block = {}) {
     id,
     type: "paragraph",
     title: String(block.title || ""),
-    body: repairContractWaiverMarkup(repairContractSection3(String(block.body || ""))),
+    body: repairContractCenterBleed(repairContractWaiverMarkup(repairContractSection3(String(block.body || "")))),
     allowTokens: block.allowTokens !== false,
   };
+}
+
+/** Close center-aligned wrappers that incorrectly swallow following left-aligned sections (e.g. 4.2+). */
+function repairContractCenterBleed(body = "") {
+  let s = String(body || "");
+  // Floor-plan stack: close each centered image before the next section heading.
+  s = s.replace(
+    /(<div[^>]*text-align\s*:\s*center[^>]*>\s*)(?:<div[^>]*text-align\s*:\s*center[^>]*>\s*)*<img\b([^>]*)>\s*(?:<div[^>]*text-align\s*:\s*center[^>]*>\s*)*(<(?:strong|b)>\s*\d+\.)/gi,
+    '<div style="text-align:center"><img$2></div><br/><br/>$3'
+  );
+  s = s.replace(
+    /(<div[^>]*text-align\s*:\s*center[^>]*>\s*<img\b[^>]*>)\s*(?:<br\s*\/?>\s*)*(<(?:strong|b)>\s*\d+\.(?:\d+)?)/gi,
+    "$1</div><br/><br/>$2"
+  );
+  s = s.replace(
+    /(<div[^>]*text-align\s*:\s*center[^>]*>\s*<img\b[^>]*>)\s*(?:<br\s*\/?>\s*)+(?=[A-Za-z0-9])/g,
+    "$1</div><br/><br/>"
+  );
+  // Extractor duplicated section 4.3 (URL version + linked version).
+  s = s.replace(
+    /(<strong>\s*4\.3<\/strong>[\s\S]{40,1200}?clarify\.\s*)\s*<strong>\s*4\.3<\/strong>[\s\S]{40,1200}?clarify\.\s*/gi,
+    "$1<br/><br/>"
+  );
+  return s;
 }
 
 /** Close broken waiver underline markup that otherwise underlines the whole section. */
@@ -447,6 +471,29 @@ function sanitizeContractHtml(html = "") {
     div.setAttribute("style", "text-align:center");
     while (el.firstChild) div.appendChild(el.firstChild);
     el.parentNode?.replaceChild(div, el);
+  });
+
+  // If a center div still contains body copy after an image (broken extractor markup),
+  // keep only the leading media centered and move the rest out as left-aligned siblings.
+  root.querySelectorAll('div[style*="text-align:center"], div[style*="text-align: center"]').forEach((div) => {
+    const html = div.innerHTML || "";
+    if (!/<img\b/i.test(html)) return;
+    // Match "4.2 ..." and also top-level "7. On site ..."
+    const headingIdx = html.search(/<(?:strong|b)>\s*\d+\.(?:\d+)?(?:\s|&nbsp;|[A-Za-z])/i);
+    const cut = headingIdx >= 0 ? headingIdx : -1;
+    if (cut <= 0) return;
+    if (html.slice(cut).length < 20) return;
+    const kept = html.slice(0, cut).replace(/(?:<br\s*\/?>\s*)+$/i, "");
+    const rest = html.slice(cut);
+    div.innerHTML = kept;
+    const holder = document.createElement("div");
+    holder.innerHTML = rest;
+    let insertAfter = div;
+    while (holder.firstChild) {
+      const node = holder.firstChild;
+      insertAfter.parentNode?.insertBefore(node, insertAfter.nextSibling);
+      insertAfter = node;
+    }
   });
 
   const scrubNode = (node) => {
