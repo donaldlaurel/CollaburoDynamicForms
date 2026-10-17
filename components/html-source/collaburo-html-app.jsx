@@ -14837,7 +14837,13 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   }, [answers, steps]);
   React.useEffect(() => {
     const clearable = workflowFieldEntries
-      .filter(({ field }) => field.type !== "rental_group" && answerHasValue(answers[field.id]) && fieldRuleState(field).clearValue)
+      .filter(({ field }) => {
+        if (field.type === "rental_group" || !answerHasValue(answers[field.id])) return false;
+        const rules = fieldRuleState(field);
+        // Hidden conditional answers must not survive into a saved request,
+        // including fields created before the clearValue flag existed.
+        return rules.clearValue || !rules.visible;
+      })
       .map(({ field }) => field.id);
     let idsToClear = clearable;
     if (adminEditMode) {
@@ -15724,7 +15730,12 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     if (!confirmAdminAnswerRemovals()) throw new Error("Save cancelled.");
     const stepId = step?.id;
     const nextSavedIds = stepId ? Array.from(new Set([...savedStepIds, stepId])) : savedStepIds;
-    const submittedAt = draftSubmittedAt || initialDraft?.submittedAt || new Date().toISOString();
+    // A draft save is not a submission. Only stamp new submissions, while
+    // preserving an existing timestamp when an already-submitted record is
+    // edited.
+    const submittedAt = finalSubmit
+      ? (draftSubmittedAt || initialDraft?.submittedAt || new Date().toISOString())
+      : (draftSubmittedAt || initialDraft?.submittedAt || "");
     const payload = {
       recordId: draftRecordId || initialDraft?.recordId || "",
       steps: list,
@@ -15754,7 +15765,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         url.searchParams.set("record", nextBookingCode);
         window.history.replaceState({ record: nextBookingCode }, "", url.toString());
       }
-      setDraftSubmittedAt(submittedAt);
+      if (finalSubmit) setDraftSubmittedAt(submittedAt);
       setSavedStepIds(nextSavedIds);
       const configuredSuccess = String(checkoutStepConfig.successMessage || "").trim();
       const finalMessage = configuredSuccess && configuredSuccess !== "This would submit the booking request." ? configuredSuccess : "Your request was saved successfully.";
@@ -16308,9 +16319,13 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                         if (costSummaryLocked) {
                           setClientNotice({
                             kind: "danger",
-                            title: "Verify your email",
-                            message: costSummaryLockedMessage,
-                            duration: 5200,
+                            title: "Verify your email before submitting",
+                            message: "Your progress is saved, but the booking request was not submitted. Verify your email in Step 1, then return here to submit.",
+                            duration: 12000,
+                          });
+                          setSubmitState({
+                            status: "error",
+                            message: "Booking request not submitted until your email is verified.",
                           });
                           pulseEmailField();
                           return;
