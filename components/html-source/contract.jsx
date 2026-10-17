@@ -197,9 +197,29 @@ function normalizeContractBlock(block = {}) {
     id,
     type: "paragraph",
     title: String(block.title || ""),
-    body: repairContractSection3(String(block.body || "")),
+    body: repairContractWaiverMarkup(repairContractSection3(String(block.body || ""))),
     allowTokens: block.allowTokens !== false,
   };
+}
+
+/** Close broken waiver underline markup that otherwise underlines the whole section. */
+function repairContractWaiverMarkup(body = "") {
+  let s = String(body || "");
+  // Extractor left: <b><u><u>{{Client_Display_Name}}</u></b>  (missing </u> + often missing </div>)
+  s = s.replace(
+    /<b>\s*<u>\s*<u>\s*(\{\{Client_Display_Name\}\}|[^<{]{0,200}?)\s*<\/u>\s*<\/b>/gi,
+    "<b><u>$1</u></b>"
+  );
+  // Same pattern after tokens were already filled
+  s = s.replace(
+    /(<div[^>]*>\s*)<b>\s*<u>\s*<u>\s*([^<]{1,200}?)\s*<\/u>\s*<\/b>(\s*<div)/gi,
+    "$1<b><u>$2</u></b></div>$3"
+  );
+  s = s.replace(
+    /<b>\s*<u>\s*<u>\s*([^<]{1,200}?)\s*<\/u>\s*<\/b>/gi,
+    "<b><u>$1</u></b>"
+  );
+  return s;
 }
 
 /** Correct section-3 layout from collaburo.space/contract_s.php (separated option groups). */
@@ -419,7 +439,7 @@ function sanitizeContractHtml(html = "") {
     return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, "");
   }
   const root = document.createElement("div");
-  root.innerHTML = normalizeLegacyContractHtml(html);
+  root.innerHTML = normalizeLegacyContractHtml(repairContractWaiverMarkup(html));
 
   const scrubNode = (node) => {
     if (node.nodeType === Node.COMMENT_NODE) {
