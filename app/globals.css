@@ -1250,7 +1250,31 @@ a { color: inherit; text-decoration: none; }
   font-size:inherit;
   white-space:normal;
 }
-.contract-rich-text th,.contract-rich-text td,
+/* Display/sign contracts: layout tables without grid borders */
+.contract-rich-text table,
+.contract-rich-text th,
+.contract-rich-text td{
+  border:none!important;
+  background:transparent;
+}
+.contract-rich-text th,.contract-rich-text td{
+  padding:2px 8px 2px 0;
+  vertical-align:top;
+  text-align:left;
+}
+/* Legacy template checkbox rows often use margin-left inside cells */
+.contract-rich-text td > div[style*="margin-left"]{
+  margin-left:0!important;
+}
+.contract-rich-text th{font-weight:700}
+.contract-rich-text p{margin:0 0 10px}
+.contract-rich-text h1,.contract-rich-text h2,.contract-rich-text h3,
+.contract-rich-text h4,.contract-rich-text h5,.contract-rich-text h6{
+  margin:0 0 12px;
+  line-height:1.35;
+  font-weight:700;
+}
+/* Editors keep visible cell borders so admins can see structure while editing */
 .contract-rich-editor-input th,.contract-rich-editor-input td,
 .rich-editor-input th,.rich-editor-input td{
   border:1px solid var(--line-strong);
@@ -1258,7 +1282,7 @@ a { color: inherit; text-decoration: none; }
   vertical-align:top;
   text-align:left;
 }
-.contract-rich-text th,.contract-rich-editor-input th,.rich-editor-input th{
+.contract-rich-editor-input th,.rich-editor-input th{
   background:var(--surface-2);
   font-weight:700;
 }

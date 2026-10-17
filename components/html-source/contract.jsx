@@ -383,7 +383,10 @@ function sanitizeContractHtml(html = "") {
         if (!/^\d{1,2}$/.test(attr.value || "")) node.removeAttribute(attr.name);
         return;
       }
-      if (name === "border" && node.tagName === "TABLE") return;
+      if (name === "border" && node.tagName === "TABLE") {
+        node.removeAttribute("border");
+        return;
+      }
       if (name === "type" && (node.tagName === "OL" || node.tagName === "UL")) return;
       node.removeAttribute(attr.name);
     });
@@ -489,7 +492,7 @@ function ContractRichTextEditor({ value = "", onChange, placeholder = "Write par
   const insertTable = () => {
     ref.current?.focus();
     const tableHtml = [
-      '<table border="1"><thead><tr><th>Header 1</th><th>Header 2</th></tr></thead>',
+      "<table><thead><tr><th>Header 1</th><th>Header 2</th></tr></thead>",
       "<tbody><tr><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td></tr></tbody></table><p><br/></p>",
     ].join("");
     document.execCommand("insertHTML", false, tableHtml);
@@ -818,16 +821,18 @@ export function ContractDocumentView({
   interactive = false,
   onSignatureChange,
   title,
+  showTitle = true,
   variant = "social",
 }) {
   const contract = coerceContractTemplate(settings, variant);
   const clientBlocks = (contract.blocks || []).filter((block) => block.type === "signature" && block.role === "client");
   const firstClientId = clientBlocks[0]?.id;
   const firstClientSignature = firstClientId ? signatures[firstClientId] || "" : "";
+  const heading = title || contract.title;
   return (
-    <div className="contract-document" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: 22, maxHeight: interactive ? undefined : 420, overflow: interactive ? "visible" : "auto", minWidth: 0 }}>
-      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:8px auto}.contract-document table{width:100%;border-collapse:collapse;margin:8px 0}.contract-rich-text{font-size:14px;line-height:1.55;color:#222}`}</style>
-      <h2 style={{ margin: "0 0 16px", fontSize: 22 }}>{title || contract.title}</h2>
+    <div className="contract-document" style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: interactive ? "28px 32px" : 22, maxHeight: interactive ? undefined : 420, overflow: interactive ? "visible" : "auto", minWidth: 0 }}>
+      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:8px auto}.contract-document table{width:100%;border-collapse:collapse;margin:6px 0;border:none!important}.contract-document th,.contract-document td{border:none!important;background:transparent;padding:2px 8px 2px 0;vertical-align:top;text-align:left}.contract-document td>div[style*="margin-left"]{margin-left:0!important}.contract-rich-text{font-size:14px;line-height:1.6;color:#222}`}</style>
+      {showTitle && heading ? <h2 style={{ margin: "0 0 16px", fontSize: 22 }}>{heading}</h2> : null}
       {(contract.blocks || []).map((block) => (
         <ContractBlockPreview
           key={block.id}
@@ -1228,9 +1233,10 @@ function buildSignedContractHtml(settings, tokenMap, signatures) {
   const contract = coerceContractTemplate(settings);
   const escape = escapeHtmlText;
   const tableStyles = [
-    "table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}",
-    "th,td{border:1px solid #bbb;padding:6px 8px;vertical-align:top;text-align:left}",
-    "th{background:#f3f3f3;font-weight:700}",
+    "table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;border:none}",
+    "th,td{border:none;padding:3px 8px 3px 0;vertical-align:top;text-align:left;background:transparent}",
+    "th{font-weight:700}",
+    "p{margin:0 0 10px}",
   ].join("");
   const parts = [`<h1>${escape(contract.title)}</h1>`];
   (contract.blocks || []).forEach((block) => {
@@ -1395,6 +1401,7 @@ export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap 
           tokenMap={tokenMap}
           signatures={signatures}
           interactive
+          showTitle={false}
           onSignatureChange={setSignature}
           variant={variant}
         />
