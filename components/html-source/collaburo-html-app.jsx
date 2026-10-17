@@ -6472,12 +6472,20 @@ function FieldRulesEditor({ field, allFields = [], onChange, actions = FIELD_RUL
   );
 }
 
-function FieldRuleFieldset({ disabled, children }) {
+function FieldRuleFieldset({ disabled, disabledHint = "", children }) {
   return (
-    <fieldset className={"cv-rule-fieldset" + (disabled ? " is-disabled" : "")} disabled={!!disabled}>
-      {children}
-    </fieldset>
+    <>
+      <fieldset className={"cv-rule-fieldset" + (disabled ? " is-disabled" : "")} disabled={!!disabled}>
+        {children}
+      </fieldset>
+      {disabled && disabledHint ? <div className="cv-rule-disabled-hint">{disabledHint}</div> : null}
+    </>
   );
+}
+
+function fieldRuleDisabledHint(field) {
+  if (!/not\s*for\s*profit/i.test(String(field?.label || ""))) return "";
+  return "Enter an organization name to enable this option.";
 }
 
 // ---------------- Nested Options editor (4 levels: options → sub-options → selections → specifications) ----------------
@@ -11963,7 +11971,9 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
     if (selectedIds.length !== initialSelectedVenueIds.length) setSelectedIds(selectedIds);
   }, []);
   const venueBlockers = (venue) => (step.venues || []).filter((other) => selectedIds.includes(other.id) && venuesExcludeEachOther(venue, other));
+  const userTouchedVenuesRef = React.useRef(selectedIds.length > 0);
   const toggleVenue = (id) => {
+    userTouchedVenuesRef.current = true;
     if (selectedIds.includes(id)) {
       setSelectedIds(selectedIds.filter((venueId) => venueId !== id));
       return;
@@ -12107,6 +12117,13 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
       setVenueSubSpaceId(rec.venue.id, rec.subSpace.id);
     }
   };
+  // Auto-apply once while the guest has not picked a venue yet. Never overwrite a manual choice.
+  React.useEffect(() => {
+    if (!rec?.venue || overCapacity(rec.venue)) return;
+    if (userTouchedVenuesRef.current) return;
+    if (selectedIds.length > 0) return;
+    applyRecommendation();
+  }, [rec?.venue?.id, rec?.subSpace?.id, attendeeCount, eventType, selectedIds.length]);
 
   // --- Price calculator (auto-select best plan) ---
   const calcPriceForVenue = (venue) => calcPriceForBooking(venue, bookingByVenue[venue.id] || {});
@@ -12955,7 +12972,7 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
               {/* Radio list */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="cv-layout-radio-list" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {area.layouts.map((layout) => (
                   <label key={layout.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer", padding: "6px 0" }}>
                     <input type="radio" name={"layout_" + area.id} checked={chosenId === layout.id} onChange={() => selectLayout(area.id, layout.id)} style={{ accentColor: "var(--accent)", marginTop: 2 }} />
@@ -14155,12 +14172,26 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
                 const label = tile.type === "group" ? tile.field.label : tile.item.name.replace(/Table$/, "Tables");
                 const img = tile.type === "item" ? rentalItemImage(tile.item) : rentalGroupTileImage(tile.items, tile.field.rentalGroup || tile.field.label);
                 return (
-                  <div key={tile.key} className={"cv-rental-pick" + (selected ? " sel" : "")} onClick={() => toggleTile(tile)}>
-                    <input className="cv-rental-pick-check" type="checkbox" checked={selected} readOnly />
+                  <div
+                    key={tile.key}
+                    className={"cv-rental-pick" + (selected ? " sel" : "")}
+                    role="checkbox"
+                    aria-checked={selected}
+                    aria-label={label}
+                    tabIndex={0}
+                    onClick={() => toggleTile(tile)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleTile(tile);
+                      }
+                    }}
+                  >
+                    <input className="cv-rental-pick-check" type="checkbox" checked={selected} readOnly tabIndex={-1} aria-hidden="true" />
                     <div className="cv-rental-pick-thumb">
-                      {img ? <img src={img} alt={label} /> : <span style={{ fontSize: 11, color: "#777", fontWeight: 700 }}>{label}</span>}
+                      {img ? <img src={img} alt="" /> : <span style={{ fontSize: 11, color: "#777", fontWeight: 700 }} aria-hidden="true">{label}</span>}
                     </div>
-                    <div className="cv-rental-pick-name">
+                    <div className="cv-rental-pick-name" aria-hidden="true">
                       {label}
                       {tile.type === "item" && <RentalInfoIcon text={tile.item.infoText} imageUrl={tile.item.infoImageUrl} images={rentalTooltipImages(tile.item)} labels={rentalTooltipLabels(tile.item)} />}
                       {tile.type === "item" && rentalRequiresDelivery(tile.item) && <DeliveryIndicator />}
@@ -16175,7 +16206,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                               className={fieldWrapClassName(f.id, fieldError)}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
-                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
+                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled} disabledHint={fieldRuleState(f).disabled ? fieldRuleDisabledHint(f) : ""}>
                                 <CVField f={ruleAwareField(f)} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
                               </FieldRuleFieldset>
                               {renderFieldError(f.id)}
@@ -16215,7 +16246,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                               className={fieldWrapClassName(f.id, fieldError)}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
-                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
+                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled} disabledHint={fieldRuleState(f).disabled ? fieldRuleDisabledHint(f) : ""}>
                                 <CVField f={ruleAwareField(f)} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
                               </FieldRuleFieldset>
                               {renderFieldError(f.id)}
@@ -16255,7 +16286,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                               className={fieldWrapClassName(f.id, fieldError)}
                               style={wide ? { gridColumn: "1 / -1" } : {}}
                             >
-                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
+                              <FieldRuleFieldset disabled={fieldRuleState(f).disabled} disabledHint={fieldRuleState(f).disabled ? fieldRuleDisabledHint(f) : ""}>
                                 <CVField f={ruleAwareField(f)} value={answers[f.id]} onChange={(v) => setAnswer(f.id, v)} fullWidth={wide} stepType={step.stepType} guestCount={guestCount} autoDeliveryLines={checkoutCostData.deliveryLines} emailVerification={emailVerificationPropsFor(f)} adminEditMode={adminEditMode} />
                               </FieldRuleFieldset>
                               {renderFieldError(f.id)}
@@ -16300,7 +16331,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 	                                  className={fieldWrapClassName(f.id, fieldError)}
 	                                  style={wide ? { gridColumn: "1 / -1" } : {}}
 	                                >
-	                                  <FieldRuleFieldset disabled={fieldRuleState(f).disabled}>
+	                                  <FieldRuleFieldset disabled={fieldRuleState(f).disabled} disabledHint={fieldRuleState(f).disabled ? fieldRuleDisabledHint(f) : ""}>
 	                                    <CVField
 	                                      f={ruleAwareField(f)}
 	                                      value={answers[f.id]}
