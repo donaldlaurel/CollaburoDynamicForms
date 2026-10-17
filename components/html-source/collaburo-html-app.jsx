@@ -12011,8 +12011,18 @@ function VenuePreviewBody({ step, answers, allSteps, onVenueCost, onAnswer, vali
     setDateWarningByVenue((prev) => ({ ...prev, [venueId]: value || "" }));
   };
 
+  const venueBookingsHaveDates = (bookings) => Object.values(bookings || {}).some((booking) => booking && (booking.startDate || booking.startTime || booking.endDate || booking.endTime));
+  // Adopt draft bookings if local state mounted empty (e.g. legacy request.bookingDateTime hydration).
   React.useEffect(() => {
-    if (onAnswer) onAnswer("_venueBookings", bookingByVenue);
+    const incoming = answers._venueBookings || {};
+    if (!venueBookingsHaveDates(incoming)) return;
+    setBookingByVenue((prev) => (venueBookingsHaveDates(prev) ? prev : incoming));
+  }, [JSON.stringify(answers._venueBookings)]);
+  React.useEffect(() => {
+    if (!onAnswer) return;
+    // Don't push an empty local map over draft bookings that arrived from request.bookingDateTime.
+    if (!venueBookingsHaveDates(bookingByVenue) && venueBookingsHaveDates(answers._venueBookings)) return;
+    onAnswer("_venueBookings", bookingByVenue);
   }, [JSON.stringify(bookingByVenue)]);
   React.useEffect(() => {
     if (onAnswer) onAnswer("_venueSubSpaces", subSpaceByVenue);
@@ -18998,6 +19008,86 @@ function layoutSelectionsFromAnswers(steps = [], answers = {}) {
     .filter(Boolean);
 }
 
+function bookingHasDateFields(booking = {}) {
+  return !!(booking && (booking.startDate || booking.startTime || booking.endDate || booking.endTime));
+}
+
+function isoDateFromLocalDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function isoTimeFromLocalDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function bookingFieldsFromCalendarRange(range) {
+  if (!range?.start) return null;
+  const endInclusive = range.allDay ? new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate() - 1) : range.end;
+  return {
+    startDate: isoDateFromLocalDate(range.start),
+    startTime: range.allDay ? "" : isoTimeFromLocalDate(range.start),
+    endDate: isoDateFromLocalDate(endInclusive || range.start),
+    endTime: range.allDay ? "" : isoTimeFromLocalDate(range.end),
+  };
+}
+
+function bookingsMapFromVenueCost(cost) {
+  if (!cost || typeof cost !== "object") return {};
+  const rows = Array.isArray(cost.venueCosts) ? cost.venueCosts : cost.venueId ? [cost] : [];
+  return Object.fromEntries(rows.filter((row) => row?.venueId).map((row) => [String(row.venueId), row.booking || {}]));
+}
+
+// Progress list / calendar use request.bookingDateTime text; the venue step needs
+// structured _venueBookings. Rebuild those fields when opening admin/client edit.
+function venueBookingsFromRequestDateTime(text = "", space = "", venues = []) {
+  const byVenueId = {};
+  const venueByName = new Map((venues || []).map((venue) => [String(venue.name || "").trim().toLowerCase(), venue]));
+  parseBookingCalendarRanges(text, space).forEach((range) => {
+    const fields = bookingFieldsFromCalendarRange(range);
+    if (!fields?.startDate) return;
+    const roomNames = String(range.room || "").split(/\s*,\s*/).map((name) => name.trim().toLowerCase()).filter(Boolean);
+    let matched = roomNames.map((name) => venueByName.get(name)).filter(Boolean);
+    if (!matched.length && venues.length === 1) matched = [venues[0]];
+    matched.forEach((venue) => {
+      const current = byVenueId[venue.id];
+      if (!bookingHasDateFields(current)) {
+        byVenueId[venue.id] = { ...fields };
+        return;
+      }
+      const extras = Array.isArray(current.additionalDates) ? [...current.additionalDates] : [];
+      extras.push({ id: `imported_${venue.id}_${extras.length + 1}`, ...fields });
+      byVenueId[venue.id] = { ...current, multipleDates: true, additionalDates: extras };
+    });
+  });
+  return byVenueId;
+}
+
+function hydrateVenueBookingsForDraft(existing = {}, request = {}, venues = [], venueCost = null) {
+  const fromAnswers = existing && typeof existing === "object" ? existing : {};
+  const fromCost = bookingsMapFromVenueCost(venueCost);
+  const fromText = venueBookingsFromRequestDateTime(request.bookingDateTime, request.space, venues);
+  const venueIds = new Set([
+    ...Object.keys(fromAnswers),
+    ...Object.keys(fromCost),
+    ...Object.keys(fromText),
+    ...(venues || []).map((venue) => String(venue.id)),
+  ]);
+  const next = { ...fromAnswers };
+  venueIds.forEach((venueId) => {
+    if (bookingHasDateFields(next[venueId])) return;
+    if (bookingHasDateFields(fromCost[venueId])) {
+      next[venueId] = { ...(next[venueId] || {}), ...fromCost[venueId] };
+      return;
+    }
+    if (bookingHasDateFields(fromText[venueId])) {
+      next[venueId] = { ...(next[venueId] || {}), ...fromText[venueId] };
+    }
+  });
+  return next;
+}
+
 function createProgressRecordFromSubmission(payload = {}) {
   const steps = payload.steps || [];
   const answers = payload.answers || {};
@@ -19199,10 +19289,21 @@ function buildClientDraftFromProgressRecord(record, steps = []) {
     : answers._selectedVenueId
     ? [String(answers._selectedVenueId)]
     : [];
-  const selectedVenues = allVenues.filter((venue) =>
+  let selectedVenues = allVenues.filter((venue) =>
     savedVenueIds.includes(String(venue.id)) || requestedVenueNames.includes(String(venue.name || "").trim().toLowerCase())
   );
   const savedVenueCost = record.venueCost && typeof record.venueCost === "object" ? cloneData(record.venueCost) : null;
+  // Legacy imports (and older saves) only store human-readable request.bookingDateTime.
+  // The venue date inputs read answers._venueBookings — hydrate those before edit opens.
+  answers._venueBookings = hydrateVenueBookingsForDraft(
+    answers._venueBookings,
+    request,
+    selectedVenues.length ? selectedVenues : allVenues,
+    savedVenueCost
+  );
+  if (!selectedVenues.length) {
+    selectedVenues = allVenues.filter((venue) => bookingHasDateFields(answers._venueBookings?.[venue.id]));
+  }
   const savedSpaceLines = record.costs?.spaceLines || [];
   const rebuiltVenueCosts = selectedVenues.map((venue, index) => {
     const lines = savedSpaceLines.filter((line) => String(line.group || "").trim().toLowerCase() === String(venue.name || "").trim().toLowerCase());
