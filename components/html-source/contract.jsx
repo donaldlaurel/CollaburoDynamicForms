@@ -220,13 +220,13 @@ function repairContractCenterBleed(body = "") {
   );
   // Extractor duplicated section 4.3 (raw URL version + "Event Insurance Policy" link version).
   s = s.replace(
-    /(<strong\b[^>]*>\s*4\.3\s*<\/strong>[\s\S]*?clarify\.\s*)(?:<br\s*\/?>\s*)*<strong\b[^>]*>\s*4\.3\s*<\/strong>[\s\S]*?clarify\.\s*/gi,
+    /(<strong\b[^>]*>\s*4\.3\s*<\/strong>[\s\S]*?clarify\.\s*)(?:<br\s*\/?>\s*)*<strong\b[^>]*>\s*4\.3\s*<\/strong>[\s\S]*?clarify\.\s*(?:<br\s*\/?>\s*)*/gi,
     "$1<br/><br/>"
   );
   // Fallback: if two 4.3 headings remain, drop from the second through the next 4.4/5. heading.
   s = s.replace(
-    /(<strong\b[^>]*>\s*4\.3\s*<\/strong>[\s\S]*?)(<strong\b[^>]*>\s*4\.3\s*<\/strong>[\s\S]*?)(?=<strong\b[^>]*>\s*(?:4\.4|5\.)\s*)/i,
-    "$1"
+    /(<strong\b[^>]*>\s*4\.3\s*<\/strong>[\s\S]*?)(?:<br\s*\/?>\s*)*(<strong\b[^>]*>\s*4\.3\s*<\/strong>[\s\S]*?)(?=<strong\b[^>]*>\s*(?:4\.4|5\.)\s*)/i,
+    "$1<br/><br/>"
   );
   return s;
 }
