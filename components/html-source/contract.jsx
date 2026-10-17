@@ -202,11 +202,18 @@ function normalizeContractBlock(block = {}) {
   };
 }
 
+function resolveContractTokenValue(name, value) {
+  if (value == null) return null;
+  let text = String(value);
+  if (String(name || "") === "Special_Notes") text = cleanContractSpecialNotes(text);
+  return text;
+}
+
 function fillContractTokens(text, tokenMap = {}) {
   return String(text || "").replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}?/g, (token, name) => {
     const canonical = `{{${name}}}`;
-    const value = tokenMap[canonical];
-    return value == null ? token : String(value);
+    const resolved = resolveContractTokenValue(name, tokenMap[canonical]);
+    return resolved == null ? token : resolved;
   });
 }
 
@@ -244,9 +251,8 @@ function normalizeLegacyContractHtml(html = "") {
 function fillContractTokensHtml(html, tokenMap = {}) {
   return String(html || "").replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}?/g, (token, name) => {
     const canonical = `{{${name}}}`;
-    const value = tokenMap[canonical];
-    if (value == null) return token;
-    const text = String(value);
+    const text = resolveContractTokenValue(name, tokenMap[canonical]);
+    if (text == null) return token;
     // Legacy notes / cost dumps often contain real HTML — inject, then sanitize.
     if (looksLikeHtml(text)) return normalizeLegacyContractHtml(text);
     return escapeHtmlText(text).replace(/\n/g, "<br/>");
@@ -426,10 +432,21 @@ function sanitizeContractHtml(html = "") {
         if (!/^\d{1,2}$/.test(attr.value || "")) node.removeAttribute(attr.name);
         return;
       }
+      if (name === "class" && node.tagName === "TABLE") {
+        const cls = String(attr.value || "").toLowerCase();
+        if (/\bborder|\btable-bordered\b/.test(cls)) {
+          node.setAttribute("data-bordered", "1");
+        }
+        node.removeAttribute("class");
+        return;
+      }
       if (name === "border" && node.tagName === "TABLE") {
+        const borderVal = String(attr.value || "").trim();
+        if (borderVal && borderVal !== "0") node.setAttribute("data-bordered", "1");
         node.removeAttribute("border");
         return;
       }
+      if (name === "data-bordered" && node.tagName === "TABLE") return;
       if (name === "type" && (node.tagName === "OL" || node.tagName === "UL")) return;
       node.removeAttribute(attr.name);
     });
@@ -437,12 +454,36 @@ function sanitizeContractHtml(html = "") {
     Array.from(node.childNodes).forEach(scrubNode);
   };
 
+  // Mark addendum-style bordered tables before attribute scrub drops Bootstrap classes.
+  root.querySelectorAll("table").forEach((table) => {
+    const cls = String(table.getAttribute("class") || "").toLowerCase();
+    const border = String(table.getAttribute("border") || "").trim();
+    if (/\bborder|\btable-bordered\b/.test(cls) || (border && border !== "0")) {
+      table.setAttribute("data-bordered", "1");
+    }
+  });
+
   // First pass: scrub known markup
   Array.from(root.childNodes).forEach(scrubNode);
   // Second pass: legacy/import dumps often leave raw tags as text (e.g. Special Notes)
   rehydrateHtmlTextNodes(root);
   Array.from(root.childNodes).forEach(scrubNode);
   return root.innerHTML;
+}
+
+/** Strip legacy-import dump blocks that collaburo.space never shows in Special Notes. */
+export function cleanContractSpecialNotes(notes = "") {
+  let s = String(notes || "");
+  const cutMarkers = [
+    /\n?Old booking details:\s*/i,
+    /\n?Contract Space Rental Items:\s*/i,
+    /\n?Contract Space Contents:\s*/i,
+  ];
+  cutMarkers.forEach((re) => {
+    const match = re.exec(s);
+    if (match && match.index != null) s = s.slice(0, match.index);
+  });
+  return s.replace(/\s+$/g, "").trim();
 }
 
 function contractBodyDisplayHtml(body = "", tokenMap = {}) {
@@ -820,16 +861,16 @@ function ContractBlockPreview({ block, tokenMap = {}, signatures = {}, interacti
   }
   if (block.type === "paragraph") {
     return (
-      <div className="contract-block contract-block-paragraph" style={{ marginBottom: 28 }}>
-        {block.title ? <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>{fillContractTokens(block.title, tokenMap)}</h3> : null}
+      <div className="contract-block contract-block-paragraph" style={{ marginBottom: 16 }}>
+        {block.title ? <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>{fillContractTokens(block.title, tokenMap)}</h3> : null}
         <ContractRichTextDisplay value={block.body} tokenMap={tokenMap} />
       </div>
     );
   }
   if (block.type === "image") {
     return (
-      <div className="contract-block contract-block-image" style={{ marginBottom: 28 }}>
-        {block.label ? <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 8 }}>{block.label}</div> : null}
+      <div className="contract-block contract-block-image" style={{ marginBottom: 16 }}>
+        {block.label ? <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>{block.label}</div> : null}
         {block.url
           ? <img src={block.url} alt={block.alt || ""} style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid var(--line)" }} />
           : <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 8, padding: 24, color: "var(--ink-3)", textAlign: "center" }}>No image</div>}
@@ -839,8 +880,8 @@ function ContractBlockPreview({ block, tokenMap = {}, signatures = {}, interacti
   if (block.type === "signature") {
     const signedUrl = signatures[block.id] || (block.role === "owner" ? block.ownerImageUrl : "");
     return (
-      <div className="contract-block contract-block-signature" style={{ marginTop: 8, marginBottom: 24, border: "1px solid var(--line)", borderRadius: 10, padding: "16px 18px", background: "#fff" }}>
-        <div style={{ fontWeight: 700, marginBottom: 10 }}>{block.label}{block.required ? <span style={{ color: "var(--danger)" }}> *</span> : null}</div>
+      <div className="contract-block contract-block-signature" style={{ marginTop: 12, marginBottom: 18, border: "1px solid #ced4da", borderRadius: 4, padding: "12px 14px", background: "#fff" }}>
+        <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>{block.label}{block.required ? <span style={{ color: "var(--danger)" }}> *</span> : null}</div>
         {block.role === "owner" ? (
           signedUrl
             ? <img src={signedUrl} alt="Owner signature" style={{ maxWidth: 280, maxHeight: 120, objectFit: "contain" }} />
@@ -882,8 +923,8 @@ export function ContractDocumentView({
   const firstClientSignature = firstClientId ? signatures[firstClientId] || "" : "";
   const heading = title || contract.title;
   return (
-    <div className={"contract-document" + (interactive ? " contract-document-interactive" : "")} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: interactive ? "36px 40px" : 22, maxHeight: interactive ? undefined : 420, overflow: interactive ? "visible" : "auto", minWidth: 0 }}>
-      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:12px auto}.contract-document table{width:100%;border-collapse:collapse;margin:12px 0 18px;border:none!important}.contract-document th,.contract-document td{border:none!important;background:transparent;padding:4px 10px 4px 0;vertical-align:top;text-align:left}.contract-document td>div[style*="margin-left"]{margin-left:0!important}.contract-document ul,.contract-document ol{margin:8px 0 14px 1.25em;padding:0}.contract-document li{margin:4px 0;line-height:1.55}.contract-rich-text{font-size:14.5px;line-height:1.7;color:#222}.contract-document-interactive .contract-block-paragraph{padding-bottom:4px}`}</style>
+    <div className={"contract-document" + (interactive ? " contract-document-interactive" : "")} style={{ background: "#fff", border: interactive ? "none" : "1px solid var(--line)", borderRadius: interactive ? 0 : 12, padding: interactive ? "12px 9px 28px" : 22, maxHeight: interactive ? undefined : 420, overflow: interactive ? "visible" : "auto", minWidth: 0, maxWidth: interactive ? 720 : undefined, margin: interactive ? "0 auto" : undefined }}>
+      <style>{`.contract-document img{max-width:100%;height:auto;display:block;margin:10px auto}.contract-document table{width:100%;border-collapse:collapse;margin:4px 0 8px;border:none}.contract-document th,.contract-document td{border:none;background:transparent;padding:1px 4px 1px 0;vertical-align:top;text-align:left}.contract-document table[data-bordered="1"],.contract-document table[data-bordered="1"] th,.contract-document table[data-bordered="1"] td{border:1px solid #212529!important;padding:4px 6px}.contract-document ul,.contract-document ol{margin:4px 0 8px 1.4em;padding:0}.contract-document li{margin:2px 0;line-height:1.5}.contract-rich-text{font-size:12px;line-height:1.5;color:#212529;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}.contract-document-interactive .contract-block-paragraph{margin-bottom:16px}`}</style>
       {showTitle && heading ? <h2 style={{ margin: "0 0 16px", fontSize: 22 }}>{heading}</h2> : null}
       {(contract.blocks || []).map((block) => (
         <ContractBlockPreview
@@ -1285,12 +1326,14 @@ function buildSignedContractHtml(settings, tokenMap, signatures) {
   const contract = coerceContractTemplate(settings);
   const escape = escapeHtmlText;
   const tableStyles = [
-    "table{width:100%;border-collapse:collapse;margin:12px 0 18px;font-size:14px;border:none}",
-    "th,td{border:none;padding:4px 10px 4px 0;vertical-align:top;text-align:left;background:transparent}",
+    "body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;font-size:12px;line-height:1.5;color:#212529}",
+    "table{width:100%;border-collapse:collapse;margin:4px 0 8px;font-size:12px;border:none}",
+    "th,td{border:none;padding:1px 4px 1px 0;vertical-align:top;text-align:left;background:transparent}",
+    "table[data-bordered='1'],table[data-bordered='1'] th,table[data-bordered='1'] td{border:1px solid #212529;padding:4px 6px}",
     "th{font-weight:700}",
-    "p{margin:0 0 14px;line-height:1.7}",
-    "ul,ol{margin:8px 0 16px 1.25em;padding:0}",
-    "li{margin:5px 0}",
+    "p{margin:0 0 8px;line-height:1.5}",
+    "ul,ol{margin:4px 0 8px 1.4em;padding:0}",
+    "li{margin:2px 0}",
   ].join("");
   const parts = [`<h1>${escape(contract.title)}</h1>`];
   (contract.blocks || []).forEach((block) => {
@@ -1445,9 +1488,9 @@ export function ContractSignView({ record, siteSettings, tokenMap: liveTokenMap 
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--surface-2, #f5f5f5)", padding: "32px 16px 140px" }}>
-      <div style={{ maxWidth: 880, margin: "0 auto" }}>
-        <div style={{ marginBottom: 18, color: "var(--ink-3)", fontSize: 13 }}>
+    <div style={{ minHeight: "100vh", background: "#fff", padding: "16px 12px 140px" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
+        <div style={{ marginBottom: 10, color: "#6c757d", fontSize: 12 }}>
           Booking {record.bookingCode || record.id} · {record.client?.name || "Client"}
         </div>
         <ContractDocumentView

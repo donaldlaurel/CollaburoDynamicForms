@@ -21074,7 +21074,16 @@ function emailTokenMap(record = {}) {
     "{{No_One_On_Site}}": record.request?.noOneOnSite || "",
     "{{Set_up_Service}}": record.adminSections?.serviceNotes || "",
     "{{Clean_up_Service}}": record.adminSections?.serviceNotes || "",
-    "{{Special_Notes}}": record.adminSections?.specialNotes || record.adminSections?.instructions || "",
+    "{{Special_Notes}}": (() => {
+      const raw = record.adminSections?.specialNotes || record.adminSections?.instructions || "";
+      // Legacy import stores diagnostic dumps under Special Notes; collaburo.space never shows those.
+      let notes = String(raw || "");
+      ["Old booking details:", "Contract Space Rental Items:", "Contract Space Contents:"].forEach((marker) => {
+        const idx = notes.toLowerCase().indexOf(marker.toLowerCase());
+        if (idx >= 0) notes = notes.slice(0, idx);
+      });
+      return notes.trim();
+    })(),
     "{{Catering_Specifics}}": record.adminSections?.cateringSpecifics || "",
     "{{Floor_Layout_Instructions}}": record.adminSections?.floorLayoutInstructions || record.layoutSelections?.floorNotes || "",
     "{{Stage_Layout_Instructions}}": record.adminSections?.stageLayoutInstructions || record.layoutSelections?.stageNotes || "",

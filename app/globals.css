@@ -1250,45 +1250,52 @@ a { color: inherit; text-decoration: none; }
   font-size:inherit;
   white-space:normal;
 }
-/* Display/sign contracts: layout tables without grid borders */
+/* Match collaburo.space/contract_s.php: compact body, borderless layout tables */
+.contract-rich-text{
+  font-size:12px;
+  line-height:1.5;
+  color:#212529;
+}
 .contract-rich-text table,
 .contract-rich-text th,
 .contract-rich-text td{
-  border:none!important;
+  border:none;
   background:transparent;
 }
 .contract-rich-text th,.contract-rich-text td{
-  padding:4px 10px 4px 0;
+  padding:1px 4px 1px 0;
   vertical-align:top;
   text-align:left;
 }
-/* Legacy template checkbox rows often use margin-left inside cells */
-.contract-rich-text td > div[style*="margin-left"]{
-  margin-left:0!important;
+/* Addendum rate tables keep visible borders (legacy table-bordered) */
+.contract-rich-text table[data-bordered="1"],
+.contract-rich-text table[data-bordered="1"] th,
+.contract-rich-text table[data-bordered="1"] td{
+  border:1px solid #212529!important;
+  padding:4px 6px;
 }
 .contract-rich-text th{font-weight:700}
-.contract-rich-text{
-  font-size:14.5px;
-  line-height:1.7;
-}
-.contract-rich-text p{margin:0 0 14px}
-.contract-rich-text table{margin:12px 0 18px}
+.contract-rich-text p{margin:0 0 8px}
+.contract-rich-text table{margin:4px 0 8px}
 .contract-rich-text ul,.contract-rich-text ol{
-  margin:8px 0 16px 1.25em;
+  margin:4px 0 8px 1.4em;
   padding:0;
 }
-.contract-rich-text li{margin:5px 0}
+.contract-rich-text li{margin:2px 0}
 .contract-rich-text h1,.contract-rich-text h2,.contract-rich-text h3,
 .contract-rich-text h4,.contract-rich-text h5,.contract-rich-text h6{
-  margin:0 0 16px;
+  margin:10px 0 8px;
   line-height:1.35;
   font-weight:700;
 }
 .contract-document-interactive{
-  box-shadow:0 10px 36px rgba(0,0,0,.06);
+  max-width:720px;
+  margin-left:auto;
+  margin-right:auto;
+  box-shadow:none;
 }
 .contract-block-signature{
-  box-shadow:0 1px 0 rgba(0,0,0,.02);
+  box-shadow:none;
 }
 /* Editors keep visible cell borders so admins can see structure while editing */
 .contract-rich-editor-input th,.contract-rich-editor-input td,
