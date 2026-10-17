@@ -92,26 +92,27 @@ function textToHtml(text = "") {
     .join("");
 }
 
-function senderSetupError(from = "") {
-  const domain = String(from || "").split("@").pop()?.replace(/[>\s]/g, "") || "";
-  return [
-    "Verification email is not fully configured.",
-    domain
-      ? `The sender address is using ${domain}. Resend requires Collaburo to verify one sending domain, such as collaburo.com. Visitor email domains do not need verification.`
-      : "Set EMAIL_VERIFICATION_FROM to an address on Collaburo's verified sending domain, such as bookings@collaburo.com.",
-  ].join(" ");
+const VISITOR_VERIFICATION_SETUP_ERROR =
+  "We couldn’t send a verification email right now. You can still submit your request; pricing unlocks after email verification.";
+
+function senderSetupError(_from = "") {
+  // Keep visitor-facing copy free of Resend/domain/ops jargon. Full setup detail belongs in server logs.
+  return VISITOR_VERIFICATION_SETUP_ERROR;
 }
 
 function resendSenderError(message = "", from = "") {
   const text = String(message || "");
   const domain = String(from || "").split("@").pop()?.replace(/[>\s]/g, "") || "";
   if (/testing emails to your own email address/i.test(text)) {
-    return "Resend test mode can only send verification emails to the email address on your Resend account, or to Resend test addresses like delivered@resend.dev. To send to Gmail/Yahoo/client emails, verify one real sending domain in Resend and update EMAIL_VERIFICATION_FROM.";
+    return VISITOR_VERIFICATION_SETUP_ERROR;
   }
   if (domain === "resend.dev" || /domain is not verified|verify your domain|resend\.com\/domains/i.test(text)) {
     return senderSetupError(from);
   }
-  return text || "Resend rejected the verification email.";
+  if (/not configured|RESEND_API_KEY|api key/i.test(text)) {
+    return VISITOR_VERIFICATION_SETUP_ERROR;
+  }
+  return text || VISITOR_VERIFICATION_SETUP_ERROR;
 }
 
 function senderDomainIsUnverifiedPlaceholder(from = "") {
@@ -122,11 +123,13 @@ function senderDomainIsUnverifiedPlaceholder(from = "") {
 async function sendVerificationEmail(email, link) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    return { ok: false, error: "Resend is not configured. Add RESEND_API_KEY to the environment.", status: 501 };
+    console.error("[email-verification] RESEND_API_KEY is not configured");
+    return { ok: false, error: VISITOR_VERIFICATION_SETUP_ERROR, status: 501 };
   }
 
   const from = String(process.env.EMAIL_VERIFICATION_FROM || process.env.RESEND_FROM_EMAIL || "").trim();
   if (!from || senderDomainIsUnverifiedPlaceholder(from)) {
+    console.error("[email-verification] EMAIL_VERIFICATION_FROM is missing or still using an unverified placeholder domain:", from || "(empty)");
     return { ok: false, error: senderSetupError(from), status: 501 };
   }
   const subject = "Verify your email to view Collaburo pricing";
