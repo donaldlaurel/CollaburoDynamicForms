@@ -3414,10 +3414,30 @@ function RentalInfoIcon({ text, imageUrl, images, labels }) {
         onFocus={showTip}
         onBlur={hideTipSoon}
       >
-        i
+        <span aria-hidden="true">i</span>
       </button>
       <RentalTipBubble tip={tip} tipStyle={tipStyle} keepTip={keepTip} hideTipSoon={hideTipSoon} images={imageList} labels={labels} text={text} />
     </>
+  );
+}
+
+/** Hover "i" chip that must not leak the letter into accessible names. */
+function InfoTrigger({ text = "", images = [], labels, style, tooltipStyle }) {
+  const imageList = Array.isArray(images) ? images.filter(Boolean) : [];
+  if (!text && imageList.length === 0) return null;
+  return (
+    <span
+      className="info-trigger"
+      style={style}
+      role="img"
+      aria-label={text ? "More information" : "Show information images"}
+    >
+      <span aria-hidden="true">i</span>
+      <span className="preview-tooltip" aria-hidden="true" style={tooltipStyle || (imageList.length ? { minWidth: 180 } : undefined)}>
+        {text ? <span className="preview-tooltip-text">{text}</span> : null}
+        {imageList.length > 0 ? <TooltipImages images={imageList} labels={labels} style={{ marginBottom: 4 }} /> : null}
+      </span>
+    </span>
   );
 }
 
@@ -6486,6 +6506,17 @@ function FieldRuleFieldset({ disabled, disabledHint = "", children }) {
 function fieldRuleDisabledHint(field) {
   if (!/not\s*for\s*profit/i.test(String(field?.label || ""))) return "";
   return "Enter an organization name to enable this option.";
+}
+
+function isWideClientField(field) {
+  if (!field) return false;
+  if (field.fullWidth) return true;
+  if (["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras", "phone", "file"].includes(field.type)) return true;
+  if (field.displayAs === "radio") return true;
+  const label = String(field.label || "");
+  if (label.length >= 28) return true;
+  if (/period of time|arrival time|blackboard|community organization|organization|expected guest/i.test(label)) return true;
+  return false;
 }
 
 // ---------------- Nested Options editor (4 levels: options → sub-options → selections → specifications) ----------------
@@ -11536,13 +11567,7 @@ function PreviewField({ f }) {
     <label style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
       <span>{f.label}{f.required && <span className="req"> *</span>}</span>
       {hasTooltip && (
-        <span className="info-trigger">
-          i
-          <span className="preview-tooltip">
-            {f.helpText && <span className="preview-tooltip-text">{f.helpText}</span>}
-            <TooltipImages images={fieldGalleryImages} labels={f.galleryImageLabels} />
-          </span>
-        </span>
+        <InfoTrigger text={f.helpText || ""} images={fieldGalleryImages} labels={f.galleryImageLabels} />
       )}
       {f.fieldDescription && (
         <span className="field-desc-preview" style={{ fontSize: descriptionFontSize(f) }}>{f.fieldDescription}</span>
@@ -11565,13 +11590,7 @@ function PreviewField({ f }) {
         <span style={{ fontSize: 12.5, position: "relative" }}>
           {f.label}{f.required && <span className="req"> *</span>}
           {hasTooltip && (
-            <span className="info-trigger" style={{ marginLeft: 5 }}>
-              i
-              <span className="preview-tooltip">
-                {f.helpText && <span className="preview-tooltip-text">{f.helpText}</span>}
-                <TooltipImages images={fieldGalleryImages} labels={f.galleryImageLabels} />
-              </span>
-            </span>
+            <InfoTrigger text={f.helpText || ""} images={fieldGalleryImages} labels={f.galleryImageLabels} style={{ marginLeft: 5 }} />
           )}
           {f.fieldDescription && (
             <span className="field-desc-preview" style={{ display: "block", marginTop: 2, fontSize: descriptionFontSize(f) }}>{f.fieldDescription}</span>
@@ -11618,7 +11637,7 @@ function PreviewField({ f }) {
                 <span>
                   {o.label}
                   {o.enablePrice && o.price ? <span style={{ color: "var(--accent)", marginLeft: 4, fontWeight: 600 }}>+${o.price}</span> : null}
-                  {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 4 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}<TooltipImages images={o.infoImages || []} labels={o.infoImageLabels} /></span></span>}
+                  <InfoTrigger text={o.infoText || ""} images={o.infoImages} labels={o.infoImageLabels} style={{ marginLeft: 4 }} />
                 </span>
               </label>
               {hasChildKey && o[hasChildKey] && (o[childKey] || []).length > 0 && (
@@ -11765,7 +11784,7 @@ function PreviewField({ f }) {
               <span>
                 <b style={{ fontSize: 12 }}>{o.label}</b>
                 {o.price !== null && <span style={{ color: "var(--accent)", marginLeft: 5, fontWeight: 700 }}>+${o.price.toFixed(2)}</span>}
-                {(o.infoText || (o.infoImages && o.infoImages.length > 0)) && <span className="info-trigger" style={{ marginLeft: 5 }}>i<span className="preview-tooltip">{o.infoText && <span className="preview-tooltip-text">{o.infoText}</span>}<TooltipImages images={o.infoImages || []} labels={o.infoImageLabels} /></span></span>}
+                <InfoTrigger text={o.infoText || ""} images={o.infoImages} labels={o.infoImageLabels} style={{ marginLeft: 5 }} />
                 {o.desc && <span style={{ display: "block", fontSize: descriptionFontSize(o), color: "var(--ink-3)", marginTop: 1 }}>{o.desc}</span>}
               </span>
             </label>
@@ -11842,12 +11861,7 @@ function PreviewField({ f }) {
           <input type="checkbox" defaultChecked style={{ accentColor: "var(--accent)" }} />
           <b>{f.label}{f.required && <span className="req"> *</span>}</b>
           {hasTooltip && (
-            <span className="info-trigger">i
-              <span className="preview-tooltip">
-                {f.helpText && <span className="preview-tooltip-text">{f.helpText}</span>}
-                <TooltipImages images={fieldGalleryImages} labels={f.galleryImageLabels} />
-              </span>
-            </span>
+            <InfoTrigger text={f.helpText || ""} images={fieldGalleryImages} labels={f.galleryImageLabels} />
           )}
           {f.fieldDescription && <span style={{ fontSize: descriptionFontSize(f), color: "var(--ink-3)" }}>({f.fieldDescription})</span>}
         </label>
@@ -16098,7 +16112,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         </>
       )}
 
-      <div className="cv-page">
+      <div className={"cv-page" + (isEditMode && !adminEditMode ? " is-editing" : "")}>
         {adminEditMode && (
           <div className="cv-admin-bar">
             <div className="cv-admin-bar-identity">
@@ -16197,7 +16211,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                     {normalVisibleFields.length > 0 && (
                       <div className="cv-fields-grid" style={{ marginTop: 20 }}>
                         {normalVisibleFields.map((f) => {
-                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
+                          const wide = isWideClientField(f);
                           const fieldError = fieldErrorFor(f.id);
                           return (
                             <div
@@ -16237,7 +16251,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                     {normalVisibleFields.length > 0 && (
                       <div className="cv-fields-grid" style={{ marginTop: 20 }}>
                         {normalVisibleFields.map((f) => {
-                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
+                          const wide = isWideClientField(f);
                           const fieldError = fieldErrorFor(f.id);
                           return (
                             <div
@@ -16277,7 +16291,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                     {normalVisibleFields.length > 0 && (
                       <div className="cv-fields-grid" style={{ marginTop: 20 }}>
                         {normalVisibleFields.map((f) => {
-                          const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
+                          const wide = isWideClientField(f);
                           const fieldError = fieldErrorFor(f.id);
                           return (
                             <div
@@ -16322,7 +16336,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 	                        {normalVisibleFields.length > 0 && (
 	                          <div className="cv-fields-grid">
 	                            {normalVisibleFields.map((f) => {
-	                              const wide = ["textarea", "radio", "multiselect", "toggle", "room", "addons", "separator", "spacer", "instructional", "checkbox", "dietary", "extras"].includes(f.type) || f.displayAs === "radio";
+	                              const wide = isWideClientField(f);
 	                              const fieldError = fieldErrorFor(f.id);
 	                              return (
 	                                <div
@@ -16906,18 +16920,9 @@ function CVRichTree({ items, level, displayAs, value, onChange, fieldId, depth, 
     }
   };
 
-  const renderInfoIcons = (it) => {
-    const hasImages = it.infoImages && it.infoImages.length > 0;
-    if (!it.infoText && !hasImages) return null;
-    return (
-      <span className="info-trigger" style={{ marginLeft: 6 }}>i
-        <span className="preview-tooltip" style={hasImages ? { minWidth: 180 } : undefined}>
-          {it.infoText && <span className="preview-tooltip-text">{it.infoText}</span>}
-          {hasImages && <TooltipImages images={it.infoImages} labels={it.infoImageLabels} style={{ marginBottom: 4 }} />}
-        </span>
-      </span>
-    );
-  };
+  const renderInfoIcons = (it) => (
+    <InfoTrigger text={it.infoText || ""} images={it.infoImages} labels={it.infoImageLabels} style={{ marginLeft: 6 }} />
+  );
 
   // Select dropdown rendering
   if (displayAs === "select") {
@@ -17003,11 +17008,7 @@ function CVRichTree({ items, level, displayAs, value, onChange, fieldId, depth, 
                 {/* For non-services steps, keep the (i) popover. For services, description shown inline below. */}
                 {!isServicesStep && renderInfoIcons(it)}
                 {isServicesStep && it.infoImages && it.infoImages.length > 0 && (
-                  <span className="info-trigger" style={{ marginLeft: 6 }}>i
-                    <span className="preview-tooltip" style={{ minWidth: 180 }}>
-                      <TooltipImages images={it.infoImages} labels={it.infoImageLabels} style={{ marginBottom: 4 }} />
-                    </span>
-                  </span>
+                  <InfoTrigger images={it.infoImages} labels={it.infoImageLabels} style={{ marginLeft: 6 }} />
                 )}
                 {!isServicesStep && (it.description || it.desc) && (
                   <span style={{ display: "block", color: "var(--ink-3)", fontSize: descriptionFontSize(it), lineHeight: 1.35, marginTop: 2 }}>
@@ -17676,13 +17677,7 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
   const hasTooltip = f.helpText || fieldGalleryImages.length > 0;
 
   const tooltipEl = hasTooltip ? (
-    <span className="info-trigger" style={{ marginLeft: 4 }}>
-      i
-      <span className="preview-tooltip">
-        {f.helpText && <span className="preview-tooltip-text">{f.helpText}</span>}
-        <TooltipImages images={fieldGalleryImages} labels={f.galleryImageLabels} />
-      </span>
-    </span>
+    <InfoTrigger text={f.helpText || ""} images={fieldGalleryImages} labels={f.galleryImageLabels} style={{ marginLeft: 4 }} />
   ) : null;
 
   const descEl = f.fieldDescription ? (
@@ -17709,18 +17704,14 @@ function CVField({ f, value, onChange, fullWidth, stepType, guestCount, autoDeli
       {descEl}
     </label>
   );
-  const optionInfoEl = (option) => {
-    const hasImages = option.infoImages && option.infoImages.length > 0;
-    if (!option.infoText && !hasImages) return null;
-    return (
-      <span className="info-trigger" style={{ marginLeft: 6 }}>i
-        <span className="preview-tooltip" style={hasImages ? { minWidth: 180 } : undefined}>
-          {option.infoText && <span className="preview-tooltip-text">{option.infoText}</span>}
-          {hasImages && <TooltipImages images={option.infoImages} labels={option.infoImageLabels} style={{ marginBottom: 4 }} />}
-        </span>
-      </span>
-    );
-  };
+  const optionInfoEl = (option) => (
+    <InfoTrigger
+      text={option.infoText || ""}
+      images={option.infoImages}
+      labels={option.infoImageLabels}
+      style={{ marginLeft: 6 }}
+    />
+  );
   const autoFieldDeliveryLines = fieldAutoDeliveryLines(f, autoDeliveryLines);
   const autoFieldDeliveryOn = autoFieldDeliveryLines.length > 0;
   const autoDeliveryNote = autoFieldDeliveryOn ? (
@@ -23064,7 +23055,7 @@ function BookingReadOnlyField({ field, value, previousValue, guestCount = 0 }) {
   const previousAnswer = answerToProgressText(previousValue);
   const changed = previousValue !== undefined && JSON.stringify(previousValue ?? null) !== JSON.stringify(value ?? null);
   const displayValue = answer || field.placeholder || "";
-  const wide = ["textarea", "radio", "multiselect", "dietary", "checkbox", "toggle", "file", "extras"].includes(field.type) || field.displayAs === "radio";
+  const wide = isWideClientField(field);
   return (
     <div className={`booking-readonly-field${wide ? " wide" : ""}`}>
       {isBoolean ? (

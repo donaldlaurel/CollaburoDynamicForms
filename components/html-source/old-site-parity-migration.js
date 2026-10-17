@@ -8,7 +8,7 @@
 
 import { OLD_SITE_TOOLTIPS } from "./old-site-tooltip-catalog";
 
-export const OLD_SITE_PARITY_VERSION = 3;
+export const OLD_SITE_PARITY_VERSION = 4;
 
 const SYS_VENUE_SOURCE = "__sys:venue";
 
@@ -157,6 +157,7 @@ export function migrateToOldSiteParity(input = {}) {
   if (currentVersion < 1) applyV1(state, parityContext(state), log);
   if (currentVersion < 2) applyV2(state, parityContext(state), log);
   if (currentVersion < 3) applyV3(state, parityContext(state), log);
+  if (currentVersion < 4) applyV4(state, parityContext(state), log);
 
   state.siteSettings = {
     ...(state.siteSettings || {}),
@@ -1152,5 +1153,99 @@ function applyV3(state, ctx, log) {
 
   if (touchedItems.size || fieldCount) {
     log(`Info tooltips: old-site photos and descriptions added to ${touchedItems.size} rental items (${choices} individual choices) and ${fieldCount} form fields/options.`);
+  }
+}
+
+function optionLabel(option) {
+  return typeof option === "string" ? option : String(option?.label || "");
+}
+
+function beverageOptionIsRich(option) {
+  return !!(option && typeof option === "object" && (option.hasSubOptions || (option.subOptions || []).length > 0));
+}
+
+/** Nest flat capacity radios under Hot/Cold Beverages when production data was flattened. */
+function repairFlatBeveragePackage(field) {
+  const options = Array.isArray(field?.options) ? field.options : [];
+  if (options.length < 3) return false;
+  if (options.some(beverageOptionIsRich)) return false;
+  const capacityIdxs = [];
+  let packageIdx = -1;
+  let noneIdx = -1;
+  options.forEach((option, index) => {
+    const label = optionLabel(option);
+    if (/up to\s+\d+\s+people/i.test(label)) capacityIdxs.push(index);
+    else if (/hot\s*\/\s*cold|beverage/i.test(label) && !/no beverage/i.test(label)) packageIdx = index;
+    else if (/no beverage/i.test(label)) noneIdx = index;
+  });
+  if (packageIdx < 0 || capacityIdxs.length === 0) return false;
+  const packageOption = typeof options[packageIdx] === "object" && options[packageIdx]
+    ? { ...options[packageIdx] }
+    : { label: optionLabel(options[packageIdx]) };
+  const subOptions = capacityIdxs.map((index) => {
+    const option = options[index];
+    return typeof option === "object" && option ? { ...option } : { label: optionLabel(option) };
+  });
+  packageOption.hasSubOptions = true;
+  packageOption.subOptions = subOptions;
+  const next = [packageOption];
+  if (noneIdx >= 0) {
+    const noneOption = options[noneIdx];
+    next.push(typeof noneOption === "object" && noneOption ? { ...noneOption } : { label: optionLabel(noneOption) });
+  } else {
+    options.forEach((option, index) => {
+      if (index === packageIdx || capacityIdxs.includes(index)) return;
+      next.push(option);
+    });
+  }
+  field.options = next;
+  if (!field.subOptionDisplayAs) field.subOptionDisplayAs = "radio";
+  if (!field.displayAs) field.displayAs = "radio";
+  return true;
+}
+
+function applyV4(state, ctx, log) {
+  const { fieldBy } = ctx;
+  const firstName = fieldBy("f1", /^first name$/i);
+  if (firstName && /^first name$/i.test(String(firstName.label || "").trim())) {
+    firstName.label = "Client First Name";
+    if (/^enter first name$/i.test(String(firstName.placeholder || "").trim())) {
+      firstName.placeholder = "Enter client first name";
+    }
+    log("Personal Details: renamed First Name to Client First Name.");
+  }
+  const lastName = fieldBy("f2", /^last name$/i);
+  if (lastName && /^last name$/i.test(String(lastName.label || "").trim())) {
+    lastName.label = "Client Last Name";
+    if (/^enter last name$/i.test(String(lastName.placeholder || "").trim())) {
+      lastName.placeholder = "Enter client last name";
+    }
+    log("Personal Details: renamed Last Name to Client Last Name.");
+  }
+
+  const beverage = fieldBy("f50", /beverage package/i);
+  if (beverage && repairFlatBeveragePackage(beverage)) {
+    log("Beverage package: nested guest-count options under Hot/Cold Beverages.");
+  }
+
+  const cateringYes = fieldBy("f53", /require catering/i);
+  const yesOption = (cateringYes?.options || []).find((option) => /yes, please provide/i.test(optionLabel(option)));
+  if (yesOption && typeof yesOption === "object" && /options for$/i.test(String(yesOption.label || "").trim())) {
+    yesOption.label = "Yes, please provide catering options for:";
+    log("Catering: clarified the yes-option label.");
+  }
+
+  const community = fieldBy("f8", /community organization/i);
+  if (community && String(community.fieldDescription || "").length > 160) {
+    community.fieldDescription = "(only for community groups with a public identity — sports team, theater, cultural group, or religious gathering that is not a registered not-for-profit; proof may be requested)";
+    log("Community Organization: shortened the help description.");
+  }
+
+  const gapField = fieldBy("f71", /period of time no one on site|gap when no one is on site/i);
+  if (gapField && /period of time no one on site/i.test(String(gapField.label || ""))) {
+    gapField.label = "Gap when no one is on site";
+    gapField.fullWidth = true;
+    if (isBlank(gapField.placeholder)) gapField.placeholder = "e.g. 2–4pm break between setup and guest arrival";
+    log("Additional Info: shortened the on-site gap field label.");
   }
 }
