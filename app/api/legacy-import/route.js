@@ -123,7 +123,7 @@ function importIntoMemory(mode, records, preflight = false) {
 
 async function repairDatabase(sql, records, preflight) {
   const rows = await sql`
-    select payload, updated_at
+    select payload
     from collaburo_app_config
     where key = ${APP_STATE_KEY}
   `;
@@ -134,22 +134,37 @@ async function repairDatabase(sql, records, preflight) {
     return NextResponse.json({ ok: false, error: capError(result.records.length), projected: result.records.length }, { status: 409 });
   }
   if (preflight) {
-    return NextResponse.json({ ok: true, mode: "repair", preflight: true, projected: result.records.length, ...result, records: undefined, source: "database" });
+    return NextResponse.json({
+      ok: true,
+      mode: "repair",
+      preflight: true,
+      projected: result.records.length,
+      added: result.added,
+      updated: result.updated,
+      conflicted: result.conflicted,
+      unchanged: result.unchanged,
+      conflictDetails: result.conflictDetails,
+      source: "database",
+    });
   }
 
+  // Same pattern as skip/overwrite: write the merged progress list in one
+  // transaction and gate the submissions sync on that write succeeding.
+  // Do not compare updated_at to a JS Date from a prior SELECT — Neon round-trips
+  // that value in a form that often fails equality even when nothing changed.
   const incomingIds = new Set(records.map((record) => String(record.id)));
   const finalRecords = result.records.filter((record) => incomingIds.has(String(record?.id || "")));
   const nextJson = JSON.stringify(result.records);
   const finalJson = JSON.stringify(finalRecords);
   const savedAt = new Date().toISOString();
-  const baseUpdatedAt = rows[0].updated_at;
   const [updated] = await sql.transaction([
     sql`
       update collaburo_app_config
       set payload = jsonb_set(payload, '{progressRecords}', ${nextJson}::jsonb, true)
             || jsonb_build_object('savedAt', ${savedAt}::text),
           updated_at = now()
-      where key = ${APP_STATE_KEY} and updated_at = ${baseUpdatedAt}
+      where key = ${APP_STATE_KEY}
+        and jsonb_array_length(${nextJson}::jsonb) <= ${MAX_PROGRESS_RECORDS}
       returning updated_at
     `,
     sql`
@@ -181,7 +196,7 @@ async function repairDatabase(sql, records, preflight) {
     `,
   ]);
   if (!updated.length) {
-    return NextResponse.json({ ok: false, error: "Bookings changed while the repair was running. Refresh and run the repair again." }, { status: 409 });
+    return NextResponse.json({ ok: false, error: NO_STATE_ERROR }, { status: 409 });
   }
   return NextResponse.json({
     ok: true,
