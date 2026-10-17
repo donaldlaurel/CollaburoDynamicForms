@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 import memory from "../../../lib/memory-store";
 import { MAX_PROGRESS_RECORDS } from "../../../lib/progress-records";
+import { mergeLegacyRepairBatch } from "../../../lib/legacy-import-merge";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -9,10 +10,11 @@ export const fetchCache = "force-no-store";
 
 const APP_STATE_KEY = "default";
 const MAX_RECORDS_PER_REQUEST = 100;
+const MAX_PREFLIGHT_RECORDS = MAX_PROGRESS_RECORDS;
 const NO_STATE_ERROR = "No saved admin state found. Click Save in the admin dashboard once, then import again.";
 // skip: keep existing bookings with the same id. overwrite: replace them with the
 // imported version. replace: delete every booking first (both tables), then import.
-const IMPORT_MODES = ["skip", "overwrite", "replace"];
+const IMPORT_MODES = ["skip", "overwrite", "replace", "repair"];
 
 function database() {
   return process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
@@ -20,13 +22,15 @@ function database() {
 
 function parseBody(body) {
   const mode = IMPORT_MODES.includes(body?.mode) ? body.mode : "skip";
+  const preflight = body?.preflight === true;
   const records = Array.isArray(body?.records) ? body.records : null;
   if (!records?.length) return { error: "No records to import." };
-  if (records.length > MAX_RECORDS_PER_REQUEST) return { error: `Send at most ${MAX_RECORDS_PER_REQUEST} records per request.` };
+  const limit = preflight ? MAX_PREFLIGHT_RECORDS : MAX_RECORDS_PER_REQUEST;
+  if (records.length > limit) return { error: `Send at most ${limit} records per request.` };
   const invalid = records.find((record) => !record || typeof record !== "object" || !/^legacy_\d+$/.test(String(record.id || "")));
   if (invalid) return { error: "Every imported record needs a legacy_<number> id." };
   const unique = Array.from(new Map(records.map((record) => [String(record.id), record])).values());
-  return { mode, records: unique };
+  return { mode, records: unique, preflight };
 }
 
 function capError(total) {
@@ -47,17 +51,36 @@ function submissionRow(record, fallbackDate) {
   };
 }
 
-function importIntoMemory(mode, records) {
+function projectedRecordCount(existing, mode, records) {
+  if (mode === "replace") return records.length;
+  const existingIds = new Set(existing.map((record) => String(record?.id || "")));
+  const fresh = records.filter((record) => (
+    !existingIds.has(String(record.id)) && (mode !== "repair" || record?.legacy?.importEligible !== false)
+  ));
+  return existing.length + fresh.length;
+}
+
+function importIntoMemory(mode, records, preflight = false) {
   const current = memory.state && typeof memory.state === "object" ? memory.state : null;
   if (!current) return NextResponse.json({ ok: false, error: NO_STATE_ERROR }, { status: 409 });
   const existing = mode === "replace" ? [] : Array.isArray(current.progressRecords) ? current.progressRecords : [];
+  const projected = projectedRecordCount(existing, mode, records);
+  if (preflight) {
+    if (projected > MAX_PROGRESS_RECORDS) {
+      return NextResponse.json({ ok: false, error: capError(projected), projected }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, mode, preflight: true, projected, source: "memory" });
+  }
   const incomingById = new Map(records.map((record) => [String(record.id), record]));
   const existingIds = new Set(existing.map((record) => String(record?.id || "")));
-  const fresh = records.filter((record) => !existingIds.has(String(record.id)));
+  const fresh = records.filter((record) => (
+    !existingIds.has(String(record.id)) && (mode !== "repair" || record?.legacy?.importEligible !== false)
+  ));
+  const repair = mode === "repair" ? mergeLegacyRepairBatch(existing, records) : null;
   const kept = mode === "overwrite"
     ? existing.map((record) => incomingById.get(String(record?.id || "")) || record)
     : existing;
-  const nextRecords = [...kept, ...fresh];
+  const nextRecords = repair?.records || [...kept, ...fresh];
   if (nextRecords.length > MAX_PROGRESS_RECORDS) {
     return NextResponse.json({ ok: false, error: capError(nextRecords.length) }, { status: 409 });
   }
@@ -66,26 +89,112 @@ function importIntoMemory(mode, records) {
   memory.updatedAt = savedAt;
 
   let submissions = mode === "replace" ? [] : memory.submissions;
-  if (mode === "overwrite") {
+  if (mode === "overwrite" || mode === "repair") {
+    const finalById = new Map(nextRecords.map((record) => [String(record?.id || ""), record]));
     submissions = submissions.map((item) => {
-      const record = incomingById.get(String(item.payload?.id || ""));
+      const incomingRecord = incomingById.get(String(item.payload?.id || ""));
+      const record = incomingRecord ? finalById.get(String(item.payload?.id || "")) : null;
       return record ? { ...submissionRow(record, savedAt), id: item.id, created_at: item.created_at } : item;
     });
   }
   const submissionIds = new Set(submissions.map((item) => String(item.payload?.id || "")));
+  const nextIds = new Set(nextRecords.map((record) => String(record?.id || "")));
   memory.submissions = [
     ...submissions,
-    ...records.filter((record) => !submissionIds.has(String(record.id))).map((record) => submissionRow(record, savedAt)),
+    ...records
+      .filter((record) => nextIds.has(String(record.id)) && !submissionIds.has(String(record.id)))
+      .map((record) => submissionRow(record, savedAt)),
   ];
 
   return NextResponse.json({
     ok: true,
     mode,
-    added: fresh.length,
+    added: repair?.added ?? fresh.length,
     overwritten: mode === "overwrite" ? records.length - fresh.length : 0,
     skipped: mode === "skip" ? records.length - fresh.length : 0,
+    updated: repair?.updated || 0,
+    conflicted: repair?.conflicted || 0,
+    unchanged: repair?.unchanged || 0,
+    conflictDetails: repair?.conflictDetails || [],
     updatedAt: memory.updatedAt,
     source: "memory",
+  });
+}
+
+async function repairDatabase(sql, records, preflight) {
+  const rows = await sql`
+    select payload, updated_at
+    from collaburo_app_config
+    where key = ${APP_STATE_KEY}
+  `;
+  if (!rows.length) return NextResponse.json({ ok: false, error: NO_STATE_ERROR }, { status: 409 });
+  const existing = Array.isArray(rows[0].payload?.progressRecords) ? rows[0].payload.progressRecords : [];
+  const result = mergeLegacyRepairBatch(existing, records);
+  if (result.records.length > MAX_PROGRESS_RECORDS) {
+    return NextResponse.json({ ok: false, error: capError(result.records.length), projected: result.records.length }, { status: 409 });
+  }
+  if (preflight) {
+    return NextResponse.json({ ok: true, mode: "repair", preflight: true, projected: result.records.length, ...result, records: undefined, source: "database" });
+  }
+
+  const incomingIds = new Set(records.map((record) => String(record.id)));
+  const finalRecords = result.records.filter((record) => incomingIds.has(String(record?.id || "")));
+  const nextJson = JSON.stringify(result.records);
+  const finalJson = JSON.stringify(finalRecords);
+  const savedAt = new Date().toISOString();
+  const baseUpdatedAt = rows[0].updated_at;
+  const [updated] = await sql.transaction([
+    sql`
+      update collaburo_app_config
+      set payload = jsonb_set(payload, '{progressRecords}', ${nextJson}::jsonb, true)
+            || jsonb_build_object('savedAt', ${savedAt}::text),
+          updated_at = now()
+      where key = ${APP_STATE_KEY} and updated_at = ${baseUpdatedAt}
+      returning updated_at
+    `,
+    sql`
+      update collaburo_submissions s
+      set client_name = coalesce(nullif(t.rec->'client'->>'name', ''), 'New Client'),
+          client_email = coalesce(t.rec->'client'->>'email', ''),
+          event_space = coalesce(t.rec->'request'->>'space', ''),
+          status = coalesce(t.rec->'progress'->>'status', 'In Discussion'),
+          total = coalesce((t.rec->'costs'->>'totalWithDeposit')::numeric, 0),
+          payload = t.rec
+      from jsonb_array_elements(${finalJson}::jsonb) as t(rec)
+      where s.payload->>'id' = t.rec->>'id'
+        and exists (select 1 from collaburo_app_config where key = ${APP_STATE_KEY} and payload->>'savedAt' = ${savedAt})
+    `,
+    sql`
+      insert into collaburo_submissions (client_name, client_email, event_space, status, total, payload, fingerprint, created_at)
+      select
+        coalesce(nullif(t.rec->'client'->>'name', ''), 'New Client'),
+        coalesce(t.rec->'client'->>'email', ''),
+        coalesce(t.rec->'request'->>'space', ''),
+        coalesce(t.rec->'progress'->>'status', 'In Discussion'),
+        coalesce((t.rec->'costs'->>'totalWithDeposit')::numeric, 0),
+        t.rec,
+        null,
+        coalesce(nullif(t.rec->>'submittedAt', '')::timestamp, now())
+      from jsonb_array_elements(${finalJson}::jsonb) as t(rec)
+      where exists (select 1 from collaburo_app_config where key = ${APP_STATE_KEY} and payload->>'savedAt' = ${savedAt})
+        and not exists (select 1 from collaburo_submissions s where s.payload->>'id' = t.rec->>'id')
+    `,
+  ]);
+  if (!updated.length) {
+    return NextResponse.json({ ok: false, error: "Bookings changed while the repair was running. Refresh and run the repair again." }, { status: 409 });
+  }
+  return NextResponse.json({
+    ok: true,
+    mode: "repair",
+    added: result.added,
+    updated: result.updated,
+    conflicted: result.conflicted,
+    unchanged: result.unchanged,
+    conflictDetails: result.conflictDetails,
+    skipped: 0,
+    overwritten: 0,
+    updatedAt: updated[0].updated_at,
+    source: "database",
   });
 }
 
@@ -93,11 +202,25 @@ export async function POST(request) {
   if (request.headers.get("x-collaburo-admin") !== "1") {
     return NextResponse.json({ ok: false, error: "Admin authentication required." }, { status: 401 });
   }
-  const { mode, records, error } = parseBody(await request.json().catch(() => null));
+  const { mode, records, preflight, error } = parseBody(await request.json().catch(() => null));
   if (error) return NextResponse.json({ ok: false, error }, { status: 400 });
 
   const sql = database();
-  if (!sql) return importIntoMemory(mode, records);
+  if (!sql) return importIntoMemory(mode, records, preflight);
+  if (mode === "repair") return repairDatabase(sql, records, preflight);
+
+  if (preflight) {
+    const rows = await sql`
+      select case when jsonb_typeof(payload->'progressRecords') = 'array' then payload->'progressRecords' else '[]'::jsonb end as records
+      from collaburo_app_config
+      where key = ${APP_STATE_KEY}
+    `;
+    if (!rows.length) return NextResponse.json({ ok: false, error: NO_STATE_ERROR }, { status: 409 });
+    const existing = rows[0].records || [];
+    const projected = projectedRecordCount(existing, mode, records);
+    if (projected > MAX_PROGRESS_RECORDS) return NextResponse.json({ ok: false, error: capError(projected), projected }, { status: 409 });
+    return NextResponse.json({ ok: true, mode, preflight: true, projected, source: "database" });
+  }
 
   const incoming = JSON.stringify(records);
   const savedAt = new Date().toISOString();

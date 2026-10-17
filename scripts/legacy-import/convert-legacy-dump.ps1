@@ -28,7 +28,7 @@ $ErrorActionPreference = "Stop"
 if (-not $OutDir) { $OutDir = Join-Path $PSScriptRoot "..\..\import" }
 $ThroughDate = [datetime]::ParseExact($Through, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)
 $Culture = [Globalization.CultureInfo]::InvariantCulture
-$WantedTables = @("addrentalprogress", "contract")
+$WantedTables = @("addrentalprogress", "contract", "addrentalprogress_bp", "addrentalprogress_la")
 
 # ---------------------------------------------------------------------------
 # Dump parsing (phpMyAdmin format: one row per line inside each INSERT block)
@@ -104,7 +104,11 @@ function Money($value) {
 
 function YesNo($value) { if ((Text $value) -match '^(yes|on|1|true)$') { "Yes" } else { "No" } }
 
-$DateFormats = [string[]]@("MM/dd/yyyy hh:mm tt", "MM/dd/yyyy h:mm tt", "M/d/yyyy h:mm tt", "M/d/yyyy hh:mm tt", "MM/dd/yyyy")
+$DateFormats = [string[]]@(
+  "MM/dd/yyyy hh:mm tt", "MM/dd/yyyy h:mm tt", "M/d/yyyy h:mm tt", "M/d/yyyy hh:mm tt",
+  "MM/dd/yyyy hhtt", "MM/dd/yyyy htt", "M/d/yyyy htt", "M/d/yyyy hhtt",
+  "MM/dd/yyyy"
+)
 function Parse-BookingDate($value) {
   $text = (Text $value) -replace '\s+', ' '
   if (-not $text) { return $null }
@@ -114,6 +118,40 @@ function Parse-BookingDate($value) {
 }
 
 function Format-BookingDate([datetime]$date) { $date.ToString("MMM dd, yyyy hh:mm tt", $Culture).Replace("AM", "am").Replace("PM", "pm") }
+
+function Parse-ContractDate($contract, [string]$prefix) {
+  if (-not $contract) { return $null }
+  $monthText = (Text $contract["${prefix}_month"]).TrimEnd(".")
+  $day = 0; $year = 0; $hour = 12; $minute = 0
+  if (-not [int]::TryParse((Text $contract["${prefix}_day"]), [ref]$day)) { return $null }
+  if (-not [int]::TryParse((Text $contract["${prefix}_year"]), [ref]$year)) { return $null }
+  [void][int]::TryParse((Text $contract["${prefix}_hour"]), [ref]$hour)
+  [void][int]::TryParse((Text $contract["${prefix}_min"]), [ref]$minute)
+  if ($hour -lt 1) { $hour = 12 }
+  $month = 0
+  if (-not [int]::TryParse($monthText, [ref]$month)) {
+    $parsedMonth = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact($monthText.Substring(0, [Math]::Min(3, $monthText.Length)), "MMM", $Culture, [Globalization.DateTimeStyles]::None, [ref]$parsedMonth)) { return $null }
+    $month = $parsedMonth.Month
+  }
+  if ((Text $contract["${prefix}_mrdn"]) -match '^p' -and $hour -lt 12) { $hour += 12 }
+  if ((Text $contract["${prefix}_mrdn"]) -match '^a' -and $hour -eq 12) { $hour = 0 }
+  try { [datetime]::new($year, $month, $day, $hour, $minute, 0) } catch { $null }
+}
+
+function Contract-SpaceNames($contract) {
+  $map = [ordered]@{
+    space_mainhall = "Main Hall"; space_largeroom = "Large Room"; space_smallroom = "Small Room"
+    space_loungearea = "Lounge Area"; space_elevatedarea = "Elevated Area"; space_patio = "Back Patio"
+  }
+  $names = New-Object System.Collections.ArrayList
+  foreach ($column in $map.Keys) {
+    $value = Text $contract[$column]
+    if ($value -and $value -ne "0" -and $value -notmatch '^no$') { [void]$names.Add($map[$column]) }
+  }
+  if (Text $contract["space_other_input"]) { [void]$names.Add((Text $contract["space_other_input"])) }
+  @($names)
+}
 
 # Same hash as bookingCodeFromId() in collaburo-html-app.jsx.
 function Get-BookingCode([string]$id) {
@@ -161,12 +199,30 @@ $MappedColumns = @(
 # Conversion
 # ---------------------------------------------------------------------------
 
-function Convert-Booking($row, $contract) {
+function Convert-Booking($row, $contract, $backPatio, $lounge) {
   $oldId = Text $row["id"]
   $id = "legacy_$oldId"
 
+  $previousSpaces = New-Object System.Collections.ArrayList
+  $previousDates = New-Object System.Collections.ArrayList
+  foreach ($prefix in $Spaces.Keys) {
+    $oldStart = Parse-BookingDate $row["${prefix}_booking_start_date"]
+    $oldEnd = Parse-BookingDate $row["${prefix}_booking_end_date"]
+    if ((Text $row["${prefix}_space"]) -or $oldStart) { [void]$previousSpaces.Add($Spaces[$prefix]) }
+    if ($oldStart) {
+      $oldSegment = "$($Spaces[$prefix]): $(Format-BookingDate $oldStart)"
+      if ($oldEnd) { $oldSegment += " - $(Format-BookingDate $oldEnd)" }
+      [void]$previousDates.Add($oldSegment)
+    }
+  }
+  foreach ($column in $ExtraSpaces.Keys) {
+    $value = Text $row[$column]
+    if ($value -and $value -ne "0") { [void]$previousSpaces.Add($ExtraSpaces[$column]) }
+  }
+
   $spaceNames = New-Object System.Collections.ArrayList
   $dateSegments = New-Object System.Collections.ArrayList
+  $dateSources = New-Object System.Collections.ArrayList
   $earliest = $null
   foreach ($prefix in $Spaces.Keys) {
     $start = Parse-BookingDate $row["${prefix}_booking_start_date"]
@@ -178,11 +234,52 @@ function Convert-Booking($row, $contract) {
       $segment = "$($Spaces[$prefix]): $(Format-BookingDate $start)"
       if ($end) { $segment += " - $(Format-BookingDate $end)" }
       [void]$dateSegments.Add($segment)
+      [void]$dateSources.Add("addrentalprogress.$prefix")
     }
   }
   foreach ($column in $ExtraSpaces.Keys) {
     $value = Text $row[$column]
     if ($value -and $value -ne "0") { [void]$spaceNames.Add($ExtraSpaces[$column]) }
+  }
+  $backPatioRange = $false
+  $bpStart = Parse-BookingDate $backPatio["bookingstartdate_bp"]
+  $bpEnd = Parse-BookingDate $backPatio["bookingenddate_bp"]
+  if ($bpStart) {
+    $backPatioRange = $true
+    [void]$spaceNames.Add("Back Patio")
+    if (-not $earliest -or $bpStart -lt $earliest) { $earliest = $bpStart }
+    $segment = "Back Patio: $(Format-BookingDate $bpStart)"
+    if ($bpEnd) { $segment += " - $(Format-BookingDate $bpEnd)" }
+    [void]$dateSegments.Add($segment)
+    [void]$dateSources.Add("addrentalprogress_bp")
+  }
+  $loungeRange = $false
+  $laStart = Parse-BookingDate $lounge["bookingstartdate_la"]
+  $laEnd = Parse-BookingDate $lounge["bookingenddate_la"]
+  if ($laStart) {
+    $loungeRange = $true
+    [void]$spaceNames.Add("Lounge Area")
+    if (-not $earliest -or $laStart -lt $earliest) { $earliest = $laStart }
+    $segment = "Lounge Area: $(Format-BookingDate $laStart)"
+    if ($laEnd) { $segment += " - $(Format-BookingDate $laEnd)" }
+    [void]$dateSegments.Add($segment)
+    [void]$dateSources.Add("addrentalprogress_la")
+  }
+  $contractDateFallback = $false
+  if (-not $earliest -and $contract) {
+    $contractStart = Parse-ContractDate $contract "bookingstartdate"
+    $contractEnd = Parse-ContractDate $contract "bookingenddate"
+    if ($contractStart) {
+      $contractDateFallback = $true
+      $earliest = $contractStart
+      $contractSpaces = @(Contract-SpaceNames $contract)
+      foreach ($name in $contractSpaces) { [void]$spaceNames.Add($name) }
+      $label = if ($contractSpaces.Count) { $contractSpaces -join ", " } else { "Legacy contract" }
+      $segment = "${label}: $(Format-BookingDate $contractStart)"
+      if ($contractEnd) { $segment += " - $(Format-BookingDate $contractEnd)" }
+      [void]$dateSegments.Add($segment)
+      [void]$dateSources.Add("contract")
+    }
   }
 
   $oldStatus = Text $row["status"]
@@ -225,6 +322,12 @@ function Convert-Booking($row, $contract) {
     $label = if ($Spaces.Contains($prefix)) { "$($Spaces[$prefix]) - $(Get-Label $column)" } else { Get-Label $column }
     [void]$details.Add("${label}: $value")
   }
+  if (Text $backPatio["multipledates_bp"]) { [void]$details.Add("Back Patio - Additional dates: $(Text $backPatio['multipledates_bp'])") }
+  if (Text $backPatio["floorlayout_bp"]) { [void]$details.Add("Back Patio - Floor layout: $(Text $backPatio['floorlayout_bp'])") }
+  if (Text $backPatio["layoutinstruction_bp"]) { [void]$details.Add("Back Patio - Layout instructions: $(Text $backPatio['layoutinstruction_bp'])") }
+  if (Text $backPatio["buffetlayoutinstruction_bp"]) { [void]$details.Add("Back Patio - Buffet layout instructions: $(Text $backPatio['buffetlayoutinstruction_bp'])") }
+  if (Text $lounge["floor_layout_la"]) { [void]$details.Add("Lounge Area - Floor layout: $(Text $lounge['floor_layout_la'])") }
+  if (Text $lounge["layout_instructions_la"]) { [void]$details.Add("Lounge Area - Layout instructions: $(Text $lounge['layout_instructions_la'])") }
 
   $serviceNotes = @(
     $(if (Text $row["setupservices"]) { "Set-up: $(Text $row['setupservices'])" }),
@@ -270,6 +373,9 @@ function Convert-Booking($row, $contract) {
   [pscustomobject]@{
     BookingDate = $earliest
     HasContract = [bool]$contract
+    BackPatioRange = $backPatioRange
+    LoungeRange = $loungeRange
+    ContractDateFallback = $contractDateFallback
     Record = [ordered]@{
       id = $id
       bookingCode = Get-BookingCode $id
@@ -322,7 +428,17 @@ function Convert-Booking($row, $contract) {
       }
       emails = @()
       log = @([ordered]@{ label = "Legacy import"; at = (Get-Date).ToString("MMM dd, yyyy hh:mm tt", $Culture).Replace("AM", "am").Replace("PM", "pm"); action = "Imported from old site (record #$oldId, status `"$oldStatus`")" })
-      legacy = [ordered]@{ id = [int]$oldId; uniqueid = Text $row["uniqueid"]; status = $oldStatus }
+      legacy = [ordered]@{
+        id = [int]$oldId
+        uniqueid = Text $row["uniqueid"]
+        status = $oldStatus
+        dateMigrationVersion = 1
+        dateSources = @($dateSources)
+        repairExpected = [ordered]@{
+          bookingDateTime = $previousDates -join "; "
+          space = ($previousSpaces | Select-Object -Unique) -join ", "
+        }
+      }
     }
   }
 }
@@ -400,18 +516,47 @@ if (-not (Test-Path $DumpPath)) { throw "Dump not found: $DumpPath" }
 Write-Host "Reading $DumpPath ..."
 $tables = Read-DumpTables $DumpPath $WantedTables
 $bookings = $tables["addrentalprogress"]
-Write-Host "Parsed $($bookings.Count) bookings and $($tables['contract'].Count) contracts."
+Write-Host "Parsed $($bookings.Count) bookings, $($tables['contract'].Count) contracts, $($tables['addrentalprogress_bp'].Count) Patio rows, and $($tables['addrentalprogress_la'].Count) Lounge rows."
 
 $contracts = @{}
-foreach ($c in ($tables["contract"] | Sort-Object { [int]$_["id"] })) { $contracts[(Text $c["uniqueid"])] = $c }
+$duplicateContracts = 0
+foreach ($c in ($tables["contract"] | Sort-Object { [int]$_["id"] })) {
+  $key = Text $c["uniqueid"]
+  if (-not $key) { continue }
+  if ($contracts.ContainsKey($key)) { $duplicateContracts++ }
+  $contracts[$key] = $c
+}
+$backPatios = @{}
+$duplicateBackPatios = 0
+foreach ($item in ($tables["addrentalprogress_bp"] | Sort-Object { [int]$_["bp_id"] })) {
+  $key = Text $item["bp_common_id"]
+  if (-not $key) { continue }
+  if ($backPatios.ContainsKey($key)) { $duplicateBackPatios++ }
+  $backPatios[$key] = $item
+}
+$lounges = @{}
+$duplicateLounges = 0
+foreach ($item in ($tables["addrentalprogress_la"] | Sort-Object { [int]$_["la_id"] })) {
+  $key = Text $item["la_common_id"]
+  if (-not $key) { continue }
+  if ($lounges.ContainsKey($key)) { $duplicateLounges++ }
+  $lounges[$key] = $item
+}
 
 $converted = New-Object System.Collections.ArrayList
 $noDate = 0
 $tooNew = 0
+$recoveredBackPatio = 0
+$recoveredLounge = 0
+$contractFallbacks = 0
 foreach ($row in $bookings) {
-  $item = Convert-Booking $row $contracts[(Text $row["uniqueid"])]
+  $item = Convert-Booking $row $contracts[(Text $row["uniqueid"])] $backPatios[(Text $row["id"])] $lounges[(Text $row["id"])]
   if (-not $item.BookingDate) { $noDate++; continue }
   if ($item.BookingDate.Date -gt $ThroughDate) { $tooNew++; continue }
+  $item.Record.legacy.importEligible = $true
+  if ($item.BackPatioRange) { $recoveredBackPatio++ }
+  if ($item.LoungeRange) { $recoveredLounge++ }
+  if ($item.ContractDateFallback) { $contractFallbacks++ }
   [void]$converted.Add($item)
 }
 $converted = @($converted | Sort-Object BookingDate -Descending)
@@ -427,6 +572,8 @@ Write-Host ""
 Write-Host "=== Summary ==="
 Write-Host "Selected (booking date up to $Through): $($records.Count)"
 Write-Host "Skipped: $tooNew dated after $Through, $noDate with no parseable booking date"
+Write-Host "Date sources added: $recoveredBackPatio Patio, $recoveredLounge Lounge, $contractFallbacks contract fallback"
+Write-Host "Duplicate links: $duplicateBackPatios Patio, $duplicateLounges Lounge, $duplicateContracts contract"
 Write-Host "By year:";   $converted | Group-Object { $_.BookingDate.Year } | Sort-Object Name | ForEach-Object { Write-Host ("  {0}  {1}" -f $_.Name, $_.Count) }
 Write-Host "By status (new app):"; $records | Group-Object { $_.progress.status } | Sort-Object Count -Descending | ForEach-Object { Write-Host ("  {0,-18} {1}" -f $_.Name, $_.Count) }
 $withContract = @($converted | Where-Object HasContract)
