@@ -35,14 +35,19 @@ function contractUid(prefix = "blk") {
 }
 
 function normalizeContractTemplate(template = {}, fallback = null) {
-  const sample = fallback || createLegacyContractSettings();
   const source = template && typeof template === "object" ? template : {};
-  const blocks = Array.isArray(source.blocks) && source.blocks.length
-    ? source.blocks.map((block) => normalizeContractBlock(block))
-    : (sample.blocks || []).map((block) => normalizeContractBlock(block));
+  const hasBlocks = Array.isArray(source.blocks) && source.blocks.length > 0;
+  if (hasBlocks) {
+    return {
+      title: String(source.title || "Contract"),
+      blocks: source.blocks.map((block) => normalizeContractBlock(block)),
+    };
+  }
+  // Only materialize the huge legacy default when the source template is empty.
+  const sample = typeof fallback === "function" ? fallback() : (fallback || createLegacyContractSettings());
   return {
-    title: String(source.title || sample.title || "Contract"),
-    blocks,
+    title: String(source.title || sample?.title || "Contract"),
+    blocks: (sample?.blocks || []).map((block) => normalizeContractBlock(block)),
   };
 }
 
@@ -77,21 +82,25 @@ export function createDefaultContractSettings() {
 }
 
 export function normalizeContractSettings(settings = {}) {
-  const sample = createDefaultContractSettings();
   const source = settings && typeof settings === "object" ? settings : {};
 
   let socialSource = source.templates?.social;
   let businessSource = source.templates?.business;
+  let sample = null;
+  const getSample = () => {
+    if (!sample) sample = createDefaultContractSettings();
+    return sample;
+  };
 
   // Migrate single-template shape into dual templates.
   if (!socialSource && isFlatContractTemplate(source)) {
-    socialSource = isLegacyPlaceholderTemplate(source) ? sample.templates.social : source;
+    socialSource = isLegacyPlaceholderTemplate(source) ? getSample().templates.social : source;
   }
-  if (!socialSource) socialSource = sample.templates.social;
-  if (!businessSource) businessSource = sample.templates.business;
+  if (!socialSource) socialSource = getSample().templates.social;
+  if (!businessSource) businessSource = getSample().templates.business;
 
   if (isLegacyPlaceholderTemplate(socialSource)) {
-    socialSource = sample.templates.social;
+    socialSource = getSample().templates.social;
   }
 
   const businessEventTypes = Array.isArray(source.businessEventTypes) && source.businessEventTypes.length
@@ -103,8 +112,8 @@ export function normalizeContractSettings(settings = {}) {
     activeTab: source.activeTab === "business" ? "business" : "social",
     businessEventTypes,
     templates: {
-      social: normalizeContractTemplate(socialSource, sample.templates.social),
-      business: normalizeContractTemplate(businessSource, sample.templates.business),
+      social: normalizeContractTemplate(socialSource, () => getSample().templates.social),
+      business: normalizeContractTemplate(businessSource, () => getSample().templates.business),
     },
   };
 }
@@ -1138,14 +1147,62 @@ function ContractImageUpload({ value, onChange, label = "Upload image" }) {
   );
 }
 
+/** Large legacy addendum bodies (~70KB HTML) freeze the tab if every contentEditable mounts at once. */
+const HEAVY_PARAGRAPH_BODY_CHARS = 4000;
+
+function ContractParagraphEditor({ block, onChangeBody, onChangeTitle }) {
+  const bodyLen = String(block.body || "").length;
+  const heavy = bodyLen >= HEAVY_PARAGRAPH_BODY_CHARS;
+  const [expanded, setExpanded] = React.useState(!heavy);
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <div>
+        <label className="lbl">Section title</label>
+        <input className="input" value={block.title || ""} onChange={(e) => onChangeTitle(e.target.value)} />
+      </div>
+      <div>
+        <label className="lbl">Paragraph content</label>
+        {heavy && !expanded ? (
+          <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12, background: "var(--surface-2)" }}>
+            <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--ink-3)" }}>
+              Large section ({Math.round(bodyLen / 1024)} KB). Expand only when you need to edit — opening every section at once can freeze this page.
+            </p>
+            <button type="button" className="btn dark sm" onClick={() => setExpanded(true)}>
+              Edit this section
+            </button>
+          </div>
+        ) : (
+          <>
+            {heavy ? (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+                <button type="button" className="btn-gray sm" onClick={() => setExpanded(false)}>Collapse editor</button>
+              </div>
+            ) : null}
+            <ContractRichTextEditor
+              value={block.body || ""}
+              onChange={onChangeBody}
+              placeholder="Write paragraph content. Use the toolbar for bold, color, highlight, size, alignment, and tables."
+              rows={8}
+            />
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--ink-3)" }}>
+              Select text first, then choose a size in px from the dropdown or type a custom value (8–96) and click Apply. Dynamic tokens like {"{{Client_Name}}"} still work when typed in the content.
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ContractSettingsView({ settings, onChange, dynamicFields = [] }) {
   const Ic = window.Icons || {};
   const site = settings || {};
   const contract = normalizeContractSettings(site.contractSettings);
   const activeTab = contract.activeTab === "business" ? "business" : "social";
-  const activeTemplate = getContractTemplate(contract, activeTab);
+  const activeTemplate = contract.templates?.[activeTab] || getContractTemplate(contract, activeTab);
   const businessTypes = contract.businessEventTypes || DEFAULT_BUSINESS_EVENT_TYPES;
   const socialTypes = DEFAULT_SOCIAL_EVENT_TYPES;
+  const [showLivePreview, setShowLivePreview] = React.useState(false);
   const previewTokenMap = {
     "{{Client_Name}}": "Alex Client",
     "{{Client_Display_Name}}": "Alex Client (Acme Co)",
@@ -1366,24 +1423,11 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
                 )}
 
                 {block.type === "paragraph" && (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <div>
-                      <label className="lbl">Section title</label>
-                      <input className="input" value={block.title || ""} onChange={(e) => updateBlock(block.id, { title: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="lbl">Paragraph content</label>
-                      <ContractRichTextEditor
-                        value={block.body || ""}
-                        onChange={(body) => updateBlock(block.id, { body })}
-                        placeholder="Write paragraph content. Use the toolbar for bold, color, highlight, size, alignment, and tables."
-                        rows={8}
-                      />
-                      <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--ink-3)" }}>
-                        Select text first, then choose a size in px from the dropdown or type a custom value (8–96) and click Apply. Dynamic tokens like {"{{Client_Name}}"} still work when typed in the content.
-                      </p>
-                    </div>
-                  </div>
+                  <ContractParagraphEditor
+                    block={block}
+                    onChangeTitle={(title) => updateBlock(block.id, { title })}
+                    onChangeBody={(body) => updateBlock(block.id, { body })}
+                  />
                 )}
 
                 {block.type === "image" && (
@@ -1436,8 +1480,23 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
           <div className="contract-settings-aside">
             <div className="contract-settings-aside-sticky">
               <div>
-                <h3 style={{ margin: "0 0 10px", fontSize: 14 }}>Live preview ({activeTab === "business" ? "Business" : "Social"})</h3>
-                <ContractDocumentView settings={activeTemplate} tokenMap={previewTokenMap} variant={activeTab} />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                  <h3 style={{ margin: 0, fontSize: 14 }}>Live preview ({activeTab === "business" ? "Business" : "Social"})</h3>
+                  <button
+                    type="button"
+                    className={showLivePreview ? "btn-gray sm" : "btn dark sm"}
+                    onClick={() => setShowLivePreview((value) => !value)}
+                  >
+                    {showLivePreview ? "Hide preview" : "Show preview"}
+                  </button>
+                </div>
+                {showLivePreview ? (
+                  <ContractDocumentView settings={activeTemplate} tokenMap={previewTokenMap} variant={activeTab} />
+                ) : (
+                  <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 10, padding: 16, fontSize: 12, color: "var(--ink-3)" }}>
+                    Preview is off by default. The Social/Business templates include very large HTML sections; rendering the full preview on open was freezing this page.
+                  </div>
+                )}
               </div>
               <div className="contract-settings-block-card">
                 <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Dynamic Fields List</h3>
