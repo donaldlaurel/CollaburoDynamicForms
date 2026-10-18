@@ -192,6 +192,16 @@ export function getContractTemplate(settings = {}, variant = "social") {
   return normalizeContractTemplate(normalized.templates?.[key], () => createDefaultContractSettings().templates[key]);
 }
 
+function leanContractBlockForSnapshot(block = {}) {
+  if (!block || typeof block !== "object") return block;
+  const next = { ...block };
+  Object.keys(next).forEach((key) => {
+    const value = next[key];
+    if (value === "" || value === null || value === undefined) delete next[key];
+  });
+  return next;
+}
+
 export function buildContractSnapshot(settings, tokenMap = {}, generatedAt = new Date().toISOString(), eventType = "") {
   const tokens = {};
   Object.entries(tokenMap || {}).forEach(([token, value]) => {
@@ -199,11 +209,15 @@ export function buildContractSnapshot(settings, tokenMap = {}, generatedAt = new
   });
   const eventFromToken = eventType || tokens["{{Event_Type}}"] || "";
   const variant = resolveContractVariant(eventFromToken, settings);
+  // Store only the active variant's normalized template (title + blocks), not dual-template settings.
   const template = getContractTemplate(settings, variant);
   return {
     generatedAt,
     variant,
-    settings: template,
+    settings: {
+      title: template.title || "Contract",
+      blocks: (template.blocks || []).map(leanContractBlockForSnapshot),
+    },
     tokenMap: tokens,
   };
 }
