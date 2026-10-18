@@ -34,20 +34,21 @@ function contractUid(prefix = "blk") {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function normalizeContractTemplate(template = {}, fallback = null) {
+function normalizeContractTemplate(template = {}, fallback = null, { repair = false } = {}) {
   const source = template && typeof template === "object" ? template : {};
   const hasBlocks = Array.isArray(source.blocks) && source.blocks.length > 0;
   if (hasBlocks) {
     return {
       title: String(source.title || "Contract"),
-      blocks: source.blocks.map((block) => normalizeContractBlock(block)),
+      blocks: source.blocks.map((block) => normalizeContractBlock(block, { repair })),
     };
   }
   // Only materialize the huge legacy default when the source template is empty.
   const sample = typeof fallback === "function" ? fallback() : (fallback || createLegacyContractSettings());
   return {
     title: String(source.title || sample?.title || "Contract"),
-    blocks: (sample?.blocks || []).map((block) => normalizeContractBlock(block)),
+    // Repair once when materializing legacy factories — never on every admin re-render.
+    blocks: (sample?.blocks || []).map((block) => normalizeContractBlock(block, { repair: true })),
   };
 }
 
@@ -69,6 +70,19 @@ function isFlatContractTemplate(settings = {}) {
   return !!(settings && Array.isArray(settings.blocks) && !settings.templates);
 }
 
+/** Lightweight stubs for SAMPLE_SITE_SETTINGS / module init — avoids allocating ~180KB legacy HTML on every admin boot. */
+export function createMinimalContractSettings() {
+  return {
+    version: 3,
+    activeTab: "social",
+    businessEventTypes: [...DEFAULT_BUSINESS_EVENT_TYPES],
+    templates: {
+      social: { title: "Social Event Contract", blocks: [] },
+      business: { title: "Business Event Contract", blocks: [] },
+    },
+  };
+}
+
 export function createDefaultContractSettings() {
   return {
     version: 3,
@@ -83,6 +97,36 @@ export function createDefaultContractSettings() {
 
 export function normalizeContractSettings(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
+
+  const businessEventTypes = Array.isArray(source.businessEventTypes) && source.businessEventTypes.length
+    ? source.businessEventTypes.map((item) => String(item || "").trim()).filter(Boolean)
+    : [...DEFAULT_BUSINESS_EVENT_TYPES];
+
+  // Fast path: already dual v3 with real blocks — reuse block refs, no deep clone / repair of ~80KB HTML.
+  if (
+    Number(source.version) >= 3
+    && Array.isArray(source.templates?.social?.blocks)
+    && source.templates.social.blocks.length > 0
+    && Array.isArray(source.templates?.business?.blocks)
+    && source.templates.business.blocks.length > 0
+    && !isLegacyPlaceholderTemplate(source.templates.social)
+  ) {
+    return {
+      version: 3,
+      activeTab: source.activeTab === "business" ? "business" : "social",
+      businessEventTypes,
+      templates: {
+        social: {
+          title: String(source.templates.social.title || "Contract"),
+          blocks: source.templates.social.blocks,
+        },
+        business: {
+          title: String(source.templates.business.title || "Contract"),
+          blocks: source.templates.business.blocks,
+        },
+      },
+    };
+  }
 
   let socialSource = source.templates?.social;
   let businessSource = source.templates?.business;
@@ -102,10 +146,6 @@ export function normalizeContractSettings(settings = {}) {
   if (isLegacyPlaceholderTemplate(socialSource)) {
     socialSource = getSample().templates.social;
   }
-
-  const businessEventTypes = Array.isArray(source.businessEventTypes) && source.businessEventTypes.length
-    ? source.businessEventTypes.map((item) => String(item || "").trim()).filter(Boolean)
-    : [...DEFAULT_BUSINESS_EVENT_TYPES];
 
   return {
     version: 3,
@@ -149,7 +189,7 @@ export function getContractTemplate(settings = {}, variant = "social") {
     return normalizeContractTemplate(settings);
   }
   const key = variant === "business" ? "business" : "social";
-  return normalizeContractTemplate(normalized.templates?.[key], createDefaultContractSettings().templates[key]);
+  return normalizeContractTemplate(normalized.templates?.[key], () => createDefaultContractSettings().templates[key]);
 }
 
 export function buildContractSnapshot(settings, tokenMap = {}, generatedAt = new Date().toISOString(), eventType = "") {
@@ -168,7 +208,11 @@ export function buildContractSnapshot(settings, tokenMap = {}, generatedAt = new
   };
 }
 
-function normalizeContractBlock(block = {}) {
+function repairContractParagraphBody(body = "") {
+  return repairContractCenterBleed(repairContractWaiverMarkup(repairContractSection3(String(body || ""))));
+}
+
+function normalizeContractBlock(block = {}, { repair = false } = {}) {
   const type = CONTRACT_BLOCK_TYPES.some((item) => item.id === block.type) ? block.type : "paragraph";
   const id = block.id || contractUid("blk");
   if (type === "header") {
@@ -202,11 +246,12 @@ function normalizeContractBlock(block = {}) {
       ownerName: String(block.ownerName || ""),
     };
   }
+  const rawBody = String(block.body || "");
   return {
     id,
     type: "paragraph",
     title: String(block.title || ""),
-    body: repairContractCenterBleed(repairContractWaiverMarkup(repairContractSection3(String(block.body || "")))),
+    body: repair ? repairContractParagraphBody(rawBody) : rawBody,
     allowTokens: block.allowTokens !== false,
   };
 }
@@ -638,18 +683,45 @@ export function cleanContractSpecialNotes(notes = "") {
   return s.replace(/\s+$/g, "").trim();
 }
 
+/** Cache sanitized HTML so signature strokes / parent re-renders don't re-parse ~80KB bodies. */
+const CONTRACT_DISPLAY_HTML_CACHE = new Map();
+const CONTRACT_DISPLAY_HTML_CACHE_MAX = 24;
+
+function contractDisplayCacheKey(raw, tokenMap) {
+  if (!tokenMap || typeof tokenMap !== "object") return raw;
+  const used = [];
+  String(raw).replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}?/g, (_, name) => {
+    used.push(`${name}=${tokenMap[`{{${name}}}`] ?? ""}`);
+    return "";
+  });
+  return used.length ? `${raw}\0${used.join("\0")}` : raw;
+}
+
 function contractBodyDisplayHtml(body = "", tokenMap = {}) {
   const raw = String(body || "");
   if (!raw.trim()) return "";
+  const cacheKey = contractDisplayCacheKey(raw, tokenMap);
+  if (CONTRACT_DISPLAY_HTML_CACHE.has(cacheKey)) {
+    return CONTRACT_DISPLAY_HTML_CACHE.get(cacheKey);
+  }
+  let out = "";
   if (looksLikeHtml(raw)) {
-    return sanitizeContractHtml(fillContractTokensHtml(raw, tokenMap));
+    out = sanitizeContractHtml(fillContractTokensHtml(raw, tokenMap));
+  } else {
+    const filled = fillContractTokens(raw, tokenMap);
+    // Plain-text bodies can still receive HTML-bearing token values from legacy imports.
+    if (looksLikeHtml(filled)) {
+      out = sanitizeContractHtml(normalizeLegacyContractHtml(filled).replace(/\n/g, "<br/>"));
+    } else {
+      out = escapeHtmlText(filled).replace(/\n/g, "<br/>");
+    }
   }
-  const filled = fillContractTokens(raw, tokenMap);
-  // Plain-text bodies can still receive HTML-bearing token values from legacy imports.
-  if (looksLikeHtml(filled)) {
-    return sanitizeContractHtml(normalizeLegacyContractHtml(filled).replace(/\n/g, "<br/>"));
+  if (CONTRACT_DISPLAY_HTML_CACHE.size >= CONTRACT_DISPLAY_HTML_CACHE_MAX) {
+    const oldest = CONTRACT_DISPLAY_HTML_CACHE.keys().next().value;
+    CONTRACT_DISPLAY_HTML_CACHE.delete(oldest);
   }
-  return escapeHtmlText(filled).replace(/\n/g, "<br/>");
+  CONTRACT_DISPLAY_HTML_CACHE.set(cacheKey, out);
+  return out;
 }
 
 const CONTRACT_FONT_SIZE_PX = [10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48];
@@ -1197,13 +1269,16 @@ function ContractParagraphEditor({ block, onChangeBody, onChangeTitle }) {
 export function ContractSettingsView({ settings, onChange, dynamicFields = [] }) {
   const Ic = window.Icons || {};
   const site = settings || {};
-  const contract = normalizeContractSettings(site.contractSettings);
+  const contract = React.useMemo(
+    () => normalizeContractSettings(site.contractSettings),
+    [site.contractSettings]
+  );
   const activeTab = contract.activeTab === "business" ? "business" : "social";
   const activeTemplate = contract.templates?.[activeTab] || getContractTemplate(contract, activeTab);
   const businessTypes = contract.businessEventTypes || DEFAULT_BUSINESS_EVENT_TYPES;
   const socialTypes = DEFAULT_SOCIAL_EVENT_TYPES;
   const [showLivePreview, setShowLivePreview] = React.useState(false);
-  const previewTokenMap = {
+  const previewTokenMap = React.useMemo(() => ({
     "{{Client_Name}}": "Alex Client",
     "{{Client_Display_Name}}": "Alex Client (Acme Co)",
     "{{Organization}}": "Acme Co",
@@ -1255,7 +1330,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
     "{{Discount_Notes}}": "",
     "{{Multi_Day_Details}}": "",
     "{{Today_Date}}": "September 6, 2026",
-  };
+  }), [activeTab]);
 
   const commit = (nextSettings) => {
     onChange({
@@ -1286,7 +1361,13 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
     const legacy = activeTab === "business"
       ? createLegacyBusinessContractSettings()
       : createLegacyContractSettings();
-    updateActiveTemplate(legacy);
+    // Repair once at import time (not on every normalize/render).
+    update({
+      templates: {
+        ...contract.templates,
+        [activeTab]: normalizeContractTemplate(legacy, null, { repair: true }),
+      },
+    });
   };
 
   const updateBlock = (id, patch) => {

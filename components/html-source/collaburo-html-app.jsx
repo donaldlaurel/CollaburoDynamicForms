@@ -9,7 +9,7 @@ import "./icons";
 import "./runtime-widgets";
 import { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT } from "./navigation";
 import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-data";
-import { ContractSettingsView, ContractSignView, ContractLoadingView, normalizeContractSettings, createDefaultContractSettings, buildContractSnapshot, resolveContractVariant } from "./contract";
+import { ContractSettingsView, ContractSignView, ContractLoadingView, normalizeContractSettings, createDefaultContractSettings, createMinimalContractSettings, buildContractSnapshot, resolveContractVariant } from "./contract";
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
 import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
@@ -18488,7 +18488,7 @@ const SAMPLE_SITE_SETTINGS = {
     replyTo: DEFAULT_EMAIL_ADDRESS,
     templates: DEFAULT_EMAIL_TEMPLATES,
   },
-  contractSettings: createDefaultContractSettings(),
+  contractSettings: createMinimalContractSettings(),
   fulfillment: {
     deliveryOptions: DEFAULT_DELIVERY_OPTIONS,
     deliveryNote: DEFAULT_RENTAL_DELIVERY_NOTE,
