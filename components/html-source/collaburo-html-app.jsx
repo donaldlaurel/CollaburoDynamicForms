@@ -4751,15 +4751,18 @@ window.Sidebar = Sidebar;
 // Topbar — breadcrumb + preview / save / publish actions.
 
 
-function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onSave, onPublish, onUndo, onRedo, canUndo = false, canRedo = false }) {
+function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onSave, onPublish, onSaveAndPublish, persistBusy = null, onUndo, onRedo, canUndo = false, canRedo = false }) {
   const Ic = window.Icons;
   const isWorkflow = section === "workflow";
-  const canPublish = ["workflow", "rentals", "pricing", "email-settings", "contract", "site"].includes(section);
+  const canPublish = ["workflow", "rentals", "pricing", "email-settings", "contract", "site", "clients"].includes(section);
   const hasUndoRedo = section === "workflow" || section === "rentals";
   const undoLabel = section === "rentals" ? "Undo rental catalog change" : "Undo workflow change";
   const redoLabel = section === "rentals" ? "Redo rental catalog change" : "Redo workflow change";
   const sectionLabel = section === "profile" ? "Profile" : (SECTION_LABEL[section] || section);
   const saveShortcut = modShortcut("S");
+  const isPersisting = !!persistBusy;
+  const saveDisabled = !isDirty || isPersisting;
+  const publishDisabled = isPersisting;
   return (
     <header className="topbar">
       <div className="crumbs">
@@ -4767,17 +4770,17 @@ function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onS
         <span className="sep">/</span>
         <span className="here">{sectionLabel}</span>
       </div>
-      <span className="draft-pill" title={isDirty ? `Unsaved changes — press ${saveShortcut} to save` : "All changes saved"}>
-        {isDirty ? "Unsaved changes" : `Saved ${lastSaved}`}
+      <span className="draft-pill" title={isDirty ? `Unsaved changes — press ${saveShortcut} to save` : "All changes saved"} aria-live="polite">
+        {isPersisting ? (persistBusy === "save" ? "Saving…" : persistBusy === "publish" ? "Publishing…" : "Saving & publishing…") : (isDirty ? "Unsaved changes" : `Saved ${lastSaved}`)}
       </span>
 
       <div className="topbar-actions">
         {hasUndoRedo && (
           <>
-            <button className="btn icon sm ghost" title={undoLabel} onClick={onUndo} disabled={!canUndo} style={!canUndo ? { opacity: 0.35, pointerEvents: "none" } : {}}>
+            <button className="btn icon sm ghost" title={undoLabel} onClick={onUndo} disabled={!canUndo || isPersisting} style={!canUndo || isPersisting ? { opacity: 0.35, pointerEvents: "none" } : {}}>
               <Ic.Undo size={14} />
             </button>
-            <button className="btn icon sm ghost" title={redoLabel} onClick={onRedo} disabled={!canRedo} style={!canRedo ? { opacity: 0.35, pointerEvents: "none" } : {}}>
+            <button className="btn icon sm ghost" title={redoLabel} onClick={onRedo} disabled={!canRedo || isPersisting} style={!canRedo || isPersisting ? { opacity: 0.35, pointerEvents: "none" } : {}}>
               <Ic.Redo size={14} />
             </button>
           </>
@@ -4788,20 +4791,47 @@ function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onS
               className="btn"
               onClick={onTogglePreview}
               title="Open client-view preview"
+              disabled={isPersisting}
             >
               <Ic.Eye size={14} />
               Preview
             </button>
           </>
         )}
-        <button className="btn" onClick={onSave} disabled={!isDirty} style={!isDirty ? { opacity: 0.5 } : {}}>
-          <Ic.Save size={14} /> Save changes
-          <span className="kbd" style={{ marginLeft: 4 }}>{saveShortcut}</span>
+        <button
+          className="btn"
+          onClick={onSave}
+          disabled={saveDisabled}
+          aria-busy={persistBusy === "save"}
+          style={saveDisabled ? { opacity: 0.5 } : {}}
+          title={isPersisting ? "Wait for the current save or publish to finish" : (isDirty ? "Save draft to database" : "No unsaved changes")}
+        >
+          <Ic.Save size={14} /> {persistBusy === "save" ? "Saving…" : "Save changes"}
+          {!isPersisting && <span className="kbd" style={{ marginLeft: 4 }}>{saveShortcut}</span>}
         </button>
         {canPublish && (
-          <button className="btn primary" onClick={onPublish}>
-            <Ic.Publish size={14} /> Publish
-          </button>
+          <>
+            <button
+              className="btn"
+              onClick={onPublish}
+              disabled={publishDisabled}
+              aria-busy={persistBusy === "publish"}
+              style={publishDisabled ? { opacity: 0.5 } : {}}
+              title={isPersisting ? "Wait for the current save or publish to finish" : "Publish the current draft to the live booking form"}
+            >
+              <Ic.Publish size={14} /> {persistBusy === "publish" ? "Publishing…" : "Publish"}
+            </button>
+            <button
+              className="btn primary"
+              onClick={onSaveAndPublish}
+              disabled={publishDisabled}
+              aria-busy={persistBusy === "save-publish"}
+              style={publishDisabled ? { opacity: 0.5 } : {}}
+              title={isPersisting ? "Wait for the current save or publish to finish" : "Save draft and publish it to the live booking form"}
+            >
+              <Ic.Publish size={14} /> {persistBusy === "save-publish" ? "Saving & publishing…" : "Save and Publish"}
+            </button>
+          </>
         )}
         <span className="admin-session">
           <span className="admin-badge">Admin</span>
@@ -23868,6 +23898,7 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
   const [costBreakdown, setCostBreakdown] = React.useState(null);
   const [selectedAudit, setSelectedAudit] = React.useState(null);
   const [logPage, setLogPage] = React.useState(1);
+  const [busyAction, setBusyAction] = React.useState(null);
   const logPageSize = 10;
   const logEntries = record?.log || [];
   const logPageCount = Math.max(1, Math.ceil(logEntries.length / logPageSize));
@@ -23878,7 +23909,36 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
   React.useEffect(() => {
     if (logPage > logPageCount) setLogPage(logPageCount);
   }, [logPage, logPageCount]);
+  React.useEffect(() => {
+    setBusyAction(null);
+  }, [record?.id]);
   if (!record) return null;
+  const isBusy = !!busyAction;
+  const runBusy = async (action, fn) => {
+    if (busyAction) return;
+    setBusyAction(action);
+    try {
+      await fn();
+    } catch {
+      // Callers already surface failures via toasts.
+    } finally {
+      setBusyAction(null);
+    }
+  };
+  const contractStatus = record.progress?.contract || "Not Generated";
+  const handleGenerateContract = () => runBusy("generate", async () => {
+    if (contractStatus !== "Not Generated") {
+      const overwrite = window.confirm("A contract already exists for this booking. Generate again and overwrite the saved snapshot?");
+      if (!overwrite) return;
+    }
+    await onGenerateContract?.(record.id);
+  });
+  const handleOpenContract = (event) => {
+    if (!onOpenContract) return;
+    event.preventDefault();
+    runBusy("open", () => onOpenContract(record));
+  };
+  const handleSave = () => runBusy("save", () => Promise.resolve(onSave?.()));
   const patch = (section, patchValue) => onUpdate(record.id, { [section]: { ...(record[section] || {}), ...patchValue } });
   const patchProgress = (patchValue) => patch("progress", patchValue);
   const patchAdmin = (patchValue) => patch("adminSections", patchValue);
@@ -23949,7 +24009,15 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
               <div>{record.client?.email}</div>
               </div>
               <div className="progress-client-admin-details">
-              <button className="btn sm" style={{ justifySelf: "start", color: "var(--accent)" }}>Check/Create Nexudus User</button>
+              <button
+                className="btn sm"
+                type="button"
+                style={{ justifySelf: "start", color: "var(--accent)", opacity: 0.55 }}
+                disabled
+                title="Nexudus sync is not available yet"
+              >
+                Check/Create Nexudus User
+              </button>
               <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
                 <label className="lbl">Interest Level</label>
                 <select className="select" value={record.progress?.interestLevel || ""} onChange={(e) => patchProgress({ interestLevel: e.target.value })}>
@@ -24055,41 +24123,42 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
                   <select className="select" value={record.progress?.contract || "Not Generated"} onChange={(e) => patchProgress({ contract: e.target.value })}>
                     {["Not Generated", "Generated", "Sent"].map((o) => <option key={o}>{o}</option>)}
                   </select>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }} aria-busy={busyAction === "generate" || busyAction === "open"}>
                     <button
                       type="button"
                       className="btn dark sm"
-                      onClick={() => onGenerateContract?.(record.id)?.catch(() => {})}
-                      title="Generate the contract from the Contract template using this booking's details"
+                      onClick={handleGenerateContract}
+                      disabled={isBusy}
+                      aria-busy={busyAction === "generate"}
+                      title={isBusy ? "Wait for the current contract action to finish" : "Generate the contract from the Contract template using this booking's details"}
                     >
-                      Generate
+                      {busyAction === "generate" ? "Generating…" : "Generate"}
                     </button>
                     <button
                       type="button"
                       className="btn sm"
-                      disabled={(record.progress?.contract || "Not Generated") === "Not Generated"}
+                      disabled={isBusy || contractStatus === "Not Generated"}
                       onClick={() => {
+                        if (isBusy) return;
                         patchProgress({ contract: "Sent", contractSentAt: new Date().toISOString() });
                         onEmail?.(record, "sign-form");
                       }}
-                      title="Send sign-form email with contract link"
+                      title={isBusy ? "Wait for the current contract action to finish" : "Send sign-form email with contract link"}
                     >
                       Send
                     </button>
-                    {(record.progress?.contract || "Not Generated") !== "Not Generated" && (
+                    {contractStatus !== "Not Generated" && (
                       <a
                         className="btn-gray sm"
                         href={`/book?record=${encodeURIComponent(bookingCodeForRecord(record))}&action=sign`}
                         target="_blank"
                         rel="noreferrer"
-                        style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
-                        onClick={(e) => {
-                          if (!onOpenContract) return;
-                          e.preventDefault();
-                          onOpenContract(record);
-                        }}
+                        aria-disabled={isBusy}
+                        style={{ display: "inline-flex", alignItems: "center", textDecoration: "none", opacity: isBusy ? 0.55 : 1, pointerEvents: isBusy ? "none" : "auto" }}
+                        onClick={handleOpenContract}
+                        title={busyAction === "open" ? "Preparing contract link…" : "Open the client sign link"}
                       >
-                        Open link
+                        {busyAction === "open" ? "Opening…" : "Open link"}
                       </a>
                     )}
                   </div>
@@ -24125,7 +24194,11 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
         <div style={{ border: "1px solid var(--line)", borderTop: 0, borderRadius: "0 0 8px 8px", padding: 14, display: "grid", gap: 10 }}>
           <label className="chk"><input type="checkbox" checked={!!record.progress?.accessibleByRecordLink} onChange={(e) => patchProgress({ accessibleByRecordLink: e.target.checked })} /> Accessible using Record Link</label>
           <div><label className="lbl">Issues</label><textarea className="textarea" rows={4} value={record.progress?.issues || ""} onChange={(e) => patchProgress({ issues: e.target.value })} /></div>
-          <div><label className="lbl">Attachments</label><input type="file" multiple /></div>
+          <div>
+            <label className="lbl">Attachments</label>
+            <input type="file" multiple disabled title="File attachments are not wired yet" aria-label="Attachments (coming soon)" />
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--ink-3)" }}>Coming soon — uploads are not saved yet.</p>
+          </div>
         </div>
         </div>
 
@@ -24207,9 +24280,11 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
         </div>
       </div>
       <div className="progress-detail-actions" aria-label="Detailed progress actions">
-        <button className="btn" type="button" onClick={printProgress}><Ic.Print size={15} /> Print</button>
-        <button className="btn" type="button" onClick={() => onEditClient?.(record)}><Ic.Edit size={15} /> Edit</button>
-        <button className="btn primary" type="button" onClick={onSave}><Ic.Save size={15} /> Save</button>
+        <button className="btn" type="button" onClick={printProgress} disabled={isBusy}><Ic.Print size={15} /> Print</button>
+        <button className="btn" type="button" onClick={() => onEditClient?.(record)} disabled={isBusy}><Ic.Edit size={15} /> Edit</button>
+        <button className="btn primary" type="button" onClick={handleSave} disabled={isBusy} aria-busy={busyAction === "save"}>
+          <Ic.Save size={15} /> {busyAction === "save" ? "Saving…" : "Save"}
+        </button>
       </div>
       {costBreakdown && <ProgressCostBreakdownModal {...costBreakdown} onClose={() => setCostBreakdown(null)} />}
       {selectedAudit && <BookingAuditModal audit={selectedAudit} steps={steps} onClose={() => setSelectedAudit(null)} />}
@@ -24993,6 +25068,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const generateProgressContract = (recordId) => {
     const current = progressRecordsRef.current.find((item) => item.id === recordId);
     if (!current) return Promise.reject(new Error("Booking record not found."));
+    pushToast({ kind: "info", title: "Generating contract…", desc: "Saving booking details and preparing the sign link." });
     const generatedAt = new Date().toISOString();
     const withStatus = {
       ...current,
@@ -25060,7 +25136,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     }
   };
   const openProgressContract = (record) => {
-    if (!record?.id) return;
+    if (!record?.id) return Promise.resolve();
     const url = contractLinkForRecord(record);
     const tab = window.open("", "_blank");
     if (tab) {
@@ -25072,12 +25148,15 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     const ready = status === "Not Generated" || (status === "Generated" && !latest.progress?.contractSnapshot)
       ? generateProgressContract(record.id)
       : syncContractRecord(latest);
-    ready.then(
+    return ready.then(
       () => {
         if (tab) tab.location.href = url;
         else window.open(url, "_blank", "noopener,noreferrer");
       },
-      () => tab?.close()
+      (error) => {
+        tab?.close();
+        throw error;
+      }
     );
   };
   const openClientProgress = (record = {}) => {
@@ -25328,10 +25407,29 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     return (workflowStats.removedImages || 0) + (rentalStats.removedImages || 0) + (pricingStats.removedImages || 0) + (siteStats.removedImages || 0) + (progressStats.removedImages || 0);
   }, [pushHistoryEntry, endWorkflowUndoBurst, endRentalUndoBurst, fingerprintAdminState]);
 
+  const [persistBusy, setPersistBusy] = React.useState(null);
+  const persistBusyRef = React.useRef(null);
+  const beginPersist = React.useCallback((kind) => {
+    if (persistBusyRef.current) return false;
+    persistBusyRef.current = kind;
+    setPersistBusy(kind);
+    return true;
+  }, []);
+  const endPersist = React.useCallback(() => {
+    persistBusyRef.current = null;
+    setPersistBusy(null);
+  }, []);
+
   const save = React.useCallback(() => {
+    if (!beginPersist("save")) return Promise.resolve();
     try {
       const removedImages = saveLocalSnapshot("Saved changes");
-      buildDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current, currentPublishedState())
+      pushToast({
+        kind: "success",
+        title: "Changes saved",
+        desc: removedImages ? `Saved configuration. ${removedImages} oversized uploaded image${removedImages > 1 ? "s were" : " was"} skipped for browser storage.` : "Workflow draft updated",
+      });
+      return buildDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current, currentPublishedState())
         .then((databaseState) => putAdminStateToDatabase(databaseState))
         .then(() => {
           setRecommendedRentalCatalogSnapshot(rentalCatalogRef.current);
@@ -25344,44 +25442,64 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
             desc: `${error.message || "Unknown error."} Changes are only in this browser until the database save succeeds.`,
             duration: 8000,
           });
-        });
-      pushToast({
-        kind: "success",
-        title: "Changes saved",
-        desc: removedImages ? `Saved configuration. ${removedImages} oversized uploaded image${removedImages > 1 ? "s were" : " was"} skipped for browser storage.` : "Workflow draft updated",
-      });
+          throw error;
+        })
+        .finally(endPersist);
     } catch (e) {
+      endPersist();
       pushToast({ kind: "danger", title: "Save failed", desc: e.message });
+      return Promise.reject(e);
     }
-  }, [pushToast, saveLocalSnapshot]);
+  }, [beginPersist, endPersist, pushToast, saveLocalSnapshot]);
 
-  const publish = () => {
-    const liveState = buildPublicStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
-    const previousPublishedState = publishedStateRef.current;
-    pushHistoryEntry("Before publish", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
-    publishedStateRef.current = liveState;
-    setPublishedState(liveState);
-    buildDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current, liveState)
-      .then((databaseState) => putAdminStateToDatabase(databaseState))
-      .then(() => {
-        const now = Date.now();
-        localStorage.setItem(SAVED_KEY, String(now));
-        lastSavedFingerprintRef.current = fingerprintAdminState();
-        setLastSavedAt(now);
-        setIsDirty(false);
-        pushToast({
-          kind: "success",
-          title: "Published to clients",
-          desc: "The latest draft is now live on the booking form.",
-          duration: 4000,
-        });
-      })
-      .catch((error) => {
-        publishedStateRef.current = previousPublishedState;
-        setPublishedState(previousPublishedState);
-        pushToast({ kind: "danger", title: "Publish failed", desc: error.message || "Please try again.", duration: 8000 });
-      });
-  };
+  const publish = React.useCallback((options = {}) => {
+    const busyKind = options.saveAndPublish ? "save-publish" : "publish";
+    if (!beginPersist(busyKind)) return Promise.resolve();
+    try {
+      if (options.saveAndPublish) {
+        try {
+          saveLocalSnapshot("Saved before publish");
+        } catch (error) {
+          endPersist();
+          pushToast({ kind: "danger", title: "Save failed", desc: error.message });
+          return Promise.reject(error);
+        }
+      }
+      const liveState = buildPublicStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
+      const previousPublishedState = publishedStateRef.current;
+      pushHistoryEntry("Before publish", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
+      publishedStateRef.current = liveState;
+      setPublishedState(liveState);
+      return buildDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current, liveState)
+        .then((databaseState) => putAdminStateToDatabase(databaseState))
+        .then(() => {
+          const now = Date.now();
+          localStorage.setItem(SAVED_KEY, String(now));
+          lastSavedFingerprintRef.current = fingerprintAdminState();
+          setLastSavedAt(now);
+          setIsDirty(false);
+          pushToast({
+            kind: "success",
+            title: options.saveAndPublish ? "Saved and published" : "Published to clients",
+            desc: "The latest draft is now live on the booking form.",
+            duration: 4000,
+          });
+        })
+        .catch((error) => {
+          publishedStateRef.current = previousPublishedState;
+          setPublishedState(previousPublishedState);
+          pushToast({ kind: "danger", title: options.saveAndPublish ? "Save and publish failed" : "Publish failed", desc: error.message || "Please try again.", duration: 8000 });
+          throw error;
+        })
+        .finally(endPersist);
+    } catch (error) {
+      endPersist();
+      pushToast({ kind: "danger", title: options.saveAndPublish ? "Save and publish failed" : "Publish failed", desc: error.message || "Please try again.", duration: 8000 });
+      return Promise.reject(error);
+    }
+  }, [beginPersist, endPersist, fingerprintAdminState, pushHistoryEntry, pushToast, saveLocalSnapshot]);
+
+  const saveAndPublish = React.useCallback(() => publish({ saveAndPublish: true }), [publish]);
 
   const resetToSample = () => {
     pushHistoryEntry("Before reset to sample", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
@@ -25509,7 +25627,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        if (isDirty) save();
+        if (isDirty && !persistBusyRef.current) save();
       }
       if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -25867,6 +25985,8 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           lastSaved={lastSavedLabel}
           onSave={save}
           onPublish={publish}
+          onSaveAndPublish={saveAndPublish}
+          persistBusy={persistBusy}
           onUndo={activeSection === "rentals" ? undoRentalCatalog : undoWorkflow}
           onRedo={activeSection === "rentals" ? redoRentalCatalog : redoWorkflow}
           canUndo={activeSection === "rentals" ? rentalUndo.length > 0 : workflowUndo.length > 0}
