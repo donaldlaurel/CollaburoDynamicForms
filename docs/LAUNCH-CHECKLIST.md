@@ -98,6 +98,6 @@ confirm the booking flow still renders and submits.
 ## Known items deferred (next iteration)
 
 - Replace shared-password Basic Auth with real session login.
-- Activity Timeline is still localStorage-only (doesn't sync across devices).
+- Local Activity Timeline (Site Settings undo/restore) is still localStorage-only; the server **Activity** audit feed (`collaburo_audit_events`) is separate and auto-creates its table on first Activity visit / first audit write.
 - No automated tests/CI; no error monitoring (consider Sentry).
 - Admin state is one growing JSONB blob — watch its size as progress records grow.

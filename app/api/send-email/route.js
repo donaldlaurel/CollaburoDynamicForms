@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import {
+  clientIpFromRequest,
+  createRequestId,
+  logOpsEvent,
+  recordAuditEvent,
+} from "@/lib/audit-log";
 
 function textToHtml(text = "") {
   return String(text)
@@ -18,6 +24,9 @@ function emailList(value) {
 }
 
 export async function POST(request) {
+  const requestId = createRequestId();
+  const actorId = request.headers.get("x-collaburo-admin-user") || "admin";
+  const ip = clientIpFromRequest(request);
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ ok: false, error: "Missing email payload." }, { status: 400 });
@@ -28,6 +37,8 @@ export async function POST(request) {
   const cc = emailList(body.cc);
   const subject = String(body.subject || "").trim();
   const text = String(body.text || "").trim();
+  const emailType = String(body.type || "progress");
+  const bookingId = String(body.recordId || body.bookingId || "").trim();
 
   if (!from || !to.length || !subject || !text) {
     return NextResponse.json({ ok: false, error: "From, To, Subject, and Email Content are required." }, { status: 400 });
@@ -35,6 +46,26 @@ export async function POST(request) {
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
+    await recordAuditEvent({
+      actorType: "admin",
+      actorId,
+      action: "email.sent",
+      resourceType: "email",
+      resourceId: bookingId,
+      outcome: "failure",
+      requestId,
+      ip,
+      summary: "Email send failed: Resend not configured",
+      metadata: { subject, type: emailType },
+    });
+    logOpsEvent({
+      level: "error",
+      requestId,
+      route: "/api/send-email",
+      action: "email.sent",
+      actorId,
+      message: "RESEND_API_KEY missing",
+    });
     return NextResponse.json({ ok: false, error: "Resend is not configured. Add RESEND_API_KEY to the environment." }, { status: 501 });
   }
 
@@ -65,14 +96,47 @@ export async function POST(request) {
       text,
       html: textToHtml(text),
       ...(attachments.length ? { attachments } : {}),
-      tags: [{ name: "collaburo_type", value: String(body.type || "progress") }],
+      tags: [{ name: "collaburo_type", value: emailType }],
     }),
   });
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    return NextResponse.json({ ok: false, error: data.message || data.error || "Resend rejected the email." }, { status: response.status });
+    const message = data.message || data.error || "Resend rejected the email.";
+    await recordAuditEvent({
+      actorType: "admin",
+      actorId,
+      action: "email.sent",
+      resourceType: "email",
+      resourceId: bookingId,
+      outcome: "failure",
+      requestId,
+      ip,
+      summary: "Email send failed",
+      metadata: { subject, type: emailType },
+    });
+    logOpsEvent({
+      level: "error",
+      requestId,
+      route: "/api/send-email",
+      action: "email.sent",
+      actorId,
+      message: String(message),
+    });
+    return NextResponse.json({ ok: false, error: message }, { status: response.status });
   }
 
+  await recordAuditEvent({
+    actorType: "admin",
+    actorId,
+    action: "email.sent",
+    resourceType: "email",
+    resourceId: bookingId,
+    outcome: "success",
+    requestId,
+    ip,
+    summary: `Email sent: ${subject}`,
+    metadata: { subject, type: emailType, toCount: to.length, emailId: data.id || null },
+  });
   return NextResponse.json({ ok: true, id: data.id || null });
 }

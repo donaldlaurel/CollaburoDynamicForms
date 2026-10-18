@@ -2,6 +2,11 @@ import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 import memory from "../../../lib/memory-store";
 import { MAX_PROGRESS_RECORDS } from "../../../lib/progress-records";
+import {
+  clientIpFromRequest,
+  createRequestId,
+  recordAuditEvent,
+} from "../../../lib/audit-log";
 
 // Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
 // bookings; every database route must opt out.
@@ -358,11 +363,14 @@ async function replaceSubmissionPayload(sql, record) {
 }
 
 export async function POST(request) {
+  const requestId = createRequestId();
+  const ip = clientIpFromRequest(request);
   const body = await request.json().catch(() => null);
   if (body?.action === "delete-progress-record") {
     if (request.headers.get("x-collaburo-admin") !== "1") {
       return NextResponse.json({ ok: false, error: "Admin authentication required." }, { status: 401 });
     }
+    const adminUser = request.headers.get("x-collaburo-admin-user") || "admin";
     const recordId = String(body.recordId || body.id || "").trim();
     if (!recordId) return NextResponse.json({ ok: false, error: "Missing record id." }, { status: 400 });
     const sql = database();
@@ -385,12 +393,24 @@ export async function POST(request) {
         deleteSubmissionByRecordId(sql, recordId),
       ]);
     }
+    await recordAuditEvent({
+      actorType: "admin",
+      actorId: adminUser,
+      action: "booking.deleted",
+      resourceType: "booking",
+      resourceId: recordId,
+      outcome: "success",
+      requestId,
+      ip,
+      summary: `Booking deleted: ${recordId}`,
+    });
     return NextResponse.json({ ok: true, recordId, updatedAt, source: sql ? "database" : "memory" });
   }
   if (body?.action === "admin-update-booking") {
     if (request.headers.get("x-collaburo-admin") !== "1") {
       return NextResponse.json({ ok: false, error: "Admin authentication required." }, { status: 401 });
     }
+    const adminUser = request.headers.get("x-collaburo-admin-user") || "admin";
     const proposed = body.record;
     if (!proposed?.id) return NextResponse.json({ ok: false, error: "Missing booking record." }, { status: 400 });
     const sql = database();
@@ -409,7 +429,7 @@ export async function POST(request) {
       // with a record ID that has not yet been persisted to the database.
       existing = proposed;
     }
-    const result = applyAdminBookingEdit(existing, proposed, request.headers.get("x-collaburo-admin-user") || "admin", body.auditBefore, body.auditDisplayChanges);
+    const result = applyAdminBookingEdit(existing, proposed, adminUser, body.auditBefore, body.auditDisplayChanges);
     let updatedAt = null;
     if (!sql) {
       const current = memory.state && typeof memory.state === "object" ? memory.state : {};
@@ -426,6 +446,21 @@ export async function POST(request) {
         replaceSubmissionPayload(sql, result.record),
       ]);
     }
+    await recordAuditEvent({
+      actorType: "admin",
+      actorId: adminUser,
+      action: "booking.admin_edited",
+      resourceType: "booking",
+      resourceId: String(result.record.id || proposed.id),
+      outcome: "success",
+      requestId,
+      ip,
+      summary: `Booking edited by admin${result.changedFields?.length ? ` (${result.changedFields.join(", ")})` : ""}`,
+      metadata: {
+        bookingCode: result.record.bookingCode || "",
+        changedFields: result.changedFields || [],
+      },
+    });
     return NextResponse.json({ ok: true, ...result, updatedAt, source: sql ? "database" : "memory" });
   }
   if (body?.action === "touch-progress-record") {
@@ -577,10 +612,34 @@ export async function POST(request) {
       memory.state = { ...current, savedAt: new Date().toISOString(), progressRecords: nextRecords.slice(0, MAX_PROGRESS_RECORDS) };
       memory.updatedAt = new Date().toISOString();
       memory.submissions = memory.submissions.map((item) => item.payload?.id === record.id ? { ...item, payload: record, client_name: record.client?.name || "New Client", client_email: record.client?.email || "", event_space: record.request?.space || "", status: record.progress?.status || "In Discussion", total: Number(record.costs?.totalWithDeposit || record.costs?.total || 0) } : item);
+      await recordAuditEvent({
+        actorType: "client",
+        actorId: String(record.client?.email || "").trim().toLowerCase(),
+        action: "booking.draft_saved",
+        resourceType: "booking",
+        resourceId: String(record.id),
+        outcome: "success",
+        requestId,
+        ip,
+        summary: "Client booking draft saved",
+        metadata: { bookingCode: record.bookingCode || "", source: "memory" },
+      });
       return NextResponse.json({ ok: true, record, source: "memory" });
     }
     await replaceProgressRecordInAdminState(sql, record);
     await replaceSubmissionPayload(sql, record);
+    await recordAuditEvent({
+      actorType: "client",
+      actorId: String(record.client?.email || "").trim().toLowerCase(),
+      action: "booking.draft_saved",
+      resourceType: "booking",
+      resourceId: String(record.id),
+      outcome: "success",
+      requestId,
+      ip,
+      summary: "Client booking draft saved",
+      metadata: { bookingCode: record.bookingCode || "", source: "database" },
+    });
     return NextResponse.json({ ok: true, record, source: "database" });
   }
   const record = body?.record || body;
@@ -595,6 +654,9 @@ export async function POST(request) {
   const costs = record.costs || {};
   const total = Number(costs.totalWithDeposit || costs.total || 0);
   const fingerprint = await submissionFingerprint(client, requestInfo, total);
+
+  const clientActor = String(client.email || "").trim().toLowerCase();
+  const bookingResourceId = String(record.id || record.bookingCode || "");
 
   if (!sql) {
     const existing = fingerprint ? memory.submissions.find((item) => item.fingerprint === fingerprint) : null;
@@ -621,6 +683,22 @@ export async function POST(request) {
       progressRecords: [record, ...progressRecords].slice(0, MAX_PROGRESS_RECORDS),
     };
     memory.updatedAt = new Date().toISOString();
+    await recordAuditEvent({
+      actorType: "client",
+      actorId: clientActor,
+      action: "booking.submitted",
+      resourceType: "booking",
+      resourceId: bookingResourceId || String(submission.id),
+      outcome: "success",
+      requestId,
+      ip,
+      summary: "New booking submitted",
+      metadata: {
+        bookingCode: record.bookingCode || "",
+        space: requestInfo.space || "",
+        source: "memory",
+      },
+    });
     return NextResponse.json({ ok: true, submission, source: "memory" }, { status: 201 });
   }
 
@@ -657,5 +735,21 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, submission: existing[0] || null, duplicate: true, source: "database" });
   }
   await appendProgressRecordToAdminState(sql, record);
+  await recordAuditEvent({
+    actorType: "client",
+    actorId: clientActor,
+    action: "booking.submitted",
+    resourceType: "booking",
+    resourceId: bookingResourceId || String(rows[0]?.id || ""),
+    outcome: "success",
+    requestId,
+    ip,
+    summary: "New booking submitted",
+    metadata: {
+      bookingCode: record.bookingCode || "",
+      space: requestInfo.space || "",
+      source: "database",
+    },
+  });
   return NextResponse.json({ ok: true, submission: rows[0], source: "database" }, { status: 201 });
 }

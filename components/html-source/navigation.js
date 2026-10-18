@@ -11,6 +11,7 @@ const SIDE_NAV_BOTTOM = [
   { id: "clients",  label: "Rentals Progress List", icon: "Users", countKey: "clients" },
   { id: "calendar", label: "Calendar",       icon: "Cal" },
   { id: "reports",  label: "Reports",        icon: "Chart" },
+  { id: "activity", label: "Activity",       icon: "Clock" },
 ];
 
 const SECTION_LABEL = {
@@ -23,6 +24,7 @@ const SECTION_LABEL = {
   contract: "Contract",
   calendar: "Booking Calendar",
   reports: "Reports",
+  activity: "Activity",
   profile: "Admin Profile",
 };
 
@@ -36,6 +38,7 @@ const SECTION_PARENT = {
   clients: "Operations",
   calendar: "Operations",
   reports: "Operations",
+  activity: "Operations",
   profile: "Admin",
 };
 

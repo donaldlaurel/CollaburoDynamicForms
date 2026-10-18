@@ -6,7 +6,7 @@ A study guide to how the database looks once the booking form is public, how dat
 
 ## 1. The big picture
 
-Everything lives in **two Postgres tables** (Neon). The most important thing to understand is that **each booking is stored in two places**, and that **some public API actions can change data without proper checks**.
+Booking data lives in **two Postgres tables** (Neon), plus a third **append-only audit table**. The most important thing to understand is that **each booking is stored in two places**, and that **some public API actions can change data without proper checks**.
 
 ```mermaid
 flowchart LR
@@ -15,8 +15,11 @@ flowchart LR
   Visitor -->|"POST /api/submissions"| Config
   Visitor -->|"POST /api/contracts/sign"| Config
   Admin["Admin dashboard"] -->|"PUT /api/admin-state (whole blob)"| Config
+  APIs["API routes"] -->|"INSERT audit events"| Audit
+  Admin -->|"GET /api/audit-log"| Audit
   Config[("collaburo_app_config: key 'default' holds config and progressRecords")]
   Subs[("collaburo_submissions: one row per booking")]
+  Audit[("collaburo_audit_events: append-only activity log")]
 ```
 
 ---
@@ -91,6 +94,31 @@ One row per booking. A few real columns for listing/filtering, plus a full copy 
 | `payload`      | jsonb         | Full booking record (same shape as above)       |
 | `fingerprint`  | text (unique) | SHA-256 of email + space + date + total (dedupe)|
 | `created_at`   | timestamptz   | Insert time                                     |
+
+### Table 3: `collaburo_audit_events`
+
+Append-only cross-cutting activity log (admin/system actions + public milestones). App code only **INSERT** + **SELECT** — no update/delete API. Not stored inside the admin-state JSON blob.
+
+| Column          | Type        | Meaning                                              |
+|-----------------|-------------|------------------------------------------------------|
+| `id`            | uuid (PK)   | Event id                                             |
+| `created_at`    | timestamptz | Event time                                           |
+| `actor_type`    | text        | `admin` \| `client` \| `system`                      |
+| `actor_id`      | text        | Username, client email, or `system`                  |
+| `action`        | text        | e.g. `booking.submitted`, `config.saved`             |
+| `resource_type` | text        | `booking` \| `config` \| `account` \| `email` \| … |
+| `resource_id`   | text        | Booking id, config key, account id, etc.             |
+| `outcome`       | text        | `success` \| `failure`                               |
+| `request_id`    | text        | Correlation id for Worker/console logs               |
+| `ip`            | text        | Best-effort client IP                                |
+| `summary`       | text        | Short human-readable line                            |
+| `metadata`      | jsonb       | Small non-PII context (never full booking payloads)  |
+
+**Event catalog (v1):** `session.login` / `session.logout`, `config.saved`, `booking.submitted`, `booking.draft_saved`, `booking.admin_edited`, `booking.deleted`, `contract.signed`, `email.sent`, `account.created` / `account.updated` / `account.deleted`, `legacy.imported`.
+
+Admin UI: **Operations → Activity** (`GET /api/audit-log`). Helper: `lib/audit-log.js` (memory ring buffer when `DATABASE_URL` is unset).
+
+The table is also created automatically on first use (`ensureAuditEventsTable` in `lib/audit-log.js`) when an admin opens **Operations → Activity** or when the first audit event is recorded. `db/schema.sql` remains the source of truth for fresh environments.
 
 ---
 

@@ -1,6 +1,12 @@
 import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 import memory from "../../../lib/memory-store";
+import {
+  clientIpFromRequest,
+  createRequestId,
+  logOpsEvent,
+  recordAuditEvent,
+} from "../../../lib/audit-log";
 
 // Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
 // bookings; every database route must opt out.
@@ -73,6 +79,9 @@ export async function GET(request) {
 }
 
 export async function PUT(request) {
+  const requestId = createRequestId();
+  const actorId = request.headers.get("x-collaburo-admin-user") || "admin";
+  const ip = clientIpFromRequest(request);
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ ok: false, error: "Missing admin state payload." }, { status: 400 });
@@ -82,15 +91,48 @@ export async function PUT(request) {
   // metadata for optimistic concurrency, not part of the stored state.
   const { baseUpdatedAt, ...state } = body;
   const baseMs = baseUpdatedAt ? new Date(baseUpdatedAt).getTime() || 0 : null;
+  const progressCount = Array.isArray(state.progressRecords) ? state.progressRecords.length : 0;
 
   const sql = database();
   if (!sql) {
     const currentMs = memory.updatedAt ? new Date(memory.updatedAt).getTime() || 0 : 0;
     if (baseMs !== null && currentMs > baseMs + STALE_WRITE_TOLERANCE_MS) {
+      await recordAuditEvent({
+        actorType: "admin",
+        actorId,
+        action: "config.saved",
+        resourceType: "config",
+        resourceId: APP_STATE_KEY,
+        outcome: "failure",
+        requestId,
+        ip,
+        summary: "Config save conflict (stale write)",
+        metadata: { conflict: true, source: "memory" },
+      });
+      logOpsEvent({
+        level: "warn",
+        requestId,
+        route: "/api/admin-state",
+        action: "config.saved",
+        actorId,
+        message: "Stale write conflict (memory)",
+      });
       return conflictResponse(memory.updatedAt);
     }
     memory.state = state;
     memory.updatedAt = new Date().toISOString();
+    await recordAuditEvent({
+      actorType: "admin",
+      actorId,
+      action: "config.saved",
+      resourceType: "config",
+      resourceId: APP_STATE_KEY,
+      outcome: "success",
+      requestId,
+      ip,
+      summary: "Admin config saved",
+      metadata: { source: "memory", progressCount },
+    });
     return NextResponse.json({ ok: true, source: "memory", updatedAt: memory.updatedAt });
   }
 
@@ -109,6 +151,26 @@ export async function PUT(request) {
       const current = await sql`
         select updated_at from collaburo_app_config where key = ${APP_STATE_KEY} limit 1
       `;
+      await recordAuditEvent({
+        actorType: "admin",
+        actorId,
+        action: "config.saved",
+        resourceType: "config",
+        resourceId: APP_STATE_KEY,
+        outcome: "failure",
+        requestId,
+        ip,
+        summary: "Config save conflict (stale write)",
+        metadata: { conflict: true, source: "database" },
+      });
+      logOpsEvent({
+        level: "warn",
+        requestId,
+        route: "/api/admin-state",
+        action: "config.saved",
+        actorId,
+        message: "Stale write conflict (database)",
+      });
       return conflictResponse(current[0]?.updated_at || null);
     }
   } else {
@@ -121,5 +183,17 @@ export async function PUT(request) {
       returning updated_at
     `;
   }
+  await recordAuditEvent({
+    actorType: "admin",
+    actorId,
+    action: "config.saved",
+    resourceType: "config",
+    resourceId: APP_STATE_KEY,
+    outcome: "success",
+    requestId,
+    ip,
+    summary: "Admin config saved",
+    metadata: { source: "database", progressCount },
+  });
   return NextResponse.json({ ok: true, source: "database", updatedAt: rows[0]?.updated_at || null });
 }

@@ -38,6 +38,7 @@ const RATE_RULES = [
   { name: "contract-sign", limit: 20, windowMs: 5 * 60_000, match: (path, method) => path === "/api/contracts/sign" && method === "POST" },
   { name: "uploads", limit: 120, windowMs: 5 * 60_000, match: (path) => path.startsWith("/api/uploads") },
   { name: "state-read", limit: 120, windowMs: 60_000, match: (path, method) => path === "/api/admin-state" && method === "GET" },
+  { name: "audit-read", limit: 60, windowMs: 60_000, match: (path, method) => path === "/api/audit-log" && method === "GET" },
 ];
 
 const rateBuckets = new Map();
