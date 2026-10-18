@@ -1,14 +1,14 @@
 const SIDE_NAV = [
-  { id: "workflow", label: "Workflow Steps", icon: "Layers", count: "9" },
-  { id: "rentals",  label: "Rentals",        icon: "Tag",    count: "59" },
-  { id: "pricing",  label: "Pricing Rules",  icon: "Dollar", count: "12" },
+  { id: "workflow", label: "Workflow Steps", icon: "Layers", countKey: "workflow" },
+  { id: "rentals",  label: "Rentals",        icon: "Tag",    countKey: "rentals" },
+  { id: "pricing",  label: "Pricing Rules",  icon: "Dollar", countKey: "pricing" },
   { id: "email-settings", label: "Email Settings", icon: "Mail" },
   { id: "contract", label: "Contract", icon: "File" },
   { id: "site",     label: "Site Settings",  icon: "Settings" },
 ];
 
 const SIDE_NAV_BOTTOM = [
-  { id: "clients",  label: "Rentals Progress List", icon: "Users", count: "4" },
+  { id: "clients",  label: "Rentals Progress List", icon: "Users", countKey: "clients" },
   { id: "calendar", label: "Calendar",       icon: "Cal" },
   { id: "reports",  label: "Reports",        icon: "Chart" },
 ];
