@@ -24,6 +24,15 @@ const SHOW_OLD_SITE_IMPORT_BUTTONS = false;
 
 Object.assign(window, { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, SIDE_NAV, SIDE_NAV_BOTTOM, ROOMS });
 
+/** Platform-aware modifier key label for shortcut hints (⌘ on Apple, Ctrl elsewhere). */
+const MOD_KEY_LABEL = (() => {
+  if (typeof navigator === "undefined") return "Ctrl";
+  const platform = navigator.platform || "";
+  const ua = navigator.userAgent || "";
+  return /Mac|iPhone|iPad|iPod/.test(platform) || /Mac OS X/.test(ua) ? "⌘" : "Ctrl";
+})();
+const modShortcut = (key) => (MOD_KEY_LABEL === "⌘" ? `⌘${key}` : `Ctrl+${key}`);
+
 const ClientPricingVisibilityContext = React.createContext({ pricesVisible: true, areas: {} });
 
 // area: "itemPrices" | "venueTotal" | "noticeAmounts" — what may show before the email is verified.
@@ -4251,7 +4260,6 @@ function RentalSelectedEditor({ item, rows, venues = [], deliveryOptions = [], o
         <RentalPackageEditor item={item} rows={rows} onPatch={onPatch} />
         <RentalRecommendationsEditor item={item} rows={rows} onPatch={onPatch} />
 
-        <div className="section-bar"><h2>Client preview</h2></div>
         <RentalClientPreviewPanel item={item} />
       </div>
     </div>
@@ -4672,12 +4680,32 @@ function initialsForName(name = "Admin") {
     .join("") || "A";
 }
 
-function Sidebar({ collapsed, onToggle, active, onChangeSection, siteSettings, currentAdmin }) {
+function Sidebar({ collapsed, onToggle, active, onChangeSection, siteSettings, currentAdmin, counts = {} }) {
   const Ic = window.Icons;
   const branding = siteSettings?.branding || {};
   const shortTitle = (branding.adminBrandName || branding.siteTitle || "Collaburo").replace(/^Customize Your Event\s*[-·]\s*/i, "").trim() || "Collaburo";
   const profileName = currentAdmin?.displayName || currentAdmin?.username || "Admin";
   const profileTitle = currentAdmin?.title || currentAdmin?.role || "Admin";
+  const renderNavLink = (n) => {
+    const IconCmp = Ic[n.icon];
+    const count = n.countKey && counts[n.countKey] != null ? String(counts[n.countKey]) : "";
+    return (
+      <a
+        key={n.id}
+        href={`/admin/${n.id}`}
+        className={"side-link" + (active === n.id ? " active" : "")}
+        onClick={(event) => {
+          event.preventDefault();
+          onChangeSection && onChangeSection(n.id);
+        }}
+        title={collapsed ? n.label : undefined}
+      >
+        <span className="side-link-icon"><IconCmp size={16} /></span>
+        <span className="side-link-label">{n.label}</span>
+        {count ? <span className="side-link-count">{count}</span> : null}
+      </a>
+    );
+  };
   return (
     <aside className="side">
       <div className="side-brand">
@@ -4697,40 +4725,12 @@ function Sidebar({ collapsed, onToggle, active, onChangeSection, siteSettings, c
 
       <div className="side-section">Operations</div>
       <nav className="side-nav">
-        {SIDE_NAV_BOTTOM.map((n) => {
-          const IconCmp = Ic[n.icon];
-          return (
-            <a
-              key={n.id}
-              className={"side-link" + (active === n.id ? " active" : "")}
-              onClick={() => onChangeSection && onChangeSection(n.id)}
-              title={collapsed ? n.label : undefined}
-            >
-              <span className="side-link-icon"><IconCmp size={16} /></span>
-              <span className="side-link-label">{n.label}</span>
-              {n.count && <span className="side-link-count">{n.count}</span>}
-            </a>
-          );
-        })}
+        {SIDE_NAV_BOTTOM.map(renderNavLink)}
       </nav>
 
       <div className="side-section">Configuration</div>
       <nav className="side-nav">
-        {SIDE_NAV.map((n) => {
-          const IconCmp = Ic[n.icon];
-          return (
-            <a
-              key={n.id}
-              className={"side-link" + (active === n.id ? " active" : "")}
-              onClick={() => onChangeSection && onChangeSection(n.id)}
-              title={collapsed ? n.label : undefined}
-            >
-              <span className="side-link-icon"><IconCmp size={16} /></span>
-              <span className="side-link-label">{n.label}</span>
-              {n.count && <span className="side-link-count">{n.count}</span>}
-            </a>
-          );
-        })}
+        {SIDE_NAV.map(renderNavLink)}
       </nav>
 
       <button className={"side-foot" + (active === "profile" ? " active" : "")} onClick={() => onChangeSection && onChangeSection("profile")} title="Open admin profile">
@@ -4754,11 +4754,12 @@ window.Sidebar = Sidebar;
 function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onSave, onPublish, onUndo, onRedo, canUndo = false, canRedo = false }) {
   const Ic = window.Icons;
   const isWorkflow = section === "workflow";
-  const canPublish = ["workflow", "rentals", "pricing", "email-settings", "contract"].includes(section);
+  const canPublish = ["workflow", "rentals", "pricing", "email-settings", "contract", "site"].includes(section);
   const hasUndoRedo = section === "workflow" || section === "rentals";
   const undoLabel = section === "rentals" ? "Undo rental catalog change" : "Undo workflow change";
   const redoLabel = section === "rentals" ? "Redo rental catalog change" : "Redo workflow change";
   const sectionLabel = section === "profile" ? "Profile" : (SECTION_LABEL[section] || section);
+  const saveShortcut = modShortcut("S");
   return (
     <header className="topbar">
       <div className="crumbs">
@@ -4766,7 +4767,7 @@ function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onS
         <span className="sep">/</span>
         <span className="here">{sectionLabel}</span>
       </div>
-      <span className="draft-pill" title={isDirty ? "Unsaved changes — press ⌘S to save" : "All changes saved"}>
+      <span className="draft-pill" title={isDirty ? `Unsaved changes — press ${saveShortcut} to save` : "All changes saved"}>
         {isDirty ? "Unsaved changes" : `Saved ${lastSaved}`}
       </span>
 
@@ -4795,14 +4796,16 @@ function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onS
         )}
         <button className="btn" onClick={onSave} disabled={!isDirty} style={!isDirty ? { opacity: 0.5 } : {}}>
           <Ic.Save size={14} /> Save changes
-          <span className="kbd" style={{ marginLeft: 4 }}>⌘S</span>
+          <span className="kbd" style={{ marginLeft: 4 }}>{saveShortcut}</span>
         </button>
         {canPublish && (
           <button className="btn primary" onClick={onPublish}>
             <Ic.Publish size={14} /> Publish
           </button>
         )}
-        <span className="admin-badge">Admin</span>
+        <span className="admin-session">
+          <span className="admin-badge">Admin</span>
+        </span>
       </div>
     </header>
   );
@@ -4849,7 +4852,7 @@ function StepList({ steps, activeId, onSelect, onMove, onDelete, onAdd, onRename
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search steps…"
           />
-          {!query && <span className="col-search-kbd">⌘ K</span>}
+          {!query && <span className="col-search-kbd">{modShortcut("K")}</span>}
         </div>
       </div>
 
@@ -18865,14 +18868,20 @@ function normalizePricingRules(rules = {}) {
   const source = rules && typeof rules === "object" ? rules : sample;
   const maxCombined = source.discountSettings?.maxCombinedDiscount || sample.discountSettings?.maxCombinedDiscount || {};
   return {
-    fees: (source.fees || []).map((fee) => ({
-      id: fee.id || uid("fee"),
-      label: fee.label || "New fee",
-      valueType: fee.valueType === "flat" ? "flat" : "percentage",
-      amount: Number(fee.amount || 0),
-      applyTo: fee.applyTo || "final_total",
-      active: fee.active !== false,
-    })),
+    fees: (source.fees || []).map((fee) => {
+      const valueType = fee.valueType === "flat" ? "flat" : "percentage";
+      let amount = Number(fee.amount || 0);
+      if (valueType === "percentage") amount = Math.min(100, Math.max(0, amount));
+      else amount = Math.max(0, amount);
+      return {
+        id: fee.id || uid("fee"),
+        label: fee.label || "New fee",
+        valueType,
+        amount,
+        applyTo: fee.applyTo || "final_total",
+        active: fee.active !== false,
+      };
+    }),
     securityDeposits: (source.securityDeposits || []).map((row) => ({
       id: row.id || uid("dep"),
       venueId: row.venueId || "All",
@@ -20328,23 +20337,32 @@ function PricingRulesView({ rules, steps, onChange }) {
               <h2 style={{ margin: 0, fontSize: 20 }}>Booking Field Mapping</h2>
               <p style={{ margin: "4px 0 0", color: "var(--ink-3)", fontSize: 12 }}>Which booking fields drive deposits, insurance and notice amounts. "Auto" finds them by label.</p>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+            <div className="pricing-field-map">
               {[
                 ["eventTypeFieldId", "Event type"],
                 ["alcoholFieldId", "Alcohol on site"],
                 ["attendeesFieldId", "Number of attendees"],
                 ["privacyFieldId", "Event privacy"],
-              ].map(([key, label]) => (
-                <div key={key}>
-                  <label className="lbl">{label}</label>
-                  <select className="select" value={fieldMap[key] || ""} onChange={(e) => update({ fieldMap: { ...fieldMap, [key]: e.target.value } })}>
-                    <option value="">Auto (match by label)</option>
-                    {discountFields.filter((field) => !["separator", "spacer", "instructional"].includes(field.type)).map((field) => (
-                      <option key={field.id} value={field.id}>{field.stepName} · {field.label || field.id}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
+              ].map(([key, label]) => {
+                const selected = discountFields.find((field) => field.id === fieldMap[key]);
+                const selectedTitle = selected ? `${selected.stepName} · ${selected.label || selected.id}` : "Auto (match by label)";
+                return (
+                  <div key={key}>
+                    <label className="lbl">{label}</label>
+                    <select
+                      className="select"
+                      value={fieldMap[key] || ""}
+                      title={selectedTitle}
+                      onChange={(e) => update({ fieldMap: { ...fieldMap, [key]: e.target.value } })}
+                    >
+                      <option value="">Auto (match by label)</option>
+                      {discountFields.filter((field) => !["separator", "spacer", "instructional"].includes(field.type)).map((field) => (
+                        <option key={field.id} value={field.id}>{field.stepName} · {field.label || field.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -20353,16 +20371,29 @@ function PricingRulesView({ rules, steps, onChange }) {
               <h2 style={{ margin: 0, fontSize: 20 }}>Fees & Tax</h2>
               <button className="btn dark sm" onClick={addFee}><Ic.Plus size={13} /> Add</button>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr 1fr 1.1fr 34px", gap: 10, alignItems: "center", marginBottom: 8 }}>
-              {["Label", "Value Type", "Amount", "Apply To", ""].map((label) => <div key={label} className="lbl">{label}</div>)}
+            <div className="pricing-fees-grid">
+              {["Label", "Value Type", "Amount", "Apply To", ""].map((label) => <div key={label || "actions"} className="lbl">{label}</div>)}
               {fees.map((fee) => (
                 <React.Fragment key={fee.id}>
                   <input className="input" value={fee.label || ""} onChange={(e) => updateFee(fee.id, { label: e.target.value })} />
-                  <select className="select" value={fee.valueType || "percentage"} onChange={(e) => updateFee(fee.id, { valueType: e.target.value })}>
+                  <select className="select" value={fee.valueType || "percentage"} onChange={(e) => updateFee(fee.id, { valueType: e.target.value, amount: fee.valueType !== "percentage" && e.target.value === "percentage" ? Math.min(100, Number(fee.amount || 0)) : fee.amount })}>
                     <option value="percentage">% Percentage</option>
                     <option value="flat">$ Flat Fee</option>
                   </select>
-                  <input className="input" type="number" min="0" step="0.01" value={fee.amount || ""} onChange={(e) => updateFee(fee.id, { amount: Number(e.target.value || 0) })} />
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max={fee.valueType === "percentage" ? 100 : undefined}
+                    step="0.01"
+                    value={fee.amount || ""}
+                    onChange={(e) => {
+                      let amount = Number(e.target.value || 0);
+                      if ((fee.valueType || "percentage") === "percentage") amount = Math.min(100, Math.max(0, amount));
+                      else amount = Math.max(0, amount);
+                      updateFee(fee.id, { amount });
+                    }}
+                  />
                   <select className="select" value={fee.applyTo || "final_total"} onChange={(e) => updateFee(fee.id, { applyTo: e.target.value })}>
                     <option value="final_total">Final Total</option>
                     <option value="venue_only">Venue Only</option>
@@ -20370,7 +20401,7 @@ function PricingRulesView({ rules, steps, onChange }) {
                     <option value="catering">Catering</option>
                     <option value="services">Services</option>
                   </select>
-                  <button className="btn icon sm danger-ghost" title="Delete fee" onClick={() => deleteFee(fee.id)}><Ic.Trash size={14} /></button>
+                  <button className="btn icon sm danger-ghost pricing-fee-delete" title="Delete fee" onClick={() => deleteFee(fee.id)}><Ic.Trash size={14} /></button>
                 </React.Fragment>
               ))}
             </div>
@@ -20453,7 +20484,20 @@ function PricingRulesView({ rules, steps, onChange }) {
                       </div>
                       <div>
                         <label className="lbl">Amount</label>
-                        <input className="input" type="number" min="0" step="0.01" value={rule.amount || ""} onChange={(e) => updateDiscount(rule.id, { amount: Number(e.target.value || 0) })} />
+                        <input
+                          className="input"
+                          type="number"
+                          min="0"
+                          max={rule.valueType === "percentage" ? 100 : undefined}
+                          step="0.01"
+                          value={rule.amount || ""}
+                          onChange={(e) => {
+                            let amount = Number(e.target.value || 0);
+                            if ((rule.valueType || "percentage") === "percentage") amount = Math.min(100, Math.max(0, amount));
+                            else amount = Math.max(0, amount);
+                            updateDiscount(rule.id, { amount });
+                          }}
+                        />
                       </div>
                       <label className="chk" style={{ marginBottom: 8 }}>
                         <input type="checkbox" checked={rule.active !== false} onChange={(e) => updateDiscount(rule.id, { active: e.target.checked })} />
@@ -21311,16 +21355,11 @@ function fillEmailTokens(text, record) {
 }
 
 function EmailPreviewBox({ content }) {
-  const html = String(content || "")
-    .split("\n")
-    .map((line) => line.trim() ? line.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "<br />")
-    .join("<br />");
+  const text = String(content || "");
   return (
-    <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
-      <div style={{ height: 36, borderBottom: "1px solid var(--line)", background: "var(--surface-2)", display: "flex", alignItems: "center", gap: 7, padding: "0 10px", color: "var(--ink-3)", fontSize: 11 }}>
-        <b>B</b><i>I</i><span>•</span><span>List</span><span>Link</span><span>Image</span><span>Source</span>
-      </div>
-      <div style={{ minHeight: 150, maxHeight: 260, overflow: "auto", padding: 14, fontSize: 12, lineHeight: 1.55 }} dangerouslySetInnerHTML={{ __html: html }} />
+    <div className="email-preview-box" aria-label="Email content preview">
+      <div className="email-preview-box-label">Preview</div>
+      <div className="email-preview-box-body">{text.trim() ? text : "Email body preview will appear here."}</div>
     </div>
   );
 }
@@ -22400,6 +22439,48 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
     );
   };
 
+  const nearestBookedMonths = React.useMemo(() => {
+    const months = new Map();
+    visible.forEach((event) => {
+      if (!(event.start instanceof Date) || Number.isNaN(event.start.getTime())) return;
+      const key = `${event.start.getFullYear()}-${event.start.getMonth()}`;
+      const label = event.start.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      const entry = months.get(key) || { key, label, count: 0, date: new Date(event.start.getFullYear(), event.start.getMonth(), 1) };
+      entry.count += 1;
+      months.set(key, entry);
+    });
+    const cursorKey = `${cursor.getFullYear()}-${cursor.getMonth()}`;
+    return Array.from(months.values())
+      .filter((item) => item.key !== cursorKey)
+      .sort((a, b) => Math.abs(a.date - cursor) - Math.abs(b.date - cursor))
+      .slice(0, 3);
+  }, [visible, cursor]);
+
+  const renderEmptyMonth = () => (
+    <div className="bk-cal-list-empty">
+      <div>No bookings in {title}.</div>
+      {nearestBookedMonths.length > 0 ? (
+        <>
+          <div style={{ marginTop: 6 }}>Other months with bookings:</div>
+          <div className="bk-cal-list-empty-actions">
+            {nearestBookedMonths.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className="btn sm"
+                onClick={() => setCursor(item.date)}
+              >
+                {item.label} ({item.count})
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ marginTop: 6 }}>No bookings match the current room filter.</div>
+      )}
+    </div>
+  );
+
   const renderList = () => {
     const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
     const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
@@ -22408,7 +22489,7 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
       const dayEvents = visible.filter((event) => calEventOnDay(event, day));
       if (dayEvents.length) groups.push({ day, dayEvents });
     }
-    if (!groups.length) return <div className="bk-cal-list-empty">No bookings this month.</div>;
+    if (!groups.length) return renderEmptyMonth();
     return (
       <div className="bk-cal-list">
         {groups.map(({ day, dayEvents }) => (
@@ -22448,8 +22529,8 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
         <div className="bk-cal-toolbar">
           <div className="bk-cal-nav">
             <button type="button" className="btn sm" onClick={() => setCursor(calStartOfDay(new Date()))}>Today</button>
-            <button type="button" className="btn icon sm" onClick={() => shift(-1)} title="Previous"><Ic.Chevron size={14} style={{ transform: "rotate(90deg)" }} /></button>
-            <button type="button" className="btn icon sm" onClick={() => shift(1)} title="Next"><Ic.Chevron size={14} style={{ transform: "rotate(-90deg)" }} /></button>
+            <button type="button" className="btn icon sm" onClick={() => shift(-1)} title="Previous" aria-label="Previous"><Ic.Chevron size={14} style={{ transform: "rotate(90deg)" }} /></button>
+            <button type="button" className="btn icon sm" onClick={() => shift(1)} title="Next" aria-label="Next"><Ic.Chevron size={14} style={{ transform: "rotate(-90deg)" }} /></button>
             <h2 className="bk-cal-title">{title}</h2>
           </div>
           <div className="bk-cal-controls">
@@ -22484,6 +22565,9 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
           <span className="bk-cal-legend-note"><i className="bk-cal-room-dot room-other cancelled" /> Cancelled (faded)</span>
         </div>
 
+        {view === "month" && !visible.some((event) => event.start instanceof Date && event.start.getFullYear() === cursor.getFullYear() && event.start.getMonth() === cursor.getMonth()) && (
+          <div style={{ marginBottom: 10 }}>{renderEmptyMonth()}</div>
+        )}
         <div className="bk-cal-shell">{view === "month" ? renderMonth() : view === "list" ? renderList() : renderTimeGrid()}</div>
       </div>
 
@@ -24152,7 +24236,11 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const [progressRecords, setProgressRecords] = React.useState(() => loadProgressRecords() || normalizeProgressRecords(SAMPLE_PROGRESS_RECORDS));
   const [publicEditRecord, setPublicEditRecord] = React.useState(null);
   const [publicRecordLookupDone, setPublicRecordLookupDone] = React.useState(false);
-  const [activeProgressId, setActiveProgressId] = React.useState(null);
+  const [activeProgressId, setActiveProgressId] = React.useState(() => {
+    if (typeof window === "undefined") return null;
+    const code = new URLSearchParams(window.location.search).get("record");
+    return code || null; // resolved to real id after progress records load
+  });
   const [submittedAnswersRecordId, setSubmittedAnswersRecordId] = React.useState(null);
   const [adminEditRecordId, setAdminEditRecordId] = React.useState(() => new URLSearchParams(window.location.search).get("edit") || null);
   const [emailDraft, setEmailDraft] = React.useState(null);
@@ -24194,11 +24282,40 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   publishedStateRef.current = publishedState;
   const isDirtyRef = React.useRef(isDirty);
   isDirtyRef.current = isDirty;
+  const lastSavedFingerprintRef = React.useRef(null);
+  const ignoreNextUrlSyncRef = React.useRef(false);
+  const urlSyncReadyRef = React.useRef(false);
+  const prevUrlSectionRef = React.useRef(activeSection);
+  const prevUrlProgressRef = React.useRef(null);
   const workflowUndoBurstRef = React.useRef(false);
   const workflowUndoTimerRef = React.useRef(null);
   const rentalUndoBurstRef = React.useRef(false);
   const rentalUndoTimerRef = React.useRef(null);
   const currentPublishedState = () => publishedStateRef.current || buildPublicStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
+  const fingerprintAdminState = React.useCallback((nextSteps = stepsRef.current, nextRentals = rentalCatalogRef.current, nextPricing = pricingRulesRef.current, nextSite = siteSettingsRef.current, nextProgress = progressRecordsRef.current) => (
+    JSON.stringify({
+      steps: nextSteps,
+      rentalCatalog: nextRentals,
+      pricingRules: nextPricing,
+      siteSettings: nextSite,
+      progressRecords: nextProgress,
+    })
+  ), []);
+  const syncDirtyFromFingerprint = React.useCallback((nextSteps, nextRentals, nextPricing, nextSite, nextProgress) => {
+    const saved = lastSavedFingerprintRef.current;
+    if (!saved) {
+      setIsDirty(true);
+      return;
+    }
+    setIsDirty(fingerprintAdminState(nextSteps, nextRentals, nextPricing, nextSite, nextProgress) !== saved);
+  }, [fingerprintAdminState]);
+  const resolveProgressIdFromCode = React.useCallback((code) => {
+    if (!code) return null;
+    const match = progressRecordsRef.current.find((record) => (
+      bookingCodeForRecord(record) === String(code) || String(record.id) === String(code)
+    ));
+    return match?.id || null;
+  }, []);
   React.useEffect(() => {
     window.requestCollaburoDeleteConfirmation = (config = {}) => {
       setDeleteConfirm({ ...config, requestId: Date.now() });
@@ -24226,22 +24343,93 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
 
   React.useEffect(() => {
     if (publicMode) return;
-    const nextPath = `/admin/${activeSection || "workflow"}`;
-    try {
-      if (window.parent && window.parent !== window && window.parent.location.pathname !== nextPath) {
-        window.parent.history.pushState({ collaburoSection: activeSection }, "", nextPath);
-      } else if (window.location.pathname.startsWith("/admin/") && window.location.pathname !== nextPath) {
-        window.history.pushState({ collaburoSection: activeSection }, "", nextPath);
-      }
-    } catch (_) {}
-  }, [activeSection, publicMode]);
-  React.useEffect(() => {
-    if (publicMode) return;
+    if (ignoreNextUrlSyncRef.current) {
+      ignoreNextUrlSyncRef.current = false;
+      prevUrlSectionRef.current = activeSection;
+      prevUrlProgressRef.current = activeProgressId;
+      return;
+    }
     const url = new URL(window.location.href);
+    const nextPath = `/admin/${activeSection || "workflow"}`;
+    if (url.pathname !== nextPath) url.pathname = nextPath;
+
     if (adminEditRecordId) url.searchParams.set("edit", bookingCodeFromId(adminEditRecordId));
     else url.searchParams.delete("edit");
-    window.history.replaceState({ collaburoSection: activeSection, edit: adminEditRecordId || null }, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [adminEditRecordId, activeSection, publicMode]);
+
+    const activeRecord = activeSection === "clients" && activeProgressId
+      ? progressRecordsRef.current.find((record) => String(record.id) === String(activeProgressId))
+      : null;
+    if (activeRecord) url.searchParams.set("record", bookingCodeForRecord(activeRecord));
+    else if (activeSection === "clients" && activeProgressId && !progressRecordsRef.current.length) {
+      // Keep unresolved deep-link code until records load.
+      if (!url.searchParams.get("record")) url.searchParams.set("record", String(activeProgressId));
+    } else {
+      url.searchParams.delete("record");
+    }
+
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    const state = {
+      collaburoSection: activeSection,
+      edit: adminEditRecordId || null,
+      record: activeRecord ? bookingCodeForRecord(activeRecord) : (url.searchParams.get("record") || null),
+    };
+    const sectionChanged = prevUrlSectionRef.current !== activeSection;
+    const openedDetail = !prevUrlProgressRef.current && !!activeProgressId && activeSection === "clients";
+    prevUrlSectionRef.current = activeSection;
+    prevUrlProgressRef.current = activeProgressId;
+    try {
+      const targetHistory = (window.parent && window.parent !== window) ? window.parent.history : window.history;
+      // First paint only normalizes the URL; later section/detail opens push for Back.
+      if (!urlSyncReadyRef.current) {
+        urlSyncReadyRef.current = true;
+        targetHistory.replaceState(state, "", next);
+      } else if (sectionChanged || openedDetail) {
+        targetHistory.pushState(state, "", next);
+      } else {
+        targetHistory.replaceState(state, "", next);
+      }
+    } catch (_) {}
+  }, [activeSection, activeProgressId, adminEditRecordId, publicMode]);
+
+  React.useEffect(() => {
+    if (publicMode) return;
+    const applyLocation = () => {
+      const path = window.location.pathname || "";
+      const match = path.match(/^\/admin\/([^/]+)/);
+      const section = match?.[1] || "workflow";
+      const params = new URLSearchParams(window.location.search);
+      const recordCode = params.get("record");
+      const editCode = params.get("edit");
+      ignoreNextUrlSyncRef.current = true;
+      setActiveSection(section);
+      setSubmittedAnswersRecordId(null);
+      if (section === "clients" && recordCode) {
+        setActiveProgressId(resolveProgressIdFromCode(recordCode) || recordCode);
+      } else {
+        setActiveProgressId(null);
+      }
+      setAdminEditRecordId(editCode || null);
+    };
+    window.addEventListener("popstate", applyLocation);
+    return () => window.removeEventListener("popstate", applyLocation);
+  }, [publicMode, resolveProgressIdFromCode]);
+
+  React.useEffect(() => {
+    if (publicMode || !activeProgressId) return;
+    const resolved = resolveProgressIdFromCode(activeProgressId);
+    if (resolved && resolved !== activeProgressId) setActiveProgressId(resolved);
+  }, [publicMode, activeProgressId, progressRecords, resolveProgressIdFromCode]);
+
+  React.useEffect(() => {
+    if (publicMode) return;
+    const onBeforeUnload = (event) => {
+      if (!isDirtyRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [publicMode]);
   React.useEffect(() => {
     window.CURRENT_RENTAL_CATALOG = rentalCatalog;
   }, [rentalCatalog]);
@@ -24369,6 +24557,15 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       })
       .finally(() => {
         if (!cancelled) {
+          if (!lastSavedFingerprintRef.current && !isDirtyRef.current) {
+            lastSavedFingerprintRef.current = fingerprintAdminState(
+              stepsRef.current,
+              rentalCatalogRef.current,
+              pricingRulesRef.current,
+              siteSettingsRef.current,
+              progressRecordsRef.current
+            );
+          }
           setInitialDataLoaded(true);
           setDatabaseStateLoaded(true);
         }
@@ -24526,13 +24723,14 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       const current = cloneData(stepsRef.current);
       const nextSteps = normalizeWorkflowSteps(target);
       setWorkflowRedo((redoItems) => [current, ...redoItems].slice(0, UNDO_STACK_CAP));
+      stepsRef.current = nextSteps;
       setSteps(nextSteps);
       setActiveStepId((id) => nextSteps.some((step) => step.id === id) ? id : (nextSteps[0]?.id || "s1"));
       setOpenFieldId((id) => nextSteps.some((step) => (step.fields || []).some((field) => field.id === id)) ? id : null);
-      markDirty();
+      syncDirtyFromFingerprint(nextSteps);
       return rest;
     });
-  }, [endWorkflowUndoBurst]);
+  }, [endWorkflowUndoBurst, syncDirtyFromFingerprint]);
   const redoWorkflow = React.useCallback(() => {
     endWorkflowUndoBurst();
     setWorkflowRedo((items) => {
@@ -24541,37 +24739,42 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       const current = cloneData(stepsRef.current);
       const nextSteps = normalizeWorkflowSteps(target);
       setWorkflowUndo((undoItems) => [current, ...undoItems].slice(0, UNDO_STACK_CAP));
+      stepsRef.current = nextSteps;
       setSteps(nextSteps);
       setActiveStepId((id) => nextSteps.some((step) => step.id === id) ? id : (nextSteps[0]?.id || "s1"));
       setOpenFieldId((id) => nextSteps.some((step) => (step.fields || []).some((field) => field.id === id)) ? id : null);
-      markDirty();
+      syncDirtyFromFingerprint(nextSteps);
       return rest;
     });
-  }, [endWorkflowUndoBurst]);
+  }, [endWorkflowUndoBurst, syncDirtyFromFingerprint]);
   const undoRentalCatalog = React.useCallback(() => {
     endRentalUndoBurst();
     setRentalUndo((items) => {
       if (!items.length) return items;
       const [target, ...rest] = items;
       const current = cloneData(rentalCatalogRef.current);
+      const nextCatalog = window.normalizeRentalCatalog(target);
       setRentalRedo((redoItems) => [current, ...redoItems].slice(0, UNDO_STACK_CAP));
-      setRentalCatalog(window.normalizeRentalCatalog(target));
-      markDirty();
+      rentalCatalogRef.current = nextCatalog;
+      setRentalCatalog(nextCatalog);
+      syncDirtyFromFingerprint(undefined, nextCatalog);
       return rest;
     });
-  }, [endRentalUndoBurst]);
+  }, [endRentalUndoBurst, syncDirtyFromFingerprint]);
   const redoRentalCatalog = React.useCallback(() => {
     endRentalUndoBurst();
     setRentalRedo((items) => {
       if (!items.length) return items;
       const [target, ...rest] = items;
       const current = cloneData(rentalCatalogRef.current);
+      const nextCatalog = window.normalizeRentalCatalog(target);
       setRentalUndo((undoItems) => [current, ...undoItems].slice(0, UNDO_STACK_CAP));
-      setRentalCatalog(window.normalizeRentalCatalog(target));
-      markDirty();
+      rentalCatalogRef.current = nextCatalog;
+      setRentalCatalog(nextCatalog);
+      syncDirtyFromFingerprint(undefined, nextCatalog);
       return rest;
     });
-  }, [endRentalUndoBurst]);
+  }, [endRentalUndoBurst, syncDirtyFromFingerprint]);
   const pushHistoryEntry = React.useCallback((label, nextSteps = stepsRef.current, nextRentals = rentalCatalogRef.current, nextPricing = pricingRulesRef.current, nextSite = siteSettingsRef.current) => {
     const entry = snapshotDraft(label, nextSteps, nextRentals, nextPricing, nextSite);
     setHistory((prev) => {
@@ -25119,10 +25322,11 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     const now = Date.now();
     localStorage.setItem(SAVED_KEY, String(now));
     pushHistoryEntry(historyLabel, stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
+    lastSavedFingerprintRef.current = fingerprintAdminState();
     setLastSavedAt(now);
     setIsDirty(false);
     return (workflowStats.removedImages || 0) + (rentalStats.removedImages || 0) + (pricingStats.removedImages || 0) + (siteStats.removedImages || 0) + (progressStats.removedImages || 0);
-  }, [pushHistoryEntry, endWorkflowUndoBurst, endRentalUndoBurst]);
+  }, [pushHistoryEntry, endWorkflowUndoBurst, endRentalUndoBurst, fingerprintAdminState]);
 
   const save = React.useCallback(() => {
     try {
@@ -25162,6 +25366,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       .then(() => {
         const now = Date.now();
         localStorage.setItem(SAVED_KEY, String(now));
+        lastSavedFingerprintRef.current = fingerprintAdminState();
         setLastSavedAt(now);
         setIsDirty(false);
         pushToast({
@@ -25636,9 +25841,21 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         collapsed={sidebarCollapsed}
         onToggle={() => setTweak("sidebarCollapsed", !t.sidebarCollapsed)}
         active={activeSection}
-        onChangeSection={setActiveSection}
+        onChangeSection={(sectionId) => {
+          if (sectionId !== "clients") {
+            setActiveProgressId(null);
+            setSubmittedAnswersRecordId(null);
+          }
+          setActiveSection(sectionId);
+        }}
         siteSettings={siteSettings}
         currentAdmin={currentAdmin}
+        counts={{
+          workflow: steps.length,
+          rentals: (Array.isArray(rentalCatalog) ? rentalCatalog : []).length,
+          pricing: (pricingRules?.fees?.length || 0) + (pricingRules?.discountRules?.length || 0) + (pricingRules?.securityDeposits?.length || 0),
+          clients: progressRecords.length,
+        }}
       />
 
       <main className="main">
