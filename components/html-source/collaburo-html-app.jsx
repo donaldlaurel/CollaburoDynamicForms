@@ -23999,7 +23999,7 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
           <button className="btn sm" onClick={onBack}>Back to list</button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+        <div className="progress-detail-top-grid">
           <div className="progress-detail-print-include">
             {sectionTitle("Client")}
             <div style={{ border: "1px solid var(--line)", borderTop: 0, borderRadius: "0 0 8px 8px", padding: 14, display: "grid", gap: 10 }}>
@@ -24031,13 +24031,13 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
                 </select>
               </div>
               <div>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                <div className="progress-source-head">
                   <label className="lbl" style={{ margin: 0 }}>Source</label>
-                  <span style={{ fontSize: 12, color: "var(--ink-2)" }}><b style={{ color: "var(--ink)" }}>Created by:</b> {record.progress?.createdBy || "Admin"}</span>
+                  <span className="progress-source-meta"><b>Created by:</b> {record.progress?.createdBy || "Admin"}</span>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "8px 16px" }}>
+                <div className="progress-source-grid">
                   {["Walk-In", "Phone", "Collaburo site", "Kijiji", "Social Media", "Eventective", "Giggster", "Wedding Wire", "Liquidspace", "Coworker", "Desana", "Just Boardrooms", "Returning Client", "Friend", "Other"].map((source) => (
-                    <label className="chk" key={source} style={{ whiteSpace: "nowrap" }}>
+                    <label className="chk progress-source-option" key={source}>
                       <input type="radio" name={`source-${record.id}`} checked={(record.progress?.source || "") === source} onChange={() => patchProgress({ source })} /> {source}
                     </label>
                   ))}
@@ -24119,11 +24119,11 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
               </div>
               <div>
                 <label className="lbl">Generate Contract</label>
-                <div className="progress-document-row" style={{ alignItems: "center" }}>
+                <div className="progress-document-row progress-contract-row">
                   <select className="select" value={record.progress?.contract || "Not Generated"} onChange={(e) => patchProgress({ contract: e.target.value })}>
                     {["Not Generated", "Generated", "Sent"].map((o) => <option key={o}>{o}</option>)}
                   </select>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }} aria-busy={busyAction === "generate" || busyAction === "open"}>
+                  <div className="progress-contract-actions" aria-busy={busyAction === "generate" || busyAction === "open"}>
                     <button
                       type="button"
                       className="btn dark sm"
@@ -24134,32 +24134,34 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
                     >
                       {busyAction === "generate" ? "Generating…" : "Generate"}
                     </button>
-                    <button
-                      type="button"
-                      className="btn sm"
-                      disabled={isBusy || contractStatus === "Not Generated"}
-                      onClick={() => {
-                        if (isBusy) return;
-                        patchProgress({ contract: "Sent", contractSentAt: new Date().toISOString() });
-                        onEmail?.(record, "sign-form");
-                      }}
-                      title={isBusy ? "Wait for the current contract action to finish" : "Send sign-form email with contract link"}
-                    >
-                      Send
-                    </button>
                     {contractStatus !== "Not Generated" && (
-                      <a
-                        className="btn-gray sm"
-                        href={`/book?record=${encodeURIComponent(bookingCodeForRecord(record))}&action=sign`}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-disabled={isBusy}
-                        style={{ display: "inline-flex", alignItems: "center", textDecoration: "none", opacity: isBusy ? 0.55 : 1, pointerEvents: isBusy ? "none" : "auto" }}
-                        onClick={handleOpenContract}
-                        title={busyAction === "open" ? "Preparing contract link…" : "Open the client sign link"}
-                      >
-                        {busyAction === "open" ? "Opening…" : "Open link"}
-                      </a>
+                      <>
+                        <button
+                          type="button"
+                          className="btn sm"
+                          disabled={isBusy}
+                          onClick={() => {
+                            if (isBusy) return;
+                            patchProgress({ contract: "Sent", contractSentAt: new Date().toISOString() });
+                            onEmail?.(record, "sign-form");
+                          }}
+                          title={isBusy ? "Wait for the current contract action to finish" : "Send sign-form email with contract link"}
+                        >
+                          Send
+                        </button>
+                        <a
+                          className="btn-gray sm"
+                          href={`/book?record=${encodeURIComponent(bookingCodeForRecord(record))}&action=sign`}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-disabled={isBusy}
+                          style={{ display: "inline-flex", alignItems: "center", textDecoration: "none", opacity: isBusy ? 0.55 : 1, pointerEvents: isBusy ? "none" : "auto" }}
+                          onClick={handleOpenContract}
+                          title={busyAction === "open" ? "Preparing contract link…" : "Open the client sign link"}
+                        >
+                          {busyAction === "open" ? "Opening…" : "Open link"}
+                        </a>
+                      </>
                     )}
                   </div>
                 </div>
