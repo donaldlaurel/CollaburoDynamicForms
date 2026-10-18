@@ -143,9 +143,20 @@ const PROCUREMENT_TYPES = [
   { value: "disposable", label: "Disposable" },
 ];
 
+function isPlaceholderDeliveryOption(option = {}) {
+  const label = String(option.label || option.name || "").trim().toLowerCase();
+  const description = String(option.description || option.notes || "").trim().toLowerCase();
+  if (!label) return true;
+  if (label === "new delivery option" || label === "test" || label.startsWith("test ")) return true;
+  if (description === "test" && Number(option.amount ?? option.cost ?? option.price ?? 0) <= 5) return true;
+  return false;
+}
+
 function normalizeDeliveryOptions(options = DEFAULT_DELIVERY_OPTIONS) {
   const source = Array.isArray(options) && options.length ? options : DEFAULT_DELIVERY_OPTIONS;
-  return source.map((option, index) => ({
+  const cleaned = source.filter((option) => !isPlaceholderDeliveryOption(option));
+  const list = cleaned.length ? cleaned : DEFAULT_DELIVERY_OPTIONS;
+  return list.map((option, index) => ({
     id: option.id || uid("delivery"),
     label: option.label || option.name || `Delivery option ${index + 1}`,
     amount: Number(option.amount ?? option.cost ?? option.price ?? 0),
@@ -4754,11 +4765,11 @@ window.Sidebar = Sidebar;
 function Topbar({ section, onTogglePreview, previewOpen, isDirty, lastSaved, onSave, onPublish, onSaveAndPublish, persistBusy = null, onUndo, onRedo, canUndo = false, canRedo = false }) {
   const Ic = window.Icons;
   const isWorkflow = section === "workflow";
-  const canPublish = ["workflow", "rentals", "pricing", "email-settings", "contract", "site", "clients"].includes(section);
+  const canPublish = ["workflow", "rentals", "pricing", "email-settings", "contract", "site"].includes(section);
   const hasUndoRedo = section === "workflow" || section === "rentals";
   const undoLabel = section === "rentals" ? "Undo rental catalog change" : "Undo workflow change";
   const redoLabel = section === "rentals" ? "Redo rental catalog change" : "Redo workflow change";
-  const sectionLabel = section === "profile" ? "Profile" : (SECTION_LABEL[section] || section);
+  const sectionLabel = SECTION_LABEL[section] || (section === "profile" ? "Admin Profile" : section);
   const saveShortcut = modShortcut("S");
   const isPersisting = !!persistBusy;
   const saveDisabled = !isDirty || isPersisting;
@@ -8406,14 +8417,16 @@ function ResetWarningModal({ onConfirm, onCancel }) {
   return (
     <div className="confirm-overlay" onClick={onCancel}>
       <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Reset all changes?</h3>
+        <h3>Reset to sample data?</h3>
         <p>
-          Resetting will replace the current workflow, rentals, pricing rules, site settings, and progress records with the sample data.
-          If you save or publish after resetting, those sample values will overwrite the database.
+          This replaces the <b>current workflow, rentals, pricing rules, site settings, and progress records</b> in this browser with sample data.
+        </p>
+        <p style={{ marginTop: 10, color: "#b42318", fontWeight: 700 }}>
+          If you click Save or Publish afterward, sample data will overwrite production. Cancel unless you intentionally want to wipe live configuration.
         </p>
         <div className="actions">
-          <button className="btn-cancel" onClick={onCancel}>Cancel</button>
-          <button className="btn-danger" onClick={onConfirm}>Reset anyway</button>
+          <button className="btn-cancel" onClick={onCancel}>Keep current data</button>
+          <button className="btn-danger" onClick={onConfirm}>Reset to sample</button>
         </div>
       </div>
     </div>
@@ -19008,6 +19021,8 @@ function normalizeSiteSettings(settings = {}) {
   const safeEmailAddress = (value) => {
     const email = String(value || "").trim();
     if (!email || email === "info@collaburo.com" || email === "kristelleddc@gmail.com") return DEFAULT_EMAIL_ADDRESS;
+    // Resend onboarding/dev senders are not suitable for client-facing mail.
+    if (/@resend\.dev$/i.test(email) || /^onboarding@/i.test(email)) return DEFAULT_EMAIL_ADDRESS;
     return email;
   };
   const mergedValidations = {
@@ -20008,6 +20023,7 @@ function AdminProfileView({ accounts, currentAdmin, onSaveAccount, onCreateAccou
   const [saving, setSaving] = React.useState(false);
   const editableAccounts = accounts || [];
   const selected = editingId ? editableAccounts.find((account) => account.id === editingId) : null;
+  const didAutoselectRef = React.useRef(false);
   const startCreate = () => {
     setEditingId("new");
     setDraft(blankAdminAccount());
@@ -20020,6 +20036,17 @@ function AdminProfileView({ accounts, currentAdmin, onSaveAccount, onCreateAccou
     setEditingId(null);
     setDraft(blankAdminAccount());
   };
+  React.useEffect(() => {
+    if (didAutoselectRef.current || editingId) return;
+    const match = editableAccounts.find((account) =>
+      (currentAdmin?.id && account.id === currentAdmin.id)
+      || (currentAdmin?.username && account.username === currentAdmin.username)
+    ) || editableAccounts[0];
+    if (match) {
+      didAutoselectRef.current = true;
+      startEdit(match);
+    }
+  }, [editableAccounts, currentAdmin, editingId]);
   const submit = () => {
     setSaving(true);
     const action = editingId === "new" ? onCreateAccount(draft) : onSaveAccount(editingId, draft);
@@ -21429,12 +21456,16 @@ function EmailSettingsView({ settings, onChange }) {
               <input className="input" value={emailSettings.replyTo || ""} onChange={(e) => update({ replyTo: e.target.value })} />
             </div>
           </div>
+          <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--ink-3)" }}>
+            Use a verified Resend domain sender (not <code>onboarding@resend.dev</code>). Dev/onboarding addresses are replaced automatically when settings load.
+          </p>
         </div>
 
         <div style={{ display: "grid", gap: 18 }}>
           {EMAIL_TEMPLATE_TYPES.map((type) => {
             const template = getEmailTemplate(site, type.id);
             const IconCmp = Ic[type.icon] || Ic.Mail;
+            const fromIsDev = /@resend\.dev$/i.test(String(template.from || ""));
             return (
               <div key={type.id} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 18 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
@@ -21443,7 +21474,15 @@ function EmailSettingsView({ settings, onChange }) {
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "minmax(260px,.9fr) minmax(360px,1.25fr)", gap: 18, alignItems: "start" }}>
                   <div style={{ display: "grid", gap: 10 }}>
-                    <div><label className="lbl">From <span style={{ color: "var(--danger)" }}>*</span></label><input className="input" value={template.from || ""} onChange={(e) => updateTemplate(type.id, { from: e.target.value })} /></div>
+                    <div>
+                      <label className="lbl">From <span style={{ color: "var(--danger)" }}>*</span></label>
+                      <input className="input" value={template.from || ""} onChange={(e) => updateTemplate(type.id, { from: e.target.value })} />
+                      {fromIsDev && (
+                        <p style={{ margin: "6px 0 0", fontSize: 11, color: "#b42318", fontWeight: 700 }}>
+                          This From address is a Resend test sender. Replace it with your verified domain before sending to clients.
+                        </p>
+                      )}
+                    </div>
                     <div><label className="lbl">CC</label><input className="input" value={template.cc || ""} onChange={(e) => updateTemplate(type.id, { cc: e.target.value })} /></div>
                     <div><label className="lbl">Subject <span style={{ color: "var(--danger)" }}>*</span></label><input className="input" value={template.subject || ""} onChange={(e) => updateTemplate(type.id, { subject: e.target.value })} /></div>
                   </div>
@@ -22023,7 +22062,16 @@ const calShortTime = (date) => {
   const minutes = date.getMinutes();
   return `${hours % 12 || 12}${minutes ? `:${String(minutes).padStart(2, "0")}` : ""}${hours < 12 ? "a" : "p"}`;
 };
-const calShortRange = (event) => (event.allDay ? "All day" : `${calShortTime(event.start)} - ${calShortTime(event.end)}`);
+const calLooksAllDay = (event) => {
+  if (event?.allDay) return true;
+  const start = event?.start;
+  const end = event?.end;
+  if (!(start instanceof Date) || !(end instanceof Date)) return false;
+  const midnight = (date) => date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0;
+  if (!midnight(start) || !midnight(end)) return false;
+  return (end - start) >= (23 * 60 * 60 * 1000);
+};
+const calShortRange = (event) => (calLooksAllDay(event) ? "All day" : `${calShortTime(event.start)} - ${calShortTime(event.end)}`);
 const calRoomColorClass = (room = "") => {
   const first = String(room || "").split(/\s*,\s*/)[0] || "";
   return "room-" + (CALENDAR_ROOM_COLORS.find((item) => item.match.test(first))?.key || "other");
@@ -22079,7 +22127,11 @@ function parseBookingCalendarRanges(text = "", fallbackRoom = "") {
         end.setMinutes(endMinutes === null ? startMinutes + 60 : endMinutes);
         if (end <= start) end = new Date(start.getTime() + 60 * 60 * 1000);
       }
-      ranges.push({ start, end, allDay, room });
+      const spansFullDays = !allDay
+        && start.getHours() === 0 && start.getMinutes() === 0
+        && end.getHours() === 0 && end.getMinutes() === 0
+        && (end - start) >= (23 * 60 * 60 * 1000);
+      ranges.push({ start, end, allDay: allDay || spansFullDays, room });
     }
   });
   return ranges;
@@ -22097,7 +22149,7 @@ function buildBookingCalendarEvents(records = []) {
         status,
         statusClass: progressStatusClass(status),
         colorClass: calRoomColorClass(range.room) + (status === "Cancelled" ? " cancelled" : ""),
-        title: record.client?.name || record.client?.organization || "Unnamed client",
+        title: record.client?.name || record.client?.organization || `Unnamed · ${bookingCodeForRecord(record)}`,
         rooms: range.room.split(/\s*,\s*/).filter(Boolean).map((name) => name.toLowerCase()),
         conflicts: [],
       });
@@ -22120,7 +22172,7 @@ function buildBookingCalendarEvents(records = []) {
 function calRangeLabel(event) {
   const dayFormat = { weekday: "short", month: "short", day: "numeric", year: "numeric" };
   const day = (date) => date.toLocaleDateString("en-US", dayFormat);
-  if (event.allDay) {
+  if (calLooksAllDay(event)) {
     const lastDay = calAddDays(event.end, -1);
     return calSameDay(event.start, lastDay) ? `${day(event.start)} · All day` : `${day(event.start)} – ${day(lastDay)} · All day`;
   }
@@ -22350,7 +22402,7 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
       title={`${event.title} · ${calRangeLabel(event)} · ${event.room || "No space"} · ${event.status}`}
     >
       {event.conflicts.length > 0 && <Ic.Alert size={11} />}
-      {(event.allDay || !day || calSameDay(event.start, day)) && <span className="bk-cal-chip-time">{calShortRange(event)}</span>}
+      {(calLooksAllDay(event) || !day || calSameDay(event.start, day)) && <span className="bk-cal-chip-time">{calShortRange(event)}</span>}
       <span className="bk-cal-chip-title">{event.room || "No space"} · {event.title}</span>
     </button>
   );
@@ -22393,7 +22445,7 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
     const dayParts = days.map((day) => {
       const dayEnd = calAddDays(day, 1);
       const dayEvents = visible.filter((event) => calEventOnDay(event, day));
-      const allDay = dayEvents.filter((event) => event.allDay || (event.start <= day && event.end >= dayEnd));
+      const allDay = dayEvents.filter((event) => calLooksAllDay(event) || (event.start <= day && event.end >= dayEnd));
       const timed = layoutCalendarDayItems(dayEvents
         .filter((event) => !allDay.includes(event))
         .map((event) => ({
@@ -22488,10 +22540,10 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
 
   const renderEmptyMonth = () => (
     <div className="bk-cal-list-empty">
-      <div>No bookings in {title}.</div>
+      <div>{conflictsOnly ? `No double-bookings in ${title}.` : `No bookings in ${title}.`}</div>
       {nearestBookedMonths.length > 0 ? (
         <>
-          <div style={{ marginTop: 6 }}>Other months with bookings:</div>
+          <div style={{ marginTop: 6 }}>{conflictsOnly ? "Other months with conflicts:" : "Other months with bookings:"}</div>
           <div className="bk-cal-list-empty-actions">
             {nearestBookedMonths.map((item) => (
               <button
@@ -22506,7 +22558,9 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
           </div>
         </>
       ) : (
-        <div style={{ marginTop: 6 }}>No bookings match the current room filter.</div>
+        <div style={{ marginTop: 6 }}>
+          {conflictsOnly ? "No overlapping bookings match the current room filter." : "No bookings match the current room filter."}
+        </div>
       )}
     </div>
   );
@@ -22530,7 +22584,7 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
             {dayEvents.map((event) => (
               <button key={event.id} type="button" className="bk-cal-list-row" onClick={() => setSelectedEventId(event.id)}>
                 <i className={"bk-cal-room-dot " + event.colorClass} />
-                <span className="bk-cal-list-time">{event.allDay ? "All day" : `${calTimeLabel(event.start)} - ${calTimeLabel(event.end)}`}</span>
+                <span className="bk-cal-list-time">{calLooksAllDay(event) ? "All day" : `${calTimeLabel(event.start)} - ${calTimeLabel(event.end)}`}</span>
                 <span className="bk-cal-list-room">{event.room || "No space"}</span>
                 <span className="bk-cal-list-client">
                   {event.conflicts.length > 0 && <Ic.Alert size={12} />} {event.title}
@@ -22571,11 +22625,34 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
             <button
               type="button"
               className={"btn sm bk-cal-conflict-toggle" + (conflictsOnly ? " active" : "")}
-              onClick={() => setConflictsOnly((current) => !current)}
+              onClick={() => {
+                setConflictsOnly((current) => {
+                  const next = !current;
+                  if (next) {
+                    const conflictEvents = events.filter((event) =>
+                      event.conflicts.length > 0
+                      && (room === "All" || event.rooms.includes(room.toLowerCase()))
+                    );
+                    const inMonth = conflictEvents.some((event) =>
+                      event.start instanceof Date
+                      && event.start.getFullYear() === cursor.getFullYear()
+                      && event.start.getMonth() === cursor.getMonth()
+                    );
+                    if (!inMonth && conflictEvents.length) {
+                      const nearest = [...conflictEvents].sort((a, b) => Math.abs(a.start - cursor) - Math.abs(b.start - cursor))[0];
+                      if (nearest?.start instanceof Date) {
+                        setCursor(new Date(nearest.start.getFullYear(), nearest.start.getMonth(), 1));
+                      }
+                    }
+                  }
+                  return next;
+                });
+              }}
               disabled={conflictBookingCount === 0 && !conflictsOnly}
-              title="Bookings that overlap another booking in the same room"
+              aria-pressed={conflictsOnly}
+              title={conflictsOnly ? "Showing only overlapping bookings — click to show all" : "Show only bookings that overlap another booking in the same room"}
             >
-              <Ic.Alert size={13} /> {conflictBookingCount} double-booked
+              <Ic.Alert size={13} /> {conflictBookingCount} double-booked{conflictsOnly ? " · on" : ""}
             </button>
             <div className="bk-cal-views" role="tablist">
               {["month", "week", "day", "list"].map((option) => (
@@ -22594,6 +22671,13 @@ function BookingCalendarView({ records, venues = [], onOpenRecord, onCreateBooki
           <span><i className="bk-cal-room-dot room-other" /> Other</span>
           <span className="bk-cal-legend-note"><i className="bk-cal-room-dot room-other cancelled" /> Cancelled (faded)</span>
         </div>
+
+        {conflictsOnly && (
+          <div className="bk-cal-conflict-banner" role="status">
+            <span>Showing only double-booked events ({conflictBookingCount} bookings). Overlaps share a room and time.</span>
+            <button type="button" className="btn sm" onClick={() => setConflictsOnly(false)}>Show all bookings</button>
+          </div>
+        )}
 
         {view === "month" && !visible.some((event) => event.start instanceof Date && event.start.getFullYear() === cursor.getFullYear() && event.start.getMonth() === cursor.getMonth()) && (
           <div style={{ marginBottom: 10 }}>{renderEmptyMonth()}</div>
@@ -22747,7 +22831,13 @@ function ReportsView({ records, venues = [], onOpenRecord }) {
     .filter((fact) => fact.eventDate && !Number.isNaN(fact.submitted.getTime()) && fact.eventDate > fact.submitted)
     .map((fact) => (fact.eventDate - fact.submitted) / 86400000);
   const avgLeadTime = leadTimes.length ? Math.round(leadTimes.reduce((a, b) => a + b, 0) / leadTimes.length) : null;
-  const upcoming30 = roomFacts.filter((fact) => fact.stage !== "lost" && fact.eventDate && fact.eventDate >= today && fact.eventDate < calAddDays(today, 30)).length;
+  const upcomingWindowEnd = calAddDays(today, 30);
+  const upcoming30 = roomFacts.filter((fact) => {
+    if (fact.stage === "lost" || !fact.eventDate) return false;
+    // Count booked + open pipeline events that start in the next 30 days (excludes drafts/cancelled).
+    if (fact.stage !== "booked" && fact.stage !== "open") return false;
+    return fact.eventDate >= today && fact.eventDate < upcomingWindowEnd;
+  }).length;
   const bookedHours = booked.reduce((sum, fact) => sum + fact.hours, 0);
 
   const kpis = [
@@ -22757,7 +22847,7 @@ function ReportsView({ records, venues = [], onOpenRecord }) {
     { label: "Avg booking value", value: booked.length ? reportMoney(bookedRevenue / booked.length) : "–", sub: `${Math.round(bookedHours)} booked hours` },
     { label: "Avg lead time", value: avgLeadTime === null ? "–" : `${avgLeadTime} days`, sub: "Inquiry to event date" },
     { label: "Lost / cancelled", value: String(lost.length), sub: `${reportPercent(lost.length, facts.length)} of inquiries` },
-    { label: "Events next 30 days", value: String(upcoming30), sub: "Booked or in progress" },
+    { label: "Events next 30 days", value: String(upcoming30), sub: "Booked or open inquiries starting soon" },
   ];
 
   const roomRows = (() => {
@@ -23105,7 +23195,16 @@ function ProgressActiveBadge({ record }) {
 function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, onImportLegacy, onUpdateRecord, onEmail, onCopyLink, onDelete }) {
   const Ic = window.Icons;
   const [filters, setFilters] = React.useState({ query: "", space: "All", from: "", to: "", interest: "All", statuses: [], age: "Current and New" });
-  const spaces = ["All", ...Array.from(new Set((records || []).map((record) => record.request?.space).filter(Boolean)))];
+  const spaces = React.useMemo(() => {
+    const names = new Map();
+    (records || []).forEach((record) => {
+      String(record.request?.space || "").split(/\s*,\s*/).forEach((part) => {
+        const text = part.trim();
+        if (text && !names.has(text.toLowerCase())) names.set(text.toLowerCase(), text);
+      });
+    });
+    return ["All", ...Array.from(names.values()).sort((a, b) => a.localeCompare(b))];
+  }, [records]);
   const interestOptions = ["All", "Unlikely", "Not sure", "Likely", "Very Likely"];
   const emailActionLabels = {
     "fill-form": "Fill form",
@@ -23122,7 +23221,10 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
   const applyFilters = React.useCallback((active) => (records || []).filter((record) => {
     const hay = [record.client?.name, record.client?.organization, record.client?.email, record.request?.description].join(" ").toLowerCase();
     if (active.query && !hay.includes(active.query.toLowerCase())) return false;
-    if (active.space !== "All" && record.request?.space !== active.space) return false;
+    if (active.space !== "All") {
+      const rooms = String(record.request?.space || "").split(/\s*,\s*/).map((part) => part.trim()).filter(Boolean);
+      if (!rooms.includes(active.space)) return false;
+    }
     if (active.interest !== "All" && record.progress?.interestLevel !== active.interest) return false;
     if (active.statuses.length > 0 && !active.statuses.includes(normalizeProgressStatus(record.progress?.status))) return false;
     const age = progressAgeLabel(record);
@@ -23217,16 +23319,16 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
           </div>
         </div>
 
-        <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1.35fr .8fr .7fr .7fr .9fr 1fr .9fr auto", gap: 10, alignItems: "end" }}>
-            <div><label className="lbl">Client / Org / Email</label><input className="input" value={filters.query} onChange={(e) => updateFilter({ query: e.target.value })} /></div>
+        <div className="progress-filter-card">
+          <div className="progress-filter-grid">
+            <div><label className="lbl">Client / Org / Email</label><input className="input" value={filters.query} onChange={(e) => updateFilter({ query: e.target.value })} placeholder="Search clients…" /></div>
             <div><label className="lbl">Space</label><select className="select" value={filters.space} onChange={(e) => updateFilter({ space: e.target.value })}>{spaces.map((space) => <option key={space}>{space}</option>)}</select></div>
             <div><label className="lbl">Bookings From</label><input className="input" type="date" value={filters.from} onChange={(e) => updateFilter({ from: e.target.value })} /></div>
             <div><label className="lbl">Bookings To</label><input className="input" type="date" value={filters.to} onChange={(e) => updateFilter({ to: e.target.value })} /></div>
             <div><label className="lbl">Interest Level</label><select className="select" value={filters.interest} onChange={(e) => updateFilter({ interest: e.target.value })}>{interestOptions.map((option) => <option key={option}>{option}</option>)}</select></div>
             <div><label className="lbl">Status</label><ProgressStatusMultiSelect value={filters.statuses} onChange={(statuses) => updateFilter({ statuses })} /></div>
             <div><label className="lbl">Age</label><select className="select" value={filters.age} onChange={(e) => updateFilter({ age: e.target.value })}>{["Current and New", "All", "New", "Current"].map((option) => <option key={option}>{option}</option>)}</select></div>
-            <button className="btn dark sm" onClick={() => updateFilter({ ...filters })}>Filter</button>
+            <button className="btn dark sm progress-filter-submit" onClick={() => updateFilter({ ...filters })}>Filter</button>
           </div>
         </div>
 
@@ -23266,7 +23368,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
                         <>
                           <div className="progress-client-name-row">
                             <button type="button" className="progress-client-link" onClick={() => onOpenDetail(record.id)}>
-                              {record.client?.name || "Unnamed Client"}
+                              {record.client?.name || `Unnamed · ${bookingCodeForRecord(record)}`}
                             </button>
                             <ProgressActiveBadge record={record} />
                           </div>
@@ -23872,22 +23974,42 @@ function BookingAuditModal({ audit, steps = [], onClose }) {
     : hasSnapshot ? bookingAuditFormChanges(before, after, steps) : [];
   return (
     <div className="rec-overlay" onClick={onClose}>
-      <div className="rec-modal" onClick={(e) => e.stopPropagation()} style={{ width: 1060, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 32px)", overflow: "auto" }}>
-        <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-          <div><h3 style={{ margin: 0 }}>Booking form change</h3><div className="sub" style={{ marginBottom: 0 }}>{audit?.adminUser || "Admin"} · {audit?.editedAt ? new Date(audit.editedAt).toLocaleString() : "Date unavailable"}</div></div>
+      <div
+        className="rec-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Booking form change"
+        style={{
+          width: 1060,
+          maxWidth: "calc(100vw - 32px)",
+          maxHeight: "calc(100vh - 32px)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          padding: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12, flexShrink: 0, padding: "28px 32px 14px", background: "var(--surface)" }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Booking form change</h3>
+            <div className="sub" style={{ marginBottom: 0 }}>{audit?.adminUser || "Admin"} · {audit?.editedAt ? new Date(audit.editedAt).toLocaleString() : "Date unavailable"}</div>
+          </div>
           <button className="btn icon sm" type="button" onClick={onClose} title="Close"><Ic.Close size={14} /></button>
         </div>
-        {!hasSnapshot && !hasDisplayChanges ? <div className="rental-muted">This older log entry does not include saved field-level changes.</div> : <>
-          <div style={{ display: "grid", gap: 8, marginBottom: 18 }}>
-            <div style={{ fontWeight: 800 }}>All booking form fields</div>
-            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Every field is listed with its Before and After answer. Changed rows are highlighted in yellow and the original answer is crossed out.</div>
-            {formChanges.length ? formChanges.map((change, index) => {
-              const changed = change.changed !== undefined ? !!change.changed : JSON.stringify(change.before ?? null) !== JSON.stringify(change.after ?? null);
-              const BeforeTag = changed ? "del" : "span";
-              return <div key={`${change.section}-${change.label}-${index}`} style={{ display: "grid", gridTemplateColumns: "minmax(170px, .65fr) 1fr 28px 1fr", gap: 10, alignItems: "center", border: `1px solid ${changed ? "#e4bd52" : "var(--line)"}`, borderRadius: 6, padding: "10px 12px", fontSize: 13, background: changed ? "#fffaf0" : "#fff" }}><div><strong>{change.label}</strong><div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>{change.section} · {changed ? "Changed" : "Unchanged"}</div></div><BeforeTag style={{ color: changed ? "var(--ink-3)" : "var(--ink-2)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{bookingAuditValueText(change.before)}</BeforeTag><span style={{ color: "var(--ink-3)", textAlign: "center" }}>→</span><span style={{ background: changed ? "#fff0c7" : "transparent", borderRadius: 3, padding: "3px 5px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{bookingAuditValueText(change.after)}</span></div>;
-            }) : <div className="rental-muted">This log entry does not contain booking form fields.</div>}
-          </div>
-        </>}
+        <div style={{ overflow: "auto", padding: "0 32px 28px", minHeight: 0 }}>
+          {!hasSnapshot && !hasDisplayChanges ? <div className="rental-muted">This older log entry does not include saved field-level changes.</div> : <>
+            <div style={{ display: "grid", gap: 8, marginBottom: 18 }}>
+              <div style={{ fontWeight: 800 }}>All booking form fields</div>
+              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Every field is listed with its Before and After answer. Changed rows are highlighted in yellow and the original answer is crossed out.</div>
+              {formChanges.length ? formChanges.map((change, index) => {
+                const changed = change.changed !== undefined ? !!change.changed : JSON.stringify(change.before ?? null) !== JSON.stringify(change.after ?? null);
+                const BeforeTag = changed ? "del" : "span";
+                return <div key={`${change.section}-${change.label}-${index}`} style={{ display: "grid", gridTemplateColumns: "minmax(170px, .65fr) 1fr 28px 1fr", gap: 10, alignItems: "center", border: `1px solid ${changed ? "#e4bd52" : "var(--line)"}`, borderRadius: 6, padding: "10px 12px", fontSize: 13, background: changed ? "#fffaf0" : "#fff" }}><div><strong>{change.label}</strong><div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>{change.section} · {changed ? "Changed" : "Unchanged"}</div></div><BeforeTag style={{ color: changed ? "var(--ink-3)" : "var(--ink-2)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{bookingAuditValueText(change.before)}</BeforeTag><span style={{ color: "var(--ink-3)", textAlign: "center" }}>→</span><span style={{ background: changed ? "#fff0c7" : "transparent", borderRadius: 3, padding: "3px 5px", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{bookingAuditValueText(change.after)}</span></div>;
+              }) : <div className="rental-muted">This log entry does not contain booking form fields.</div>}
+            </div>
+          </>}
+        </div>
       </div>
     </div>
   );
@@ -23996,7 +24118,14 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
             <h1>Space Client Detailed Progress</h1>
             <p>Review the submitted request and maintain internal progress details for this client.</p>
           </div>
-          <button className="btn sm" onClick={onBack}>Back to list</button>
+          <div className="progress-detail-head-actions" aria-label="Detailed progress actions">
+            <button className="btn sm" type="button" onClick={onBack}>Back to list</button>
+            <button className="btn sm" type="button" onClick={printProgress} disabled={isBusy}><Ic.Print size={14} /> Print</button>
+            <button className="btn sm" type="button" onClick={() => onEditClient?.(record)} disabled={isBusy}><Ic.Edit size={14} /> Edit</button>
+            <button className="btn primary sm" type="button" onClick={handleSave} disabled={isBusy} aria-busy={busyAction === "save"}>
+              <Ic.Save size={14} /> {busyAction === "save" ? "Saving…" : "Save"}
+            </button>
+          </div>
         </div>
 
         <div className="progress-detail-top-grid">
@@ -24012,11 +24141,11 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
               <button
                 className="btn sm"
                 type="button"
-                style={{ justifySelf: "start", color: "var(--accent)", opacity: 0.55 }}
+                style={{ justifySelf: "start" }}
                 disabled
-                title="Nexudus sync is not available yet"
+                title="Nexudus membership sync is not connected yet"
               >
-                Check/Create Nexudus User
+                Nexudus sync (coming soon)
               </button>
               <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
                 <label className="lbl">Interest Level</label>
@@ -24196,10 +24325,11 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
         <div style={{ border: "1px solid var(--line)", borderTop: 0, borderRadius: "0 0 8px 8px", padding: 14, display: "grid", gap: 10 }}>
           <label className="chk"><input type="checkbox" checked={!!record.progress?.accessibleByRecordLink} onChange={(e) => patchProgress({ accessibleByRecordLink: e.target.checked })} /> Accessible using Record Link</label>
           <div><label className="lbl">Issues</label><textarea className="textarea" rows={4} value={record.progress?.issues || ""} onChange={(e) => patchProgress({ issues: e.target.value })} /></div>
-          <div>
+          <div className="progress-attachments-note">
             <label className="lbl">Attachments</label>
-            <input type="file" multiple disabled title="File attachments are not wired yet" aria-label="Attachments (coming soon)" />
-            <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--ink-3)" }}>Coming soon — uploads are not saved yet.</p>
+            <p style={{ margin: 0, fontSize: 12, color: "var(--ink-3)" }}>
+              General file attachments are not available yet. Use the AGCO, Insurance, and Agreement uploads in Status above for required documents.
+            </p>
           </div>
         </div>
         </div>
@@ -24280,13 +24410,6 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
           )}
         </div>
         </div>
-      </div>
-      <div className="progress-detail-actions" aria-label="Detailed progress actions">
-        <button className="btn" type="button" onClick={printProgress} disabled={isBusy}><Ic.Print size={15} /> Print</button>
-        <button className="btn" type="button" onClick={() => onEditClient?.(record)} disabled={isBusy}><Ic.Edit size={15} /> Edit</button>
-        <button className="btn primary" type="button" onClick={handleSave} disabled={isBusy} aria-busy={busyAction === "save"}>
-          <Ic.Save size={15} /> {busyAction === "save" ? "Saving…" : "Save"}
-        </button>
       </div>
       {costBreakdown && <ProgressCostBreakdownModal {...costBreakdown} onClose={() => setCostBreakdown(null)} />}
       {selectedAudit && <BookingAuditModal audit={selectedAudit} steps={steps} onClose={() => setSelectedAudit(null)} />}
@@ -24567,9 +24690,28 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         setPublishedState(live);
         setActiveStepId((publicMode ? live.steps : draft.steps)[0]?.id || "s1");
         setOpenFieldId((publicMode ? live.steps : draft.steps)[0]?.fields?.[0]?.id || null);
-        setIsDirty(false);
+        const rawSite = data.state?.siteSettings || {};
+        const rawDelivery = Array.isArray(rawSite.fulfillment?.deliveryOptions) ? rawSite.fulfillment.deliveryOptions : [];
+        const strippedDelivery = rawDelivery.filter((option) => isPlaceholderDeliveryOption(option)).length;
+        const rawTemplates = rawSite.emailSettings?.templates || {};
+        const remappedEmail = EMAIL_TEMPLATE_TYPES.some((type) => {
+          const from = String(rawTemplates[type.id]?.from || "");
+          return /@resend\.dev$/i.test(from) || /^onboarding@/i.test(from);
+        });
+        const needsSanitizeSave = !publicMode && (strippedDelivery > 0 || remappedEmail);
+        setIsDirty(needsSanitizeSave);
         if (data.updatedAt) setLastSavedAt(new Date(data.updatedAt).getTime());
-        if (!publicMode) pushToast({ kind: "success", title: "Loaded database draft", desc: "Admin data was restored from the database." });
+        if (!publicMode) {
+          pushToast({ kind: "success", title: "Loaded database draft", desc: "Admin data was restored from the database." });
+          if (needsSanitizeSave) {
+            pushToast({
+              kind: "info",
+              title: "Settings cleaned",
+              desc: "Removed test delivery options and/or Resend onboarding From addresses. Click Save to persist.",
+              duration: 12000,
+            });
+          }
+        }
         if (parity && !publicMode) {
           pushHistoryEntry("Before old-site parity update", next.steps, next.rentalCatalog, next.pricingRules, next.siteSettings);
           buildDatabaseAdminStatePayload(draft.steps, draft.rentalCatalog, draft.pricingRules, draft.siteSettings, next.progressRecords, live)
@@ -24712,7 +24854,6 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     document.documentElement.style.setProperty("--ink", primary);
     document.documentElement.style.setProperty("--ink-2", secondary);
     document.body.style.color = text;
-    document.title = siteSettings.branding?.siteTitle || "Collaburo · Admin";
     let icon = document.querySelector("link[rel='icon']");
     if (!icon) {
       icon = document.createElement("link");
@@ -24721,6 +24862,17 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     }
     if (siteSettings.branding?.favicon) icon.href = siteSettings.branding.favicon;
   }, [siteSettings, t.accent, t.fontFamily]);
+
+  React.useEffect(() => {
+    if (publicMode) {
+      document.title = siteSettings.branding?.siteTitle || "Customize Your Event at Collaburo";
+      return;
+    }
+    const sectionName = activeSection === "profile"
+      ? "Admin Profile"
+      : (SECTION_LABEL[activeSection] || "Admin");
+    document.title = `${sectionName} · Collaburo Admin`;
+  }, [publicMode, activeSection, siteSettings.branding?.siteTitle]);
 
   const activeStep = steps.find((s) => s.id === activeStepId) || steps[0];
   const activeStepIndex = steps.findIndex((s) => s.id === activeStepId);
@@ -25851,7 +26003,19 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   }
 
   if (!publicMode && !initialDataLoaded) {
-    return <div className="booking-answers-loading" style={{ minHeight: "100vh", display: "grid", placeItems: "center", fontWeight: 700 }}>Loading current Collaburo data…</div>;
+    return (
+      <div className="admin-boot-loading" role="status" aria-busy="true" aria-label="Loading Collaburo Admin">
+        <aside className="admin-boot-side" aria-hidden="true" />
+        <div className="admin-boot-main">
+          <div className="admin-boot-topbar" aria-hidden="true" />
+          <div className="admin-boot-card">
+            <div className="contract-loading-spinner" />
+            <p>Loading Collaburo Admin…</p>
+            <span>Restoring workflow, catalog, and progress data</span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const adminEditRecord = !publicMode && adminEditRecordId

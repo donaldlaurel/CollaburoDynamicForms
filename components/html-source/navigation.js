@@ -23,18 +23,20 @@ const SECTION_LABEL = {
   contract: "Contract",
   calendar: "Booking Calendar",
   reports: "Reports",
+  profile: "Admin Profile",
 };
 
 const SECTION_PARENT = {
-  workflow: "Workflow Steps",
-  rentals: "Catalog",
-  pricing: "Pricing",
-  site: "Settings",
-  clients: "Progress",
-  "email-settings": "Settings",
-  contract: "Settings",
+  workflow: "Configuration",
+  rentals: "Configuration",
+  pricing: "Configuration",
+  site: "Configuration",
+  "email-settings": "Configuration",
+  contract: "Configuration",
+  clients: "Operations",
   calendar: "Operations",
   reports: "Operations",
+  profile: "Admin",
 };
 
 export { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT };
