@@ -190,6 +190,18 @@ function buildTemplatePayload(html, versionLabel) {
     `made this <u><strong>{{Agreement_Day}}</strong></u> day of <strong><u>{{Agreement_Month_Year}}</u></strong> at <strong><u>{{Agreement_Time}}</u></strong> EST`
   );
 
+  // Parties preamble is centered by default (matches title + waiver parties block).
+  agreementBody = agreementBody.replace(
+    /<p(\b[^>]*)?>\s*(<(?:strong|b)[^>]*>\s*THIS AGREEMENT\b)/i,
+    (full, attrs = "", lead) => {
+      if (/text-align\s*:\s*center/i.test(attrs)) return full;
+      if (/\bstyle\s*=\s*"/i.test(attrs)) {
+        return `<p${attrs.replace(/\bstyle\s*=\s*"/i, 'style="text-align:center;')}>${lead}`;
+      }
+      return `<p style="text-align:center">${lead}`;
+    }
+  );
+
   agreementBody = agreementBody.replace(
     /\(the "Client","you" or "your"\)[\s\S]*?WHEREAS:/i,
     `(the "Client","you" or "your")</p>
@@ -229,6 +241,22 @@ function buildTemplatePayload(html, versionLabel) {
     /Expected number of people attending the event:[\s\S]*?\./i,
     `Expected number of people attending the event: <u>{{Expected_Number_of_Attendees}}</u>.`
   );
+
+  // Close unclosed center wrappers before Details of Event (left-align from there on).
+  {
+    const detailsRe = /<(?:strong|b)\b[^>]*>\s*Details of Event\s*<\/(?:strong|b)>/i;
+    const detailsMatch = detailsRe.exec(waiverBody);
+    if (detailsMatch) {
+      const before = waiverBody.slice(0, detailsMatch.index);
+      const after = waiverBody.slice(detailsMatch.index);
+      const opens = (before.match(/<div\b[^>]*text-align\s*:\s*center[^>]*>/gi) || []).length;
+      const closes = (before.match(/<\/div>/gi) || []).length;
+      const net = Math.max(0, opens - closes);
+      if (net > 0) {
+        waiverBody = `${before}${"</div>".repeat(net)}<br/><br/>${after}`;
+      }
+    }
+  }
 
   agreementBody = finalPolish(agreementBody);
   waiverBody = finalPolish(waiverBody);

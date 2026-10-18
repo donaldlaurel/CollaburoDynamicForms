@@ -208,8 +208,28 @@ export function buildContractSnapshot(settings, tokenMap = {}, generatedAt = new
   };
 }
 
+/** Center the opening parties preamble (THIS AGREEMENT … IS BETWEEN … Client). */
+function repairContractAgreementPreamble(body = "") {
+  let s = String(body || "");
+  s = s.replace(
+    /<p(\b[^>]*)?>\s*(<(?:strong|b)[^>]*>\s*THIS AGREEMENT\b)/gi,
+    (full, attrs = "", lead) => {
+      if (/text-align\s*:\s*center/i.test(attrs)) return full;
+      if (/\bstyle\s*=\s*"/i.test(attrs)) {
+        return `<p${attrs.replace(/\bstyle\s*=\s*"/i, 'style="text-align:center;')}>${lead}`;
+      }
+      return `<p style="text-align:center">${lead}`;
+    }
+  );
+  return s;
+}
+
 function repairContractParagraphBody(body = "") {
-  return repairContractCenterBleed(repairContractWaiverMarkup(repairContractSection3(String(body || ""))));
+  return repairContractCenterBleed(
+    repairContractWaiverMarkup(
+      repairContractSection3(repairContractAgreementPreamble(String(body || "")))
+    )
+  );
 }
 
 function normalizeContractBlock(block = {}, { repair = false } = {}) {
@@ -302,6 +322,20 @@ function repairContractWaiverMarkup(body = "") {
     /<b>\s*<u>\s*<u>\s*([^<]{1,200}?)\s*<\/u>\s*<\/b>/gi,
     "<b><u>$1</u></b>"
   );
+  // Unclosed center wrappers from the parties block swallow Details of Event+.
+  // Close them before that heading so Consideration stays centered and the rest is left-aligned.
+  const detailsRe = /<(?:strong|b)\b[^>]*>\s*Details of Event\s*<\/(?:strong|b)>/i;
+  const detailsMatch = detailsRe.exec(s);
+  if (detailsMatch) {
+    const before = s.slice(0, detailsMatch.index);
+    const after = s.slice(detailsMatch.index);
+    const opens = (before.match(/<div\b[^>]*text-align\s*:\s*center[^>]*>/gi) || []).length;
+    const closes = (before.match(/<\/div>/gi) || []).length;
+    const net = Math.max(0, opens - closes);
+    if (net > 0) {
+      s = `${before}${"</div>".repeat(net)}<br/><br/>${after}`;
+    }
+  }
   return s;
 }
 
@@ -522,7 +556,9 @@ function sanitizeContractHtml(html = "") {
     return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, "");
   }
   const root = document.createElement("div");
-  root.innerHTML = normalizeLegacyContractHtml(repairContractWaiverMarkup(html));
+  root.innerHTML = normalizeLegacyContractHtml(
+    repairContractWaiverMarkup(repairContractAgreementPreamble(html))
+  );
 
   // Preserve legacy <center> alignment (not in allow-list; would otherwise unwrap left-aligned).
   root.querySelectorAll("center").forEach((el) => {
@@ -532,14 +568,21 @@ function sanitizeContractHtml(html = "") {
     el.parentNode?.replaceChild(div, el);
   });
 
-  // If a center div still contains body copy after an image (broken extractor markup),
-  // keep only the leading media centered and move the rest out as left-aligned siblings.
+  // If a center div still contains body copy that should be left-aligned, keep the
+  // leading centered portion and move the rest out as siblings.
   root.querySelectorAll('div[style*="text-align:center"], div[style*="text-align: center"]').forEach((div) => {
     const html = div.innerHTML || "";
-    if (!/<img\b/i.test(html)) return;
-    // Match "4.2 ..." and also top-level "7. On site ..."
-    const headingIdx = html.search(/<(?:strong|b)>\s*\d+\.(?:\d+)?(?:\s|&nbsp;|[A-Za-z])/i);
-    const cut = headingIdx >= 0 ? headingIdx : -1;
+    let cut = -1;
+    if (/<img\b/i.test(html)) {
+      // Match "4.2 ..." and also top-level "7. On site ..."
+      const headingIdx = html.search(/<(?:strong|b)>\s*\d+\.(?:\d+)?(?:\s|&nbsp;|[A-Za-z])/i);
+      cut = headingIdx >= 0 ? headingIdx : -1;
+    }
+    if (cut < 0) {
+      // Waiver: parties/Consideration stay centered; Details of Event+ goes left.
+      const detailsIdx = html.search(/<(?:strong|b)\b[^>]*>\s*Details of Event\s*<\/(?:strong|b)>/i);
+      cut = detailsIdx > 0 ? detailsIdx : -1;
+    }
     if (cut <= 0) return;
     if (html.slice(cut).length < 20) return;
     const kept = html.slice(0, cut).replace(/(?:<br\s*\/?>\s*)+$/i, "");
