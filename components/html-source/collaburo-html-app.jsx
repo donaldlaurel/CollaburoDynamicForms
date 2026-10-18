@@ -23179,6 +23179,206 @@ function ReportsView({ records, venues = [], onOpenRecord }) {
   );
 }
 
+const ACTIVITY_ACTION_OPTIONS = [
+  { id: "", label: "All actions" },
+  { id: "session.login", label: "Login" },
+  { id: "session.logout", label: "Logout" },
+  { id: "config.saved", label: "Config saved" },
+  { id: "booking.submitted", label: "Booking submitted" },
+  { id: "booking.draft_saved", label: "Draft saved" },
+  { id: "booking.admin_edited", label: "Booking edited" },
+  { id: "booking.deleted", label: "Booking deleted" },
+  { id: "contract.signed", label: "Contract signed" },
+  { id: "email.sent", label: "Email sent" },
+  { id: "account.created", label: "Account created" },
+  { id: "account.updated", label: "Account updated" },
+  { id: "account.deleted", label: "Account deleted" },
+  { id: "legacy.imported", label: "Legacy import" },
+];
+
+function formatActivityTime(value) {
+  const date = new Date(value || 0);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString();
+}
+
+function ActivityView({ onOpenRecord }) {
+  const Ic = window.Icons;
+  const [events, setEvents] = React.useState([]);
+  const [nextCursor, setNextCursor] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [action, setAction] = React.useState("");
+  const [actorInput, setActorInput] = React.useState("");
+  const [actor, setActor] = React.useState("");
+  const [since, setSince] = React.useState("");
+  const [until, setUntil] = React.useState("");
+  const [expandedId, setExpandedId] = React.useState("");
+
+  const loadEvents = React.useCallback(async ({ cursor = "", append = false, actorOverride } = {}) => {
+    const actorFilter = typeof actorOverride === "string" ? actorOverride : actor;
+    if (append) setLoadingMore(true);
+    else {
+      setLoading(true);
+      setError("");
+    }
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", "50");
+      if (cursor) params.set("cursor", cursor);
+      if (action) params.set("action", action);
+      if (actorFilter.trim()) params.set("actor", actorFilter.trim());
+      if (since) params.set("since", new Date(`${since}T00:00:00`).toISOString());
+      if (until) params.set("until", new Date(`${until}T23:59:59`).toISOString());
+      const response = await fetch(`/api/audit-log?${params.toString()}`, { credentials: "same-origin", cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(data.error || "Failed to load activity.");
+      setEvents((prev) => (append ? [...prev, ...(data.events || [])] : (data.events || [])));
+      setNextCursor(data.nextCursor || null);
+    } catch (err) {
+      setError(err.message || "Failed to load activity.");
+      if (!append) setEvents([]);
+      setNextCursor(null);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [action, actor, since, until]);
+
+  React.useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  const applyFilters = () => {
+    const nextActor = actorInput.trim();
+    setActor(nextActor);
+    loadEvents({ actorOverride: nextActor });
+  };
+
+  return (
+    <div className="editor-col" style={{ flex: 1 }}>
+      <div className="editor-inner progress-list-inner">
+        <div className="editor-head">
+          <div>
+            <span className="editor-head-tag"><Ic.Clock size={11} /> Operations</span>
+            <h1>Activity</h1>
+            <p>Append-only audit trail of admin actions, system events, and public milestones (submissions and contract signatures).</p>
+          </div>
+          <button type="button" className="btn sm" onClick={applyFilters} disabled={loading}>
+            <Ic.Undo size={13} /> Refresh
+          </button>
+        </div>
+
+        <div className="rp-filters">
+          <div>
+            <label className="lbl">Action</label>
+            <select className="select" value={action} onChange={(e) => setAction(e.target.value)}>
+              {ACTIVITY_ACTION_OPTIONS.map((item) => (
+                <option key={item.id || "all"} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="lbl">Actor</label>
+            <input
+              className="input"
+              value={actorInput}
+              onChange={(e) => setActorInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") applyFilters(); }}
+              placeholder="username or email"
+            />
+          </div>
+          <div>
+            <label className="lbl">From</label>
+            <input className="input" type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+          </div>
+          <div>
+            <label className="lbl">To</label>
+            <input className="input" type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+          </div>
+        </div>
+
+        {error ? <div className="rp-empty">{error}</div> : null}
+        {loading ? <div className="rp-empty">Loading activity…</div> : null}
+        {!loading && !error && !events.length ? <div className="rp-empty">No activity events yet.</div> : null}
+
+        {!loading && events.length ? (
+          <div className="rp-panel wide" style={{ marginTop: 12 }}>
+            <table className="rp-table activity-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Actor</th>
+                  <th>Action</th>
+                  <th>Summary</th>
+                  <th>Resource</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {events.map((event) => {
+                  const isBooking = event.resourceType === "booking" && event.resourceId;
+                  const expanded = expandedId === event.id;
+                  return (
+                    <React.Fragment key={event.id}>
+                      <tr className={event.outcome === "failure" ? "activity-row-fail" : ""}>
+                        <td className="rp-muted">{formatActivityTime(event.createdAt)}</td>
+                        <td>
+                          <div>{event.actorId || "—"}</div>
+                          <div className="rp-muted" style={{ fontSize: 11 }}>{event.actorType}</div>
+                        </td>
+                        <td>
+                          <code className="activity-action">{event.action}</code>
+                          {event.outcome === "failure" ? <span className="activity-outcome-fail"> failure</span> : null}
+                        </td>
+                        <td>{event.summary || "—"}</td>
+                        <td>
+                          {isBooking ? (
+                            <button type="button" className="btn ghost sm" onClick={() => onOpenRecord?.(event.resourceId)}>
+                              <Ic.External size={12} /> {event.resourceId}
+                            </button>
+                          ) : (
+                            <span className="rp-muted">{[event.resourceType, event.resourceId].filter(Boolean).join(" · ") || "—"}</span>
+                          )}
+                        </td>
+                        <td>
+                          <button type="button" className="btn ghost sm" onClick={() => setExpandedId(expanded ? "" : event.id)}>
+                            {expanded ? "Hide" : "Details"}
+                          </button>
+                        </td>
+                      </tr>
+                      {expanded ? (
+                        <tr>
+                          <td colSpan={6}>
+                            <pre className="activity-meta">{JSON.stringify({
+                              requestId: event.requestId,
+                              ip: event.ip,
+                              outcome: event.outcome,
+                              metadata: event.metadata || {},
+                            }, null, 2)}</pre>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+            {nextCursor ? (
+              <div style={{ marginTop: 12 }}>
+                <button type="button" className="btn sm" disabled={loadingMore} onClick={() => loadEvents({ cursor: nextCursor, append: true })}>
+                  {loadingMore ? "Loading…" : "Load more"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ProgressActiveBadge({ record }) {
   const activityAt = record.progress?.lastActivityAt || record.stepProgress?.updatedAt || "";
   const [active, setActive] = React.useState(() => isProgressRecordActive(record));
@@ -25909,6 +26109,17 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           <ReportsView
             records={progressRecords}
             venues={rentalVenueOptions}
+            onOpenRecord={(recordId) => {
+              setSubmittedAnswersRecordId(null);
+              setActiveProgressId(recordId);
+              setActiveSection("clients");
+            }}
+          />
+        );
+      }
+      if (activeSection === "activity") {
+        return (
+          <ActivityView
             onOpenRecord={(recordId) => {
               setSubmittedAnswersRecordId(null);
               setActiveProgressId(recordId);

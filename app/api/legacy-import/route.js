@@ -3,6 +3,12 @@ import { NextResponse } from "next/server";
 import memory from "../../../lib/memory-store";
 import { MAX_PROGRESS_RECORDS } from "../../../lib/progress-records";
 import { mergeLegacyRepairBatch } from "../../../lib/legacy-import-merge";
+import {
+  clientIpFromRequest,
+  createRequestId,
+  logOpsEvent,
+  recordAuditEvent,
+} from "../../../lib/audit-log";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -213,16 +219,62 @@ async function repairDatabase(sql, records, preflight) {
   });
 }
 
+async function auditLegacyImport(request, result, { mode, recordCount, preflight }) {
+  if (preflight || !result?.ok) return;
+  const requestId = createRequestId();
+  const actorId = request.headers.get("x-collaburo-admin-user") || "admin";
+  await recordAuditEvent({
+    actorType: "admin",
+    actorId,
+    action: "legacy.imported",
+    resourceType: "booking",
+    resourceId: "",
+    outcome: "success",
+    requestId,
+    ip: clientIpFromRequest(request),
+    summary: `Legacy import (${mode}): ${recordCount} records`,
+    metadata: {
+      mode,
+      recordCount,
+      added: result.added ?? 0,
+      overwritten: result.overwritten ?? 0,
+      skipped: result.skipped ?? 0,
+      updated: result.updated ?? 0,
+      source: result.source || "",
+    },
+  });
+}
+
 export async function POST(request) {
   if (request.headers.get("x-collaburo-admin") !== "1") {
     return NextResponse.json({ ok: false, error: "Admin authentication required." }, { status: 401 });
   }
   const { mode, records, preflight, error } = parseBody(await request.json().catch(() => null));
-  if (error) return NextResponse.json({ ok: false, error }, { status: 400 });
+  if (error) {
+    logOpsEvent({
+      level: "warn",
+      requestId: createRequestId(),
+      route: "/api/legacy-import",
+      action: "legacy.imported",
+      actorId: request.headers.get("x-collaburo-admin-user") || "admin",
+      message: error,
+    });
+    return NextResponse.json({ ok: false, error }, { status: 400 });
+  }
 
   const sql = database();
-  if (!sql) return importIntoMemory(mode, records, preflight);
-  if (mode === "repair") return repairDatabase(sql, records, preflight);
+  if (!sql) {
+    const response = importIntoMemory(mode, records, preflight);
+    const payload = await response.clone().json().catch(() => null);
+    if (payload) await auditLegacyImport(request, payload, { mode, recordCount: records.length, preflight });
+    return response;
+  }
+  if (mode === "repair") {
+    const response = await repairDatabase(sql, records, preflight);
+    const payload = await response.clone().json().catch(() => null);
+    if (payload) await auditLegacyImport(request, payload, { mode, recordCount: records.length, preflight });
+    return response;
+  }
 
   if (preflight) {
     const rows = await sql`
@@ -324,7 +376,7 @@ export async function POST(request) {
   }
 
   const added = updated[0].added;
-  return NextResponse.json({
+  const payload = {
     ok: true,
     mode,
     added,
@@ -332,5 +384,7 @@ export async function POST(request) {
     skipped: mode === "skip" ? records.length - added : 0,
     updatedAt: updated[0].updated_at,
     source: "database",
-  });
+  };
+  await auditLegacyImport(request, payload, { mode, recordCount: records.length, preflight: false });
+  return NextResponse.json(payload);
 }

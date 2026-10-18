@@ -2,6 +2,12 @@ import { neon } from "@neondatabase/serverless";
 import { NextResponse } from "next/server";
 import memory from "../../../../lib/memory-store";
 import { MAX_PROGRESS_RECORDS } from "../../../../lib/progress-records";
+import {
+  clientIpFromRequest,
+  createRequestId,
+  logOpsEvent,
+  recordAuditEvent,
+} from "../../../../lib/audit-log";
 
 // Next.js can cache the Neon driver's fetch calls on Vercel, which serves stale
 // bookings; every database route must opt out.
@@ -160,6 +166,8 @@ async function sendSignedContractEmails({ record, siteSettings, agreementFile })
 }
 
 export async function POST(request) {
+  const requestId = createRequestId();
+  const ip = clientIpFromRequest(request);
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ ok: false, error: "Missing contract sign payload." }, { status: 400 });
@@ -234,7 +242,31 @@ export async function POST(request) {
     });
   } catch (error) {
     emailResult = { sent: false, reason: error.message || "Email failed." };
+    logOpsEvent({
+      level: "warn",
+      requestId,
+      route: "/api/contracts/sign",
+      action: "contract.signed",
+      actorId: String(existing.client?.email || "").trim().toLowerCase(),
+      message: error.message || "Signed-contract email failed",
+    });
   }
+
+  await recordAuditEvent({
+    actorType: "client",
+    actorId: String(existing.client?.email || "").trim().toLowerCase(),
+    action: "contract.signed",
+    resourceType: "booking",
+    resourceId: String(existing.id || recordId),
+    outcome: "success",
+    requestId,
+    ip,
+    summary: "Contract signed",
+    metadata: {
+      bookingCode: existing.bookingCode || "",
+      emailSent: Boolean(emailResult.sent),
+    },
+  });
 
   return NextResponse.json({
     ok: true,

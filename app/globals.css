@@ -3428,6 +3428,10 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 .rp-panel-head h3{margin:0;font-size:15px;font-weight:800;color:var(--ink)}
 .rp-panel-head p{margin:3px 0 0;font-size:12px;color:var(--ink-3)}
 .rp-empty{padding:24px 8px;text-align:center;font-size:12.5px;color:var(--ink-3);background:var(--surface-2);border-radius:8px}
+.activity-table .activity-action{font-size:11px;background:var(--surface-2);padding:2px 6px;border-radius:4px}
+.activity-table .activity-outcome-fail{color:#b42318;font-size:11px;font-weight:700}
+.activity-table tr.activity-row-fail td{background:#fff6f5}
+.activity-meta{margin:0;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-size:11px;line-height:1.45;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-word}
 .rp-table{width:100%;border-collapse:collapse;font-size:12.5px;color:var(--ink)}
 .rp-table th{padding:7px 8px;border-bottom:1px solid #eaded4;text-align:left;font-size:10px;font-weight:800;text-transform:uppercase;color:#6d5f54;white-space:nowrap}
 .rp-table td{padding:8px;border-bottom:1px solid #f1ebe5;vertical-align:middle;font-variant-numeric:tabular-nums}

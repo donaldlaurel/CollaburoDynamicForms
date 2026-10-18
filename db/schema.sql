@@ -37,3 +37,29 @@ create index if not exists collaburo_submissions_payload_id_idx
 
 create index if not exists collaburo_submissions_payload_booking_code_idx
   on collaburo_submissions ((payload->>'bookingCode'));
+
+-- Append-only audit trail for admin/system actions and public milestones.
+-- App code only INSERT + SELECT; no update/delete API.
+create table if not exists collaburo_audit_events (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  actor_type text not null,          -- admin | client | system
+  actor_id text not null default '', -- username, email, or "system"
+  action text not null,              -- e.g. booking.submitted
+  resource_type text not null default '', -- booking | config | account | email | session
+  resource_id text not null default '',
+  outcome text not null default 'success', -- success | failure
+  request_id text not null default '',
+  ip text not null default '',
+  summary text not null default '',
+  metadata jsonb not null default '{}'::jsonb
+);
+
+create index if not exists collaburo_audit_events_created_at_idx
+  on collaburo_audit_events (created_at desc);
+
+create index if not exists collaburo_audit_events_action_idx
+  on collaburo_audit_events (action);
+
+create index if not exists collaburo_audit_events_resource_idx
+  on collaburo_audit_events (resource_type, resource_id);
