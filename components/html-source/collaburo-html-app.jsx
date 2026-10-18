@@ -5260,6 +5260,41 @@ function workflowRentalPriceLabel(item) {
   return "$" + unitPrice.toFixed(2);
 }
 
+// Local text buffer so typing does not deep-clone the full workflow on every keystroke.
+function DeferredTextInput({ value = "", onCommit, onKeyDown, ...props }) {
+  const [local, setLocal] = React.useState(value);
+  React.useEffect(() => { setLocal(value); }, [value]);
+  return (
+    <input
+      {...props}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== value) onCommit(local);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur();
+        if (onKeyDown) onKeyDown(e);
+      }}
+    />
+  );
+}
+
+function DeferredTextarea({ value = "", onCommit, ...props }) {
+  const [local, setLocal] = React.useState(value);
+  React.useEffect(() => { setLocal(value); }, [value]);
+  return (
+    <textarea
+      {...props}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        if (local !== value) onCommit(local);
+      }}
+    />
+  );
+}
+
 function RentalGroupFieldEditor({ field, onChange }) {
   const catalogGroups = currentRentalCatalogGroups();
   const groups = Array.from(new Set([...(catalogGroups || []), field.rentalGroup || field.label].filter(Boolean)));
@@ -5272,7 +5307,7 @@ function RentalGroupFieldEditor({ field, onChange }) {
       <div className="field-grid">
         <div>
           <label className="lbl">Field label</label>
-          <input className="input" value={field.label || ""} onChange={(e) => set({ label: e.target.value })} />
+          <DeferredTextInput className="input" value={field.label || ""} onCommit={(label) => set({ label })} />
         </div>
         <div>
           <label className="lbl">Connected rental group</label>
@@ -5285,7 +5320,7 @@ function RentalGroupFieldEditor({ field, onChange }) {
         <div>
           <label className="lbl">Short description</label>
           <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-            <textarea className="textarea" style={{ flex: 1 }} rows={2} value={field.fieldDescription || ""} placeholder="Optional helper text shown above this rental group." onChange={(e) => set({ fieldDescription: e.target.value })} />
+            <DeferredTextarea className="textarea" style={{ flex: 1 }} rows={2} value={field.fieldDescription || ""} placeholder="Optional helper text shown above this rental group." onCommit={(fieldDescription) => set({ fieldDescription })} />
             <DescriptionFontSizeSelect item={field} onChange={(size) => set({ descFontSize: size })} />
           </div>
         </div>
@@ -5301,7 +5336,7 @@ function RentalGroupFieldEditor({ field, onChange }) {
         </div>
         <div>
           <label className="lbl">Group heading in preview</label>
-          <input className="input" value={field.rentalPreviewHeading || ""} placeholder="Example: Space Contents" onChange={(e) => set({ rentalPreviewHeading: e.target.value })} />
+          <DeferredTextInput className="input" value={field.rentalPreviewHeading || ""} placeholder="Example: Space Contents" onCommit={(rentalPreviewHeading) => set({ rentalPreviewHeading })} />
         </div>
       </div>
       {items.some(rentalUsesSharedQuantity) && (() => {
@@ -5431,23 +5466,23 @@ function ExtrasFieldEditor({ field, onChange }) {
       <div className="field-grid">
         <div>
           <label className="lbl">Section label</label>
-          <input className="input" value={field.label || ""} onChange={(e) => set({ label: e.target.value })} />
+          <DeferredTextInput className="input" value={field.label || ""} onCommit={(label) => set({ label })} />
         </div>
         <div>
           <label className="lbl">Amount label</label>
-          <input className="input" value={field.amountLabel || ""} placeholder="Total Extra Amount" onChange={(e) => set({ amountLabel: e.target.value })} />
+          <DeferredTextInput className="input" value={field.amountLabel || ""} placeholder="Total Extra Amount" onCommit={(amountLabel) => set({ amountLabel })} />
         </div>
       </div>
       <div className="field-grid one">
         <div>
           <label className="lbl">Description field label</label>
-          <input className="input" value={field.descriptionLabel || ""} placeholder="Description" onChange={(e) => set({ descriptionLabel: e.target.value })} />
+          <DeferredTextInput className="input" value={field.descriptionLabel || ""} placeholder="Description" onCommit={(descriptionLabel) => set({ descriptionLabel })} />
         </div>
       </div>
       <div className="field-grid one">
         <div>
           <label className="lbl">Client helper text</label>
-          <textarea className="textarea" rows={3} value={field.placeholder || ""} placeholder="Text shown inside the description box." onChange={(e) => set({ placeholder: e.target.value })} />
+          <DeferredTextarea className="textarea" rows={3} value={field.placeholder || ""} placeholder="Text shown inside the description box." onCommit={(placeholder) => set({ placeholder })} />
         </div>
       </div>
       <div className="field-flag-row">
@@ -5718,11 +5753,11 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
                         <label className="lbl">
                           Information icon <Ic.Info size={11} style={{ verticalAlign: "middle", marginLeft: 2 }} />
                         </label>
-                        <input
+                        <DeferredTextInput
                           className="input"
                           value={field.helpText || ""}
                           placeholder="Enter tooltip text..."
-                          onChange={(e) => set({ helpText: e.target.value })}
+                          onCommit={(helpText) => set({ helpText })}
                         />
                       </div>
                       <div>
@@ -5731,12 +5766,12 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
                     </div>
                     <div>
                       <label className="lbl">Internal-only note <span className="hint">visible to staff only</span></label>
-                      <textarea
+                      <DeferredTextarea
                         className="textarea"
                         rows={2}
                         value={field.internalNote || ""}
                         placeholder="Notes for the operations team..."
-                        onChange={(e) => set({ internalNote: e.target.value })}
+                        onCommit={(internalNote) => set({ internalNote })}
                       />
                     </div>
                     <div>
@@ -5759,10 +5794,10 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
           <div className="field-grid">
             <div>
               <label className="lbl">Field Label</label>
-              <input
+              <DeferredTextInput
                 className="input"
-                value={field.label}
-                onChange={(e) => set({ label: e.target.value })}
+                value={field.label || ""}
+                onCommit={(label) => set({ label })}
               />
             </div>
             <div>
@@ -5792,11 +5827,11 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
                   Placeholder
                   <span className="hint" style={{ marginLeft: 8 }}>shown to clients before they type</span>
                 </label>
-                <input
+                <DeferredTextInput
                   className="input"
                   value={field.placeholder || ""}
                   placeholder=""
-                  onChange={(e) => set({ placeholder: e.target.value })}
+                  onCommit={(placeholder) => set({ placeholder })}
                 />
               </div>
             </div>
@@ -5926,11 +5961,11 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
                     <label className="lbl">
                       Information icon <Ic.Info size={11} style={{ verticalAlign: "middle", marginLeft: 2 }} />
                     </label>
-                    <input
+                    <DeferredTextInput
                       className="input"
                       value={field.helpText || ""}
                       placeholder="Enter tooltip text…"
-                      onChange={(e) => set({ helpText: e.target.value })}
+                      onCommit={(helpText) => set({ helpText })}
                     />
                   </div>
                   <div>
@@ -5941,13 +5976,13 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
                 <div>
                   <label className="lbl">Field description <span className="hint">additional detail shown to clients</span></label>
                   <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-                    <textarea
+                    <DeferredTextarea
                       className="textarea"
                       style={{ flex: 1 }}
                       rows={2}
                       value={field.fieldDescription || ""}
                       placeholder="Add a longer description, instructions, or context for this field…"
-                      onChange={(e) => set({ fieldDescription: e.target.value })}
+                      onCommit={(fieldDescription) => set({ fieldDescription })}
                     />
                     <DescriptionFontSizeSelect item={field} onChange={(size) => set({ descFontSize: size })} />
                   </div>
@@ -5955,12 +5990,12 @@ function FieldCard({ field, allFields, stepType, open, onToggle, onUpdate, onDup
 
                 <div>
                   <label className="lbl">Internal-only note <span className="hint">visible to staff only</span></label>
-                  <textarea
+                  <DeferredTextarea
                     className="textarea"
                     rows={2}
                     value={field.internalNote || ""}
                     placeholder="Notes for the operations team…"
-                    onChange={(e) => set({ internalNote: e.target.value })}
+                    onCommit={(internalNote) => set({ internalNote })}
                   />
                 </div>
 
@@ -18334,6 +18369,11 @@ const CLIENT_DRAFT_STORAGE_KEY = "collaburo.client.bookingDraft.v1";
 // draft for them so a save does not remount the form and jump back to an earlier step.
 const PUBLIC_PREVIEW_SESSION = { key: null, draft: null, ownRecordCodes: new Set() };
 const MAX_STORED_DATA_URL_LENGTH = 180000;
+const UNDO_STACK_CAP = 15;
+const UNDO_COALESCE_MS = 400;
+const HISTORY_MEMORY_CAP = 12;
+const HISTORY_STORAGE_CAP = 8;
+const MAX_PROGRESS_SIDE_ENTRIES = 50;
 
 const EMAIL_TEMPLATE_TYPES = [
   { id: "fill-form", label: "Fill Form", icon: "File", actionLabel: "Send fill form email" },
@@ -19070,12 +19110,17 @@ function normalizeProgressRecord(record = {}, index = 0) {
       updatedAt: record.stepProgress?.updatedAt || "",
     },
     adminSections: { instructions: "", specialNotes: "", cateringSpecifics: "", serviceNotes: "", ...(record.adminSections || {}) },
-    emails: record.emails || [],
-    log: record.log || [],
-    adminAudit: record.adminAudit || [],
+    emails: trimRecentProgressEntries(record.emails),
+    log: trimRecentProgressEntries(record.log),
+    adminAudit: trimRecentProgressEntries(record.adminAudit),
     ...(record.legacy ? { legacy: record.legacy } : {}),
   };
   return defaults;
+}
+
+function trimRecentProgressEntries(entries, max = MAX_PROGRESS_SIDE_ENTRIES) {
+  if (!Array.isArray(entries) || !entries.length) return [];
+  return entries.length > max ? entries.slice(0, max) : entries;
 }
 
 function normalizeProgressRecords(records = []) {
@@ -19630,10 +19675,19 @@ function loadSiteSettings() {
   return null;
 }
 
+function slimHistoryEntry(entry = {}) {
+  if (!entry || typeof entry !== "object") return entry;
+  const { progressRecords: _progressRecords, ...rest } = entry;
+  return rest;
+}
+
 function loadHistory() {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const list = JSON.parse(raw);
+      return (Array.isArray(list) ? list : []).map(slimHistoryEntry).slice(0, HISTORY_MEMORY_CAP);
+    }
   } catch (_) {}
   return [];
 }
@@ -19662,7 +19716,7 @@ function loadClientDraft() {
 
 function saveHistoryList(list) {
   try {
-    saveJsonSafely(HISTORY_KEY, (list || []).slice(0, 12));
+    saveJsonSafely(HISTORY_KEY, (list || []).map(slimHistoryEntry).slice(0, HISTORY_STORAGE_CAP));
   } catch (_) {}
 }
 
@@ -19824,6 +19878,13 @@ function buildAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings
 async function buildDatabaseAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState = null) {
   const payload = await copyRemoteImagesToCloudinary(buildAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState));
   return uploadEmbeddedImages(payload);
+}
+
+// Progress-only writes keep config/liveState as-is and only walk images inside progressRecords.
+async function buildProgressDatabaseAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState = null) {
+  const payload = buildAdminStatePayload(steps, rentalCatalog, pricingRules, siteSettings, progressRecords, liveState);
+  const nextProgress = await uploadEmbeddedImages(await copyRemoteImagesToCloudinary(payload.progressRecords));
+  return { ...payload, progressRecords: nextProgress };
 }
 
 // Applies the one-time old-site parity migration to a freshly loaded database
@@ -20006,16 +20067,15 @@ function AdminProfileView({ accounts, currentAdmin, onSaveAccount, onCreateAccou
   );
 }
 
-function snapshotDraft(label, steps, rentalCatalog, pricingRules, siteSettings, progressRecords) {
+function snapshotDraft(label, steps, rentalCatalog, pricingRules, siteSettings) {
   return {
     id: "hist_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
     label,
     createdAt: Date.now(),
-    steps,
-    rentalCatalog,
-    pricingRules,
-    siteSettings,
-    progressRecords,
+    steps: cloneData(steps),
+    rentalCatalog: cloneData(rentalCatalog),
+    pricingRules: cloneData(pricingRules),
+    siteSettings: cloneData(siteSettings),
   };
 }
 
@@ -20025,7 +20085,7 @@ function HistoryModal({ history, onRestore, onClose }) {
     <div className="rec-overlay" onClick={onClose}>
       <div className="rec-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Activity Timeline</h3>
-        <div className="sub">Restore an earlier workflow, rentals, pricing, site settings, and progress-list version.</div>
+        <div className="sub">Restore an earlier workflow, rentals, pricing, and site settings. The progress list is not changed.</div>
         {(history || []).length === 0 ? (
           <div className="rental-muted">No saved timeline entries yet. Saving, publishing, reset, and restore actions will create versions from now on.</div>
         ) : (
@@ -20034,7 +20094,7 @@ function HistoryModal({ history, onRestore, onClose }) {
               <span>
                 <b>{entry.label || "Saved version"}</b>
                 <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
-                  {new Date(entry.createdAt).toLocaleString()} · {(entry.steps || []).length} steps · {(entry.rentalCatalog || []).length} rentals · {(entry.pricingRules?.fees || []).length} fees · {(entry.progressRecords || []).length} progress records
+                  {new Date(entry.createdAt).toLocaleString()} · {(entry.steps || []).length} steps · {(entry.rentalCatalog || []).length} rentals · {(entry.pricingRules?.fees || []).length} fees
                 </span>
               </span>
               <button className="btn sm rental-add-btn" onClick={() => onRestore(entry)}>
@@ -22915,9 +22975,21 @@ function ReportsView({ records, venues = [], onOpenRecord }) {
   );
 }
 
+function ProgressActiveBadge({ record }) {
+  const activityAt = record.progress?.lastActivityAt || record.stepProgress?.updatedAt || "";
+  const [active, setActive] = React.useState(() => isProgressRecordActive(record));
+  React.useEffect(() => {
+    const tick = () => setActive(isProgressRecordActive(record));
+    tick();
+    const timer = window.setInterval(tick, 30000);
+    return () => window.clearInterval(timer);
+  }, [record.id, activityAt]);
+  if (!active) return null;
+  return <span className="progress-active-badge">Active</span>;
+}
+
 function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, onImportLegacy, onUpdateRecord, onEmail, onCopyLink, onDelete }) {
   const Ic = window.Icons;
-  const [now, setNow] = React.useState(Date.now());
   const [filters, setFilters] = React.useState({ query: "", space: "All", from: "", to: "", interest: "All", statuses: [], age: "Current and New" });
   const spaces = ["All", ...Array.from(new Set((records || []).map((record) => record.request?.space).filter(Boolean)))];
   const interestOptions = ["All", "Unlikely", "Not sure", "Likely", "Very Likely"];
@@ -22933,11 +23005,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
     setFilters((prev) => ({ ...prev, ...patch }));
     setPage(1);
   };
-  React.useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const applyFilters = (active) => (records || []).filter((record) => {
+  const applyFilters = React.useCallback((active) => (records || []).filter((record) => {
     const hay = [record.client?.name, record.client?.organization, record.client?.email, record.request?.description].join(" ").toLowerCase();
     if (active.query && !hay.includes(active.query.toLowerCase())) return false;
     if (active.space !== "All" && record.request?.space !== active.space) return false;
@@ -22950,7 +23018,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
     if (active.from && submitted < new Date(active.from + "T00:00:00")) return false;
     if (active.to && submitted > new Date(active.to + "T23:59:59")) return false;
     return true;
-  });
+  }), [records]);
   const [sort, setSort] = React.useState({ key: "booking", dir: "desc" });
   const bookingStartById = React.useMemo(() => {
     const map = new Map();
@@ -22960,7 +23028,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
     });
     return map;
   }, [records]);
-  const sortValue = (record, key) => {
+  const sortValue = React.useCallback((record, key) => {
     const progress = record.progress || {};
     switch (key) {
       case "id": return bookingCodeForRecord(record);
@@ -22978,8 +23046,8 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
       case "agco": return progressAgcoLicenseComplete(progress) ? 1 : 0;
       default: return null;
     }
-  };
-  const sortRecords = (list) => {
+  }, [bookingStartById]);
+  const sortRecords = React.useCallback((list) => {
     const direction = sort.dir === "asc" ? 1 : -1;
     return list
       .map((record) => ({ record, value: sortValue(record, sort.key) }))
@@ -22993,7 +23061,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
         return diff * direction;
       })
       .map((item) => item.record);
-  };
+  }, [sort, sortValue]);
   const toggleSort = (key) => {
     setSort((prev) => prev.key === key
       ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
@@ -23005,7 +23073,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
     ["No. of People", "people"], ["Booking Date/Time", "booking"], ["Interest Level", "interest"], ["Status", "status"],
     ["Signed", "signed"], ["Security Deposit", "deposit"], ["Insure", "insure"], ["AGCO License", "agco"], ["Email actions"], ["Actions"],
   ];
-  const filtered = sortRecords(applyFilters(filters));
+  const filtered = React.useMemo(() => sortRecords(applyFilters(filters)), [sortRecords, applyFilters, filters]);
   const hiddenByAge = filtered.length === 0 && filters.age !== "All" ? applyFilters({ ...filters, age: "All" }).length : 0;
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -23080,14 +23148,13 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
                   <td className="progress-client-cell">
                     {(() => {
                       const completion = progressCompletion(record);
-                      const active = isProgressRecordActive(record, now);
                       return (
                         <>
                           <div className="progress-client-name-row">
                             <button type="button" className="progress-client-link" onClick={() => onOpenDetail(record.id)}>
                               {record.client?.name || "Unnamed Client"}
                             </button>
-                            {active && <span className="progress-active-badge">Active</span>}
+                            <ProgressActiveBadge record={record} />
                           </div>
                           {completion.total > 0 && (
                             <div className="progress-completion">
@@ -24127,6 +24194,10 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   publishedStateRef.current = publishedState;
   const isDirtyRef = React.useRef(isDirty);
   isDirtyRef.current = isDirty;
+  const workflowUndoBurstRef = React.useRef(false);
+  const workflowUndoTimerRef = React.useRef(null);
+  const rentalUndoBurstRef = React.useRef(false);
+  const rentalUndoTimerRef = React.useRef(null);
   const currentPublishedState = () => publishedStateRef.current || buildPublicStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
   React.useEffect(() => {
     window.requestCollaburoDeleteConfirmation = (config = {}) => {
@@ -24235,12 +24306,12 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         if (data.updatedAt) setLastSavedAt(new Date(data.updatedAt).getTime());
         if (!publicMode) pushToast({ kind: "success", title: "Loaded database draft", desc: "Admin data was restored from the database." });
         if (parity && !publicMode) {
-          pushHistoryEntry("Before old-site parity update", next.steps, next.rentalCatalog, next.pricingRules, next.siteSettings, next.progressRecords);
+          pushHistoryEntry("Before old-site parity update", next.steps, next.rentalCatalog, next.pricingRules, next.siteSettings);
           buildDatabaseAdminStatePayload(draft.steps, draft.rentalCatalog, draft.pricingRules, draft.siteSettings, next.progressRecords, live)
             .then((databaseState) => putAdminStateToDatabase(databaseState))
             .then(() => {
               if (cancelled) return;
-              pushHistoryEntry(`Old-site parity update (${parity.changes.length} changes)`, draft.steps, draft.rentalCatalog, draft.pricingRules, draft.siteSettings, next.progressRecords);
+              pushHistoryEntry(`Old-site parity update (${parity.changes.length} changes)`, draft.steps, draft.rentalCatalog, draft.pricingRules, draft.siteSettings);
               setLastSavedAt(Date.now());
               console.info("[collaburo] Old-site parity update applied:\n- " + parity.changes.join("\n- "));
               pushToast({ kind: "success", title: "Old-site settings applied", desc: `${parity.changes.length} booking form settings were updated to match the old site. See History for the previous version.`, duration: 10000 });
@@ -24382,14 +24453,53 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
 
   // ----- mutators -----
   const markDirty = () => setIsDirty(true);
+  const endWorkflowUndoBurst = React.useCallback(() => {
+    if (workflowUndoTimerRef.current) {
+      window.clearTimeout(workflowUndoTimerRef.current);
+      workflowUndoTimerRef.current = null;
+    }
+    workflowUndoBurstRef.current = false;
+  }, []);
+  const endRentalUndoBurst = React.useCallback(() => {
+    if (rentalUndoTimerRef.current) {
+      window.clearTimeout(rentalUndoTimerRef.current);
+      rentalUndoTimerRef.current = null;
+    }
+    rentalUndoBurstRef.current = false;
+  }, []);
+  // Clone once at the start of a typing burst; coalesce further keystrokes until idle.
   const rememberWorkflowState = React.useCallback((previous) => {
-    setWorkflowUndo((items) => [cloneData(previous), ...items].slice(0, 50));
-    setWorkflowRedo([]);
+    if (!workflowUndoBurstRef.current) {
+      workflowUndoBurstRef.current = true;
+      setWorkflowUndo((items) => [cloneData(previous), ...items].slice(0, UNDO_STACK_CAP));
+      setWorkflowRedo([]);
+    }
+    if (workflowUndoTimerRef.current) window.clearTimeout(workflowUndoTimerRef.current);
+    workflowUndoTimerRef.current = window.setTimeout(() => {
+      workflowUndoBurstRef.current = false;
+      workflowUndoTimerRef.current = null;
+    }, UNDO_COALESCE_MS);
   }, []);
   const rememberRentalState = React.useCallback((previous) => {
-    setRentalUndo((items) => [cloneData(previous), ...items].slice(0, 50));
-    setRentalRedo([]);
+    if (!rentalUndoBurstRef.current) {
+      rentalUndoBurstRef.current = true;
+      setRentalUndo((items) => [cloneData(previous), ...items].slice(0, UNDO_STACK_CAP));
+      setRentalRedo([]);
+    }
+    if (rentalUndoTimerRef.current) window.clearTimeout(rentalUndoTimerRef.current);
+    rentalUndoTimerRef.current = window.setTimeout(() => {
+      rentalUndoBurstRef.current = false;
+      rentalUndoTimerRef.current = null;
+    }, UNDO_COALESCE_MS);
   }, []);
+  React.useEffect(() => {
+    endWorkflowUndoBurst();
+    endRentalUndoBurst();
+  }, [activeSection, endWorkflowUndoBurst, endRentalUndoBurst]);
+  React.useEffect(() => () => {
+    endWorkflowUndoBurst();
+    endRentalUndoBurst();
+  }, [endWorkflowUndoBurst, endRentalUndoBurst]);
   const commitSteps = React.useCallback((nextOrUpdater) => {
     const previous = stepsRef.current;
     const next = typeof nextOrUpdater === "function" ? nextOrUpdater(previous) : nextOrUpdater;
@@ -24409,59 +24519,63 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     return next;
   }, [rememberRentalState]);
   const undoWorkflow = React.useCallback(() => {
+    endWorkflowUndoBurst();
     setWorkflowUndo((items) => {
       if (!items.length) return items;
       const [target, ...rest] = items;
       const current = cloneData(stepsRef.current);
       const nextSteps = normalizeWorkflowSteps(target);
-      setWorkflowRedo((redoItems) => [current, ...redoItems].slice(0, 50));
+      setWorkflowRedo((redoItems) => [current, ...redoItems].slice(0, UNDO_STACK_CAP));
       setSteps(nextSteps);
       setActiveStepId((id) => nextSteps.some((step) => step.id === id) ? id : (nextSteps[0]?.id || "s1"));
       setOpenFieldId((id) => nextSteps.some((step) => (step.fields || []).some((field) => field.id === id)) ? id : null);
       markDirty();
       return rest;
     });
-  }, []);
+  }, [endWorkflowUndoBurst]);
   const redoWorkflow = React.useCallback(() => {
+    endWorkflowUndoBurst();
     setWorkflowRedo((items) => {
       if (!items.length) return items;
       const [target, ...rest] = items;
       const current = cloneData(stepsRef.current);
       const nextSteps = normalizeWorkflowSteps(target);
-      setWorkflowUndo((undoItems) => [current, ...undoItems].slice(0, 50));
+      setWorkflowUndo((undoItems) => [current, ...undoItems].slice(0, UNDO_STACK_CAP));
       setSteps(nextSteps);
       setActiveStepId((id) => nextSteps.some((step) => step.id === id) ? id : (nextSteps[0]?.id || "s1"));
       setOpenFieldId((id) => nextSteps.some((step) => (step.fields || []).some((field) => field.id === id)) ? id : null);
       markDirty();
       return rest;
     });
-  }, []);
+  }, [endWorkflowUndoBurst]);
   const undoRentalCatalog = React.useCallback(() => {
+    endRentalUndoBurst();
     setRentalUndo((items) => {
       if (!items.length) return items;
       const [target, ...rest] = items;
       const current = cloneData(rentalCatalogRef.current);
-      setRentalRedo((redoItems) => [current, ...redoItems].slice(0, 50));
+      setRentalRedo((redoItems) => [current, ...redoItems].slice(0, UNDO_STACK_CAP));
       setRentalCatalog(window.normalizeRentalCatalog(target));
       markDirty();
       return rest;
     });
-  }, []);
+  }, [endRentalUndoBurst]);
   const redoRentalCatalog = React.useCallback(() => {
+    endRentalUndoBurst();
     setRentalRedo((items) => {
       if (!items.length) return items;
       const [target, ...rest] = items;
       const current = cloneData(rentalCatalogRef.current);
-      setRentalUndo((undoItems) => [current, ...undoItems].slice(0, 50));
+      setRentalUndo((undoItems) => [current, ...undoItems].slice(0, UNDO_STACK_CAP));
       setRentalCatalog(window.normalizeRentalCatalog(target));
       markDirty();
       return rest;
     });
-  }, []);
-  const pushHistoryEntry = React.useCallback((label, nextSteps = stepsRef.current, nextRentals = rentalCatalogRef.current, nextPricing = pricingRulesRef.current, nextSite = siteSettingsRef.current, nextProgress = progressRecordsRef.current) => {
-    const entry = snapshotDraft(label, nextSteps, nextRentals, nextPricing, nextSite, nextProgress);
+  }, [endRentalUndoBurst]);
+  const pushHistoryEntry = React.useCallback((label, nextSteps = stepsRef.current, nextRentals = rentalCatalogRef.current, nextPricing = pricingRulesRef.current, nextSite = siteSettingsRef.current) => {
+    const entry = snapshotDraft(label, nextSteps, nextRentals, nextPricing, nextSite);
     setHistory((prev) => {
-      const list = [entry, ...(prev || [])].slice(0, 30);
+      const list = [entry, ...(prev || [])].slice(0, HISTORY_MEMORY_CAP);
       saveHistoryList(list);
       return list;
     });
@@ -24628,7 +24742,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     try {
       saveJsonSafely(PROGRESS_STORAGE_KEY, records);
     } catch (_) {}
-    return buildDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, records, currentPublishedState())
+    return buildProgressDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, records, currentPublishedState())
       .then((databaseState) => putAdminStateToDatabase(databaseState));
   };
   const progressClientLink = (record = {}) => `${window.location.origin}/book${record.id ? `?record=${bookingCodeForRecord(record)}` : ""}`;
@@ -24988,6 +25102,8 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
 
   // ----- save / publish -----
   const saveLocalSnapshot = React.useCallback((historyLabel) => {
+    endWorkflowUndoBurst();
+    endRentalUndoBurst();
     const workflowStats = saveJsonSafely(STORAGE_KEY, stepsRef.current);
     const rentalStats = saveJsonSafely(RENTALS_STORAGE_KEY, rentalCatalogRef.current);
     const pricingStats = saveJsonSafely(PRICING_STORAGE_KEY, pricingRulesRef.current);
@@ -25002,11 +25118,11 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     }
     const now = Date.now();
     localStorage.setItem(SAVED_KEY, String(now));
-    pushHistoryEntry(historyLabel, stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
+    pushHistoryEntry(historyLabel, stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
     setLastSavedAt(now);
     setIsDirty(false);
     return (workflowStats.removedImages || 0) + (rentalStats.removedImages || 0) + (pricingStats.removedImages || 0) + (siteStats.removedImages || 0) + (progressStats.removedImages || 0);
-  }, [pushHistoryEntry]);
+  }, [pushHistoryEntry, endWorkflowUndoBurst, endRentalUndoBurst]);
 
   const save = React.useCallback(() => {
     try {
@@ -25038,7 +25154,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   const publish = () => {
     const liveState = buildPublicStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
     const previousPublishedState = publishedStateRef.current;
-    pushHistoryEntry("Before publish", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
+    pushHistoryEntry("Before publish", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
     publishedStateRef.current = liveState;
     setPublishedState(liveState);
     buildDatabaseAdminStatePayload(stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current, liveState)
@@ -25063,7 +25179,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   };
 
   const resetToSample = () => {
-    pushHistoryEntry("Before reset to sample", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
+    pushHistoryEntry("Before reset to sample", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
     const sampleSteps = seedSteps();
     setSteps(sampleSteps);
     setRentalCatalog(seedRentalCatalog());
@@ -25091,7 +25207,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
       pushToast({ kind: "danger", title: "No saved draft found", desc: "There is no local saved version to restore." });
       return;
     }
-    pushHistoryEntry("Before restore saved draft", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
+    pushHistoryEntry("Before restore saved draft", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
     const nextSteps = savedSteps || seedSteps();
     const nextRentals = savedRentals || seedRentalCatalog();
     const nextPricing = savedPricing || seedPricingRules();
@@ -25110,23 +25226,21 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
   };
   const restoreHistoryEntry = (entry) => {
     if (!entry) return;
-    pushHistoryEntry("Before timeline restore", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current, progressRecordsRef.current);
+    pushHistoryEntry("Before timeline restore", stepsRef.current, rentalCatalogRef.current, pricingRulesRef.current, siteSettingsRef.current);
     const nextSteps = normalizeWorkflowSteps(entry.steps || window.SAMPLE_STEPS);
     const nextRentals = window.normalizeRentalCatalog ? window.normalizeRentalCatalog(entry.rentalCatalog || window.SAMPLE_RENTAL_CATALOG) : (entry.rentalCatalog || []);
     const nextPricing = normalizePricingRules(entry.pricingRules || window.SAMPLE_PRICING_RULES);
     const nextSite = normalizeSiteSettings(entry.siteSettings || SAMPLE_SITE_SETTINGS);
-    const nextProgress = normalizeProgressRecords(entry.progressRecords || SAMPLE_PROGRESS_RECORDS);
     setSteps(nextSteps);
     setRentalCatalog(nextRentals);
     setPricingRules(nextPricing);
     setSiteSettings(nextSite);
-    setProgressRecords(nextProgress);
     setActiveProgressId(null);
     setActiveStepId(nextSteps[0]?.id || "s1");
     setOpenFieldId(nextSteps[0]?.fields?.[0]?.id || null);
     setIsDirty(true);
     setHistoryOpen(false);
-    pushToast({ kind: "success", title: "Version restored", desc: "Review it, then click Save changes." });
+    pushToast({ kind: "success", title: "Version restored", desc: "Workflow, rentals, pricing, and site settings restored. Progress list was left unchanged. Review, then click Save changes." });
   };
   const createAdminAccount = (draft) => (
     collaburoApi("/api/admin-accounts", {
