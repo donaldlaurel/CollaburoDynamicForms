@@ -254,6 +254,10 @@ function deliveryOptionIdFromAnswer(answer, siteSettings = null) {
   return byText?.id || "";
 }
 
+const AV_DELUXE_INFO_TEXT = "Includes 2 wireless mics, PTZ camera, projector, Powerpoint Presentation Clicker, Audio Interface for hybrid meetings, set up and testing of all IT equipment and cable management with client's laptop before booking start time.";
+const AV_EXTRA_INFO_TEXT = "Perfect for events that have online participants, need a recording of the event, need someone to help control the cameras and microphones.  This package includes everything in the AV Deluxe Package plus the use of Collaburo's laptop, IT Labour support for audio and video support throughout the event (2 hours included, and extra hours can be added), online participants using our Zoom account.  A digital recording copy of the event - stage mainly (recording to be sent to client after the event) can be added separately.";
+const AV_RECORDING_INFO_TEXT = "A digital recording copy of the event - stage mainly (recording to be sent to client after the event)";
+
 const RENTAL_CATEGORIES = [
   "Tables",
   "Chairs",
@@ -337,7 +341,8 @@ const SAMPLE_RENTAL_CATALOG = [
   { id: "ra_sound_system", name: "Sound System", category: "AV / Tech", priceText: "Free", unit: "flat", priceKey: "space_tech_sound_system", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "", clientSelectable: true, hideBaseQuantity: true },
   { id: "ra_wired_mic", name: "Wired Mic", category: "AV / Tech", priceText: "Free", unit: "each", priceKey: "space_tech_wired_mic", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "", clientSelectable: true, hideBaseQuantity: true },
   { id: "ra_extension_cables", name: "Extension cables for tables", category: "AV / Tech", priceText: "Free", unit: "flat", priceKey: "space_tech_extension_cables", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "Subject to availability.", clientSelectable: true, hideBaseQuantity: true },
-  { id: "ra_av_deluxe", name: "AV Deluxe Package", category: "AV / Tech", priceText: "$350", unit: "package", priceKey: "space_other_avdeluxepackage", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "Package preset that includes PTZ camera, wireless mics, presentation support, and IT labor.", clientSelectable: true, hideBaseQuantity: true },
+  { id: "ra_av_deluxe", name: "AV Deluxe Package", category: "AV / Tech", priceText: "$350", unit: "package", priceKey: "space_other_avdeluxepackage", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "Package preset that includes PTZ camera, wireless mics, and presentation support. IT labour is not included.", infoText: AV_DELUXE_INFO_TEXT, clientSelectable: true, hideBaseQuantity: true },
+  { id: "ra_av_extra", name: "AV Extra Package", category: "AV / Tech", priceText: "$470", unit: "package", priceKey: "space_other_avextrapackage", deliveryClass: "none", clientVisible: true, active: true, source: "Main Hall Tech", notes: "Includes the AV Deluxe equipment plus Collaburo's laptop, Zoom for online participants, and 2 hours of IT labour. Extra IT hours are $60 each.", infoText: AV_EXTRA_INFO_TEXT, clientSelectable: true, hideBaseQuantity: true },
   { id: "ra_projector", name: "Projector / Projector Screen", category: "AV / Tech", priceText: "$100", unit: "flat", priceKey: "space_other_projectorscreen", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "Suspended middle stage option adds $25 extra.", clientSelectable: true, hideBaseQuantity: true },
   { id: "ra_web_conference_camera", name: "Web conference Camera", category: "AV / Tech", priceText: "$30", unit: "flat", priceKey: "space_tech_web_conference_camera", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "Subject to availability.", clientSelectable: true, hideBaseQuantity: true },
   { id: "ra_mobile_tv", name: "Mobile TV (45\")", category: "AV / Tech", priceText: "$75", unit: "flat", priceKey: "space_other_mobiletv", deliveryClass: "none", clientVisible: true, active: true, source: "Old site Step 5", notes: "", clientSelectable: true, hideBaseQuantity: true },
@@ -916,21 +921,72 @@ const LEGACY_RENTAL_ARCHITECTURE = {
     quantitySource: "fixed",
     clientSelectable: true,
     hideBaseQuantity: true,
+    infoText: AV_DELUXE_INFO_TEXT,
     packageBehavior: {
       type: "editable_preset",
       includedItemPricing: "included_by_package",
       lockIncludedItems: true,
+      exclusiveItemIds: ["ra_av_extra"],
       includedItems: [
         { itemId: "ra_projector", label: "Projector / Projector Screen" },
         { itemId: "ra_ptz", label: "PTZ camera" },
         { itemId: "ra_wireless_mic", label: "Wireless Mics", presetAnswers: { wireless_mic_count: "two" } },
         { itemId: "ra_powerpoint_clicker", label: "Powerpoint Presentation Clicker" },
-        { itemId: "ra_it_labour", label: "Labour Time - IT Tech", quantity: 2 },
       ],
     },
     migrationNotes: [
-      "Old site checks and locks the included AV items when AV Deluxe is selected.",
+      "Checks and locks the included AV items when AV Deluxe is selected.",
+      "IT labour is not part of this package.",
       "Included items are free while the package is selected; extra paid options on them (like the suspended projector) still charge.",
+    ],
+  },
+  ra_av_extra: {
+    schemaVersion: 1,
+    legacyKey: "space_other_avextrapackage",
+    pricingModel: "package_fixed",
+    unitPrice: 470,
+    quantitySource: "fixed",
+    clientSelectable: true,
+    hideBaseQuantity: true,
+    infoText: AV_EXTRA_INFO_TEXT,
+    optionGroups: [
+      {
+        id: "digital_recording",
+        label: "Digital Recording of Event",
+        type: "checkbox",
+        required: false,
+        quantitySource: "fixed",
+        infoText: AV_RECORDING_INFO_TEXT,
+        options: [
+          {
+            id: "digital_recording",
+            label: "Digital Recording of Event",
+            pricingModel: "flat_fee",
+            priceEnabled: true,
+            unitPrice: 100,
+            quantitySource: "fixed",
+            infoText: AV_RECORDING_INFO_TEXT,
+          },
+        ],
+      },
+    ],
+    packageBehavior: {
+      type: "editable_preset",
+      includedItemPricing: "included_by_package",
+      lockIncludedItems: true,
+      exclusiveItemIds: ["ra_av_deluxe"],
+      includedItems: [
+        { itemId: "ra_projector", label: "Projector / Projector Screen" },
+        { itemId: "ra_ptz", label: "PTZ camera" },
+        { itemId: "ra_wireless_mic", label: "Wireless Mics", presetAnswers: { wireless_mic_count: "two" } },
+        { itemId: "ra_powerpoint_clicker", label: "Powerpoint Presentation Clicker" },
+        { itemId: "ra_it_labour", label: "Labour Time - IT Tech", quantity: 2, includedUnits: 2, lockQuantity: false },
+      ],
+    },
+    migrationNotes: [
+      "Includes the AV Deluxe equipment, Collaburo's laptop, and Zoom.",
+      "Two IT labour hours are included. Additional hours bill at the labour rate.",
+      "Digital Recording of Event is a $100 add-on shown only while this package is selected.",
     ],
   },
   ra_projector: {
@@ -3078,6 +3134,19 @@ function RentalPackageEditor({ item, rows = [], onPatch }) {
                     <input className="input" type="number" min="0" placeholder="Client chooses" value={entry.quantity ?? ""} onChange={(e) => updateIncluded(index, { quantity: e.target.value === "" ? "" : Number(e.target.value) })} />
                   </div>
                 )}
+                {showQuantity && (
+                  <div>
+                    <label className="lbl">Free units included</label>
+                    <input className="input" type="number" min="0" placeholder="Whole quantity is free" value={entry.includedUnits ?? ""} onChange={(e) => updateIncluded(index, { includedUnits: e.target.value === "" ? "" : Number(e.target.value) })} />
+                  </div>
+                )}
+                {showQuantity && (
+                  <div>
+                    <label className="lbl">Quantity lock</label>
+                    <label className="chk"><input type="checkbox" checked={entry.lockQuantity === false} onChange={(e) => updateIncluded(index, { lockQuantity: e.target.checked ? false : true })} /> Client can increase this quantity</label>
+                    {Number(entry.includedUnits) > 0 && <div className="rental-muted" style={{ marginTop: 6 }}>Units above the free amount are billed at this item's price.</div>}
+                  </div>
+                )}
                 {presetGroups.map((group) => {
                   const options = (group.options || []).map(normalizeRentalChoiceOption);
                   const current = (entry.presetAnswers || {})[group.id];
@@ -3725,14 +3794,17 @@ function RentalClientChoicePreview({ group, values, onValueChange }) {
     const current = Number((checkboxRowValue.options || {})[option.id] || 0);
     setCheckboxRowOptionQty(option, current > 0 ? 0 : (option.minCount === "" || option.minCount == null ? 1 : option.minCount));
   };
+  const hideDuplicateCheckboxLabel = type === "checkbox" && options.length === 1 && options[0].label === label;
   return (
     <div className="rental-client-field">
       {group.imageUrl && <div className="rental-client-media"><img src={group.imageUrl} alt="" /></div>}
+      {!hideDuplicateCheckboxLabel && (
       <div className="rental-client-label-row">
         <label>{label}{group.required ? " *" : ""}</label>
         {previewChoicePriceLabel(group) && <strong>{previewChoicePriceLabel(group)}</strong>}
         <RentalInfoIcon text={group.infoText} images={rentalTooltipImages(group)} labels={rentalTooltipLabels(group)} />
       </div>
+      )}
       {group.description && <small style={{ fontSize: descriptionFontSize(group) }}>{group.description}</small>}
       {type === "quantity" && <input {...inputProps} min={group.settings?.min ?? 0} max={group.settings?.max || undefined} step={group.settings?.step ?? 1} type="number" value={value ?? group.settings?.defaultValue ?? 2} onChange={(e) => setValue(Number(e.target.value || 0))} />}
       {type === "number" && <ClampedNumberInput {...inputProps} min={group.settings?.min ?? 0} max={group.settings?.max || undefined} step={group.settings?.step ?? 1} value={value ?? group.settings?.defaultValue ?? 1} onChange={(raw) => setValue(Number(raw || 0))} />}
@@ -3859,7 +3931,7 @@ function RentalClientPreviewPanel({ item }) {
                 {rentalPackageIncludes(item).map((included) => (
                   <label key={included.itemId}>
                     <input type="checkbox" checked readOnly />
-                    <span>{included.label || included.itemId}</span>
+                    <span>{included.label || included.itemId}{Number(included.includedUnits) > 0 ? ` (${included.includedUnits} included, extra billed)` : ""}</span>
                   </label>
                 ))}
               </div>
@@ -3876,7 +3948,7 @@ function RentalClientPreviewPanel({ item }) {
           <h4>Example price</h4>
           {showBasePriceLine && <div className="rental-client-summary-row"><span>{item.name || "Base rental"}</span><strong>${Number(base.total || 0).toFixed(2)}</strong></div>}
           {itemChecked && rentalPackageIncludes(item).map((included) => (
-            <div className="rental-client-summary-row" key={included.itemId}><span>{included.label || included.itemId}</span><strong>{item.packageBehavior?.includedItemPricing === "charge_normally" ? "Added" : "Included"}</strong></div>
+            <div className="rental-client-summary-row" key={included.itemId}><span>{included.label || included.itemId}</span><strong>{Number(included.includedUnits) > 0 ? included.includedUnits + " included" : item.packageBehavior?.includedItemPricing === "charge_normally" ? "Added" : "Included"}</strong></div>
           ))}
           {selectedOptions.map((line, index) => (
             <div className="rental-client-summary-row" key={line.label + index}><span>{line.label}</span><strong>{line.quote ? "Quote" : "$" + Number(line.total || 0).toFixed(2)}</strong></div>
@@ -3924,7 +3996,7 @@ function remapRentalSeedItemIds(value, idMap) {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => {
     if (key === "itemId" && typeof entry === "string") return [key, idMap[entry] || entry];
-    if (key === "itemIds" && Array.isArray(entry)) return [key, entry.map((id) => idMap[id] || id)];
+    if ((key === "itemIds" || key === "exclusiveItemIds") && Array.isArray(entry)) return [key, entry.map((id) => idMap[id] || id)];
     return [key, remapRentalSeedItemIds(entry, idMap)];
   }));
 }
@@ -13519,9 +13591,10 @@ function RentalOptionGroupPreview({ item, group, allGroups, itemValue, onItemVal
 
   if (group.type === "checkbox") {
     const checkedIds = Array.isArray(current) ? current : [];
+    const hideGroupLabel = options.length === 1 && options[0].label && options[0].label === (group.label || "");
     return (
       <div>
-        {groupLabel("Select options")}
+        {!hideGroupLabel && groupLabel("Select options")}
         {options.map((opt) => {
           const optId = opt.id || opt.label;
           const checked = checkedIds.includes(optId);
@@ -13577,12 +13650,14 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
   const maxUnits = venueMaxUnits === "" || venueMaxUnits == null ? item.maxUnits : venueMaxUnits;
   const inclusion = rentalActiveInclusion(cross, item.id);
   const quantityLocked = rentalLockedPresetQuantity(cross, item.id);
+  const allowance = rentalIncludedAllowance(inclusion);
   const itemValue = value || {};
   const hasOptionGroups = (item.optionGroups || []).length > 0;
-  const priceLabel = inclusion && inclusion.waivePrice ? "Included" : workflowRentalPriceLabel(item);
+  const priceLabel = rentalInclusionPriceLabel(item, inclusion);
   const needsParentQuantity = rentalOptionGroupsNeedParentQuantity(item);
-  const includedWithoutQuantity = !!inclusion?.waivePrice && !quantityLocked;
+  const includedWithoutQuantity = !!inclusion?.waivePrice && !quantityLocked && !allowance;
   const showBaseQuantity = !includedWithoutQuantity && !rentalUsesSharedQuantity(item) && !rentalUsesFixedBaseQuantity(item) && (needsParentQuantity || !item.hideBaseQuantity);
+  const quantityFloor = Math.max(Number(item.minUnits || 0), allowance || 0);
   const applyRecommendedQuantity = () => {
     const qty = Number(recommendedCount || 0);
     if (!qty) return;
@@ -13621,9 +13696,9 @@ function RentalItemDetailPreview({ item, value, onChange, grouped, recommendedCo
               <span># of {item.name}</span>
               {pricesVisible && previewItemPriceLabel(item) && <span className="cv-rental-field-price">{previewItemPriceLabel(item)}</span>}
             </div>
-            <select className="cv-input cv-select" value={itemValue.quantity ?? ""} disabled={quantityLocked} onChange={(e) => onChange({ ...itemValue, quantity: Number(e.target.value) })}>
-              <option value="">Select one</option>
-              {rentalCountOptions(item.minUnits || 0, maxUnits || 99, item.increment || 1).map((n) => <option key={n} value={n}>{n}</option>)}
+            <select className="cv-input cv-select" value={allowance > 0 ? Math.max(quantityFloor, Number(itemValue.quantity || quantityFloor)) : (itemValue.quantity ?? "")} disabled={quantityLocked} onChange={(e) => onChange({ ...itemValue, quantity: Math.max(quantityFloor, Number(e.target.value)) })}>
+              {allowance <= 0 && <option value="">Select one</option>}
+              {rentalCountOptions(quantityFloor, maxUnits || 99, item.increment || 1).map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </div>
         )}
@@ -13755,15 +13830,51 @@ function rentalLockedPresetGroupIds(cross, itemId) {
   return inclusion && inclusion.locked ? Object.keys(inclusion.include.presetAnswers || {}) : [];
 }
 
+function rentalIncludedAllowance(inclusion) {
+  const units = Number(inclusion?.include?.includedUnits);
+  if (!inclusion?.waivePrice || !Number.isFinite(units) || units <= 0) return 0;
+  return units;
+}
+
+function rentalInclusionPriceLabel(item, inclusion) {
+  const allowance = rentalIncludedAllowance(inclusion);
+  if (allowance > 0) {
+    const rate = rentalUnitPrice(item);
+    const rateText = Number.isInteger(rate) ? String(rate) : Number(rate).toFixed(2);
+    return allowance + " hrs included, then $" + rateText + "/hr";
+  }
+  if (inclusion?.waivePrice) return "Included";
+  return workflowRentalPriceLabel(item);
+}
+
+function rentalExclusiveItemIds(item) {
+  const ids = item?.packageBehavior?.exclusiveItemIds;
+  return Array.isArray(ids) ? ids.filter(Boolean) : [];
+}
+
+function withoutRentalItemSelection(fieldState = {}, itemId) {
+  const selectedItems = { ...(fieldState.selectedItems || {}) };
+  const itemValues = { ...(fieldState.itemValues || {}) };
+  delete selectedItems[itemId];
+  delete itemValues[itemId];
+  return { ...fieldState, selectedItems, itemValues };
+}
+
 function rentalLockedPresetQuantity(cross, itemId) {
   const inclusion = rentalActiveInclusion(cross, itemId);
+  if (inclusion?.include?.lockQuantity === false) return false;
   const quantity = inclusion?.include?.quantity;
   return inclusion && inclusion.locked && quantity !== undefined && quantity !== null && quantity !== "";
 }
 
 function applyRentalIncludePreset(item, itemValue = {}, included = {}) {
   const next = { ...itemValue, optionGroups: { ...(itemValue.optionGroups || {}) } };
-  if (included.quantity !== undefined && included.quantity !== null && included.quantity !== "") next.quantity = Number(included.quantity);
+  if (included.quantity !== undefined && included.quantity !== null && included.quantity !== "") {
+    const preset = Number(included.quantity);
+    const allowance = Number(included.includedUnits);
+    const current = Number(next.quantity || 0);
+    next.quantity = Number.isFinite(allowance) && allowance > 0 ? Math.max(current, preset) : preset;
+  }
   Object.entries(included.presetAnswers || {}).forEach(([groupId, answer]) => {
     const group = (item?.optionGroups || []).find((candidate) => candidate.id === groupId);
     if (!group || answer === "" || answer === undefined || answer === null) return;
@@ -13782,8 +13893,21 @@ function applyRentalIncludePreset(item, itemValue = {}, included = {}) {
 // only the items it added, leaving items the client had already picked.
 function reconcileRentalPackageIncludes(prevState = {}, nextState = {}, fields = [], venueId = "") {
   const prevCross = buildRentalCrossContext(fields, prevState, venueId);
-  const nextCross = buildRentalCrossContext(fields, nextState, venueId);
   let state = nextState;
+  let nextCross = buildRentalCrossContext(fields, state, venueId);
+  const newlySelected = [];
+  nextCross.selected.forEach((id) => {
+    if (!prevCross.selected.has(id)) newlySelected.push(id);
+  });
+  newlySelected.forEach((packageId) => {
+    rentalExclusiveItemIds(nextCross.itemsById[packageId]).forEach((otherId) => {
+      if (!prevCross.selected.has(otherId)) return;
+      const fieldId = nextCross.fieldOfItem[otherId];
+      if (!fieldId) return;
+      state = { ...state, [fieldId]: withoutRentalItemSelection(state[fieldId] || {}, otherId) };
+    });
+  });
+  nextCross = buildRentalCrossContext(fields, state, venueId);
   const patchField = (fieldId, update) => {
     state = { ...state, [fieldId]: update(state[fieldId] || {}) };
   };
@@ -14041,11 +14165,21 @@ function rentalItemCostLine(item, itemValue = {}, cross = null) {
   const qty = rentalSelectedQuantity(item, itemValue);
   const inclusion = rentalActiveInclusion(cross, item.id);
   const waived = !!(inclusion && inclusion.waivePrice);
+  const allowance = rentalIncludedAllowance(inclusion);
   const base = computeRentalQuoteLine(item, qty, { hours: qty, guests: qty });
   const optionCost = rentalOptionGroupsCost(item, itemValue, qty, cross, waived ? Object.keys(inclusion.include.presetAnswers || {}) : []);
-  const baseTotal = waived ? 0 : Number(base.total || 0);
+  let baseTotal = waived && !allowance ? 0 : Number(base.total || 0);
   const lines = [];
-  if (baseTotal > 0) lines.push({ label: base.multiplier > 1 ? item.name + " x " + base.multiplier : item.name, total: baseTotal });
+  if (allowance > 0) {
+    const extra = Math.max(0, qty - allowance);
+    baseTotal = extra * rentalUnitPrice(item);
+    if (baseTotal > 0) {
+      const unit = item.pricingModel === "per_hour" || item.unit === "hour" ? "hours" : "units";
+      lines.push({ label: item.name + " extra " + unit + " x " + extra, total: baseTotal });
+    }
+  } else if (baseTotal > 0) {
+    lines.push({ label: base.multiplier > 1 ? item.name + " x " + base.multiplier : item.name, total: baseTotal });
+  }
   optionCost.lines.forEach((line) => lines.push(line));
   return { label: item.name, total: baseTotal + optionCost.total, lines };
 }
@@ -14210,7 +14344,7 @@ function ClientRentalGroupsPreview({ fields, value, onChange, title, layoutRecom
   const commitState = (nextState) => onChange(reconcileRentalPackageIncludes(rentalState, nextState, fields, venueId));
   const crossContextValue = { cross, venueId, fieldErrors, selectItems: (itemIds) => commitState(selectRentalItemsInState(rentalState, fields, venueId, itemIds)) };
   const isLockedInclude = (itemId) => !!rentalActiveInclusion(cross, itemId)?.locked;
-  const itemPriceLabel = (item) => rentalActiveInclusion(cross, item.id)?.waivePrice ? "Included" : workflowRentalPriceLabel(item);
+  const itemPriceLabel = (item) => rentalInclusionPriceLabel(item, rentalActiveInclusion(cross, item.id));
   const allTiles = [];
   fields.forEach((field) => {
     const mode = rentalGroupDisplayMode(field);
@@ -15808,6 +15942,10 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
           } else if (group.type === "checkbox_row") {
             const checked = typeof current === "object" ? current.checked !== false : !!current;
             details.push(`${group.label || "Option"}: ${checked ? "Selected" : "Not selected"}${typeof current === "object" && current.quantity ? ` (${current.quantity})` : ""}`);
+          } else if (group.type === "checkbox") {
+            const ids = Array.isArray(current) ? current : [current];
+            const labels = ids.map((id) => options.find((candidate) => String(candidate.id || candidate.label) === String(id))?.label || id).filter(Boolean);
+            if (labels.length) details.push(`${group.label || "Option"}: ${labels.join(", ")}`);
           } else {
             if (rentalChoiceValueHiddenForVenue(group, current)) return;
             const selectedId = typeof current === "object" ? current.value : current;
@@ -24617,22 +24755,38 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
   );
 }
 
+let INITIAL_ADMIN_BUNDLE = null;
+function initialAdminBundle() {
+  if (INITIAL_ADMIN_BUNDLE) return INITIAL_ADMIN_BUNDLE;
+  const loaded = {
+    steps: loadSteps() || seedSteps(),
+    rentalCatalog: loadRentalCatalog() || seedRentalCatalog(),
+    pricingRules: loadPricingRules() || seedPricingRules(),
+    siteSettings: loadSiteSettings() || seedSiteSettings(),
+  };
+  const parity = migrateLoadedStateToParity(loaded, null);
+  INITIAL_ADMIN_BUNDLE = parity?.draft
+    ? { steps: parity.draft.steps, rentalCatalog: parity.draft.rentalCatalog, pricingRules: parity.draft.pricingRules, siteSettings: parity.draft.siteSettings }
+    : loaded;
+  return INITIAL_ADMIN_BUNDLE;
+}
+
 function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, bookingSummaryMode = false }) {
   const Ic = window.Icons;
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const { toasts, push: pushToast, dismiss: dismissToast } = window.useToasts();
   const publicMode = forcePublicMode || bookingSummaryMode || ["/", "/book", "/book/"].includes(window.location.pathname) || new URLSearchParams(window.location.search).get("mode") === "public";
 
-  // Steps — load from localStorage, fallback to sample
-  const [steps, setSteps] = React.useState(() => loadSteps() || seedSteps());
+  // Steps — load from localStorage, fallback to sample, then apply catalog migrations
+  const [steps, setSteps] = React.useState(() => initialAdminBundle().steps);
   const [rentalCatalog, setRentalCatalog] = React.useState(() => {
-    const initial = loadRentalCatalog() || seedRentalCatalog();
+    const initial = initialAdminBundle().rentalCatalog;
     setRecommendedRentalCatalogSnapshot(initial);
     return initial;
   });
-  const [pricingRules, setPricingRules] = React.useState(() => loadPricingRules() || seedPricingRules());
+  const [pricingRules, setPricingRules] = React.useState(() => initialAdminBundle().pricingRules);
   window.__collaburoPricingRules = pricingRules;
-  const [siteSettings, setSiteSettings] = React.useState(() => loadSiteSettings() || seedSiteSettings());
+  const [siteSettings, setSiteSettings] = React.useState(() => initialAdminBundle().siteSettings);
   const [progressRecords, setProgressRecords] = React.useState(() => loadProgressRecords() || normalizeProgressRecords(SAMPLE_PROGRESS_RECORDS));
   const [publicEditRecord, setPublicEditRecord] = React.useState(null);
   const [publicRecordLookupDone, setPublicRecordLookupDone] = React.useState(false);
@@ -24867,6 +25021,20 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         const databaseSavedAt = new Date(data.state?.savedAt || data.updatedAt || 0).getTime() || 0;
         const localSavedAt = parseInt(localStorage.getItem(SAVED_KEY) || "0", 10) || 0;
         if (!publicMode && loadSteps() && localSavedAt > databaseSavedAt + 2 * 60 * 1000) {
+          const localParity = migrateLoadedStateToParity({
+            steps: loadSteps() || stepsRef.current,
+            rentalCatalog: loadRentalCatalog() || rentalCatalogRef.current,
+            pricingRules: loadPricingRules() || pricingRulesRef.current,
+            siteSettings: loadSiteSettings() || siteSettingsRef.current,
+          }, null);
+          if (localParity?.draft) {
+            setSteps(localParity.draft.steps);
+            setRentalCatalog(localParity.draft.rentalCatalog);
+            setRecommendedRentalCatalogSnapshot(localParity.draft.rentalCatalog);
+            setPricingRules(localParity.draft.pricingRules);
+            setSiteSettings(localParity.draft.siteSettings);
+            setIsDirty(true);
+          }
           pushToast({
             kind: "info",
             title: "Local draft is newer",

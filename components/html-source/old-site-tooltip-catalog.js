@@ -1058,7 +1058,33 @@ export const OLD_SITE_TOOLTIPS = [
     ],
     "group": null,
     "option": null,
-    "text": "Includes 2 wireless mics, PTZ camera, projector, Powerpoint Presentation Clicker, Audio Interface for hybrid meetings, and up to 1 hour of IT labour time.",
+    "text": "Includes 2 wireless mics, PTZ camera, projector, Powerpoint Presentation Clicker, Audio Interface for hybrid meetings, set up and testing of all IT equipment and cable management with client's laptop before booking start time.",
+    "images": []
+  },
+  {
+    "kind": "rental",
+    "items": [
+      "AV Extra Package"
+    ],
+    "keys": [
+      "space_other_avextrapackage"
+    ],
+    "group": null,
+    "option": null,
+    "text": "Perfect for events that have online participants, need a recording of the event, need someone to help control the cameras and microphones.  This package includes everything in the AV Deluxe Package plus the use of Collaburo's laptop, IT Labour support for audio and video support throughout the event (2 hours included, and extra hours can be added), online participants using our Zoom account.  A digital recording copy of the event - stage mainly (recording to be sent to client after the event) can be added separately.",
+    "images": []
+  },
+  {
+    "kind": "rental",
+    "items": [
+      "AV Extra Package"
+    ],
+    "keys": [
+      "space_other_avextrapackage"
+    ],
+    "group": "Digital Recording of Event",
+    "option": "Digital Recording of Event",
+    "text": "A digital recording copy of the event - stage mainly (recording to be sent to client after the event)",
     "images": []
   },
   {
