@@ -9,7 +9,7 @@
 import { OLD_SITE_TOOLTIPS } from "./old-site-tooltip-catalog";
 import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
 
-export const OLD_SITE_PARITY_VERSION = 5;
+export const OLD_SITE_PARITY_VERSION = 6;
 
 const SYS_VENUE_SOURCE = "__sys:venue";
 
@@ -160,6 +160,7 @@ export function migrateToOldSiteParity(input = {}) {
   if (currentVersion < 3) applyV3(state, parityContext(state), log);
   if (currentVersion < 4) applyV4(state, parityContext(state), log);
   if (currentVersion < 5) applyV5(state, parityContext(state), log);
+  if (currentVersion < 6) applyV6(state, parityContext(state), log);
 
   state.siteSettings = {
     ...(state.siteSettings || {}),
@@ -1617,5 +1618,147 @@ function applyV5(state, ctx, log) {
   log("Pricing/layout labels: Semi Private + Other* long forms rewritten across saved config.");
 
   void lounge;
+}
+
+const AV_DELUXE_INFO_TEXT = "Includes 2 wireless mics, PTZ camera, projector, Powerpoint Presentation Clicker, Audio Interface for hybrid meetings, set up and testing of all IT equipment and cable management with client's laptop before booking start time.";
+const AV_EXTRA_INFO_TEXT = "Perfect for events that have online participants, need a recording of the event, need someone to help control the cameras and microphones.  This package includes everything in the AV Deluxe Package plus the use of Collaburo's laptop, IT Labour support for audio and video support throughout the event (2 hours included, and extra hours can be added), online participants using our Zoom account.  A digital recording copy of the event - stage mainly (recording to be sent to client after the event) can be added separately.";
+const AV_RECORDING_INFO_TEXT = "A digital recording copy of the event - stage mainly (recording to be sent to client after the event)";
+const AV_EXTRA_NOTES = "Includes the AV Deluxe equipment plus Collaburo's laptop, Zoom for online participants, and 2 hours of IT labour. Extra IT hours are $60 each.";
+const AV_DELUXE_NOTES = "Package preset that includes PTZ camera, wireless mics, and presentation support. IT labour is not included.";
+
+function isItLabourItem(item) {
+  const name = String(item?.name || "");
+  return /labour time/i.test(name) && /\bit\b/i.test(name);
+}
+
+function isItLabourLabel(label) {
+  const name = String(label || "");
+  return /labour time/i.test(name) && /\bit\b/i.test(name);
+}
+
+function digitalRecordingGroup() {
+  return {
+    id: "digital_recording",
+    label: "Digital Recording of Event",
+    type: "checkbox",
+    required: false,
+    quantitySource: "fixed",
+    infoText: AV_RECORDING_INFO_TEXT,
+    options: [
+      {
+        id: "digital_recording",
+        label: "Digital Recording of Event",
+        description: "",
+        pricingModel: "flat_fee",
+        priceEnabled: true,
+        priceMode: "priced",
+        unitPrice: 100,
+        quantitySource: "fixed",
+        infoText: AV_RECORDING_INFO_TEXT,
+      },
+    ],
+  };
+}
+
+function ensureDigitalRecording(item) {
+  item.optionGroups = Array.isArray(item.optionGroups) ? item.optionGroups : [];
+  const index = item.optionGroups.findIndex((group) => group && (group.id === "digital_recording" || /digital recording of event/i.test(group.label || "")));
+  const next = digitalRecordingGroup();
+  if (index < 0) item.optionGroups.push(next);
+  else item.optionGroups[index] = { ...item.optionGroups[index], ...next, id: item.optionGroups[index].id || next.id };
+}
+
+function applyV6(state, ctx, log) {
+  const catalog = state.rentalCatalog;
+  const deluxeItems = catalog.filter((item) => /^av deluxe package$/i.test(String(item?.name || "").trim()));
+  const labour = catalog.find(isItLabourItem);
+  if (!deluxeItems.length) {
+    log("AV Extra Package was not added because AV Deluxe Package was not found.");
+    return;
+  }
+
+  deluxeItems.forEach((deluxe) => {
+    deluxe.infoText = AV_DELUXE_INFO_TEXT;
+    if (!deluxe.notes || /it labou?r/i.test(deluxe.notes)) deluxe.notes = AV_DELUXE_NOTES;
+    const behavior = deluxe.packageBehavior && typeof deluxe.packageBehavior === "object"
+      ? deluxe.packageBehavior
+      : { type: "editable_preset", includedItemPricing: "included_by_package", lockIncludedItems: true, includedItems: [] };
+    const includedItems = (behavior.includedItems || []).filter((entry) => {
+      if (!entry) return false;
+      const target = catalog.find((row) => row.id === entry.itemId);
+      if (target && isItLabourItem(target)) return false;
+      if (isItLabourLabel(entry.label)) return false;
+      return true;
+    });
+    deluxe.packageBehavior = { ...behavior, includedItems };
+  });
+  log("AV Deluxe Package: removed IT labour and updated the tooltip.");
+
+  const source = deluxeItems[0];
+  let extra = catalog.find((item) => /^av extra package$/i.test(String(item?.name || "").trim()));
+  const created = !extra;
+  if (!extra) {
+    const index = catalog.indexOf(source);
+    extra = {
+      id: catalog.some((item) => item.id === "ra_av_extra") ? "parity_av_extra" : "ra_av_extra",
+      schemaVersion: 1,
+      name: "AV Extra Package",
+      category: source.category || "AV / Tech",
+      clientVisible: true,
+      active: true,
+      clientSelectable: true,
+      source: "Main Hall Tech",
+    };
+    catalog.splice(Math.max(0, index) + 1, 0, extra);
+  }
+
+  const gear = (source.packageBehavior?.includedItems || [])
+    .filter((entry) => entry && entry.itemId && entry.itemId !== labour?.id && entry.itemId !== extra.id && !isItLabourLabel(entry.label))
+    .map((entry) => ({ ...entry }));
+  const includedItems = labour
+    ? [...gear, { itemId: labour.id, label: labour.name || "Labour Time - IT Tech", quantity: 2, includedUnits: 2, lockQuantity: false }]
+    : gear;
+
+  Object.assign(extra, {
+    name: "AV Extra Package",
+    category: extra.category || source.category || "AV / Tech",
+    priceText: "$470",
+    unit: "package",
+    unitPrice: 470,
+    priceEnabled: true,
+    pricingModel: "package_fixed",
+    quantitySource: "fixed",
+    hideBaseQuantity: true,
+    clientSelectable: true,
+    clientVisible: extra.clientVisible !== false,
+    active: extra.active !== false,
+    infoText: AV_EXTRA_INFO_TEXT,
+    notes: !extra.notes || /it labou?r/i.test(extra.notes) ? AV_EXTRA_NOTES : extra.notes,
+    venueIds: (extra.venueIds || []).length ? extra.venueIds : [...(source.venueIds || [])],
+    groupImageUrl: extra.groupImageUrl || source.groupImageUrl || "",
+    groupSelectionRule: extra.groupSelectionRule || source.groupSelectionRule,
+    groupItemSort: extra.groupItemSort || source.groupItemSort,
+    groupOrder: extra.groupOrder ?? source.groupOrder,
+    deliveryClass: extra.deliveryClass || "none",
+    priceKey: extra.priceKey || "space_other_avextrapackage",
+    legacyKey: extra.legacyKey || "space_other_avextrapackage",
+    packageBehavior: {
+      type: "editable_preset",
+      includedItemPricing: "included_by_package",
+      lockIncludedItems: true,
+      exclusiveItemIds: deluxeItems.map((item) => item.id),
+      includedItems,
+    },
+  });
+  ensureDigitalRecording(extra);
+  deluxeItems.forEach((deluxe) => {
+    deluxe.packageBehavior = {
+      ...(deluxe.packageBehavior || {}),
+      exclusiveItemIds: [extra.id],
+    };
+  });
+  log(created ? "Added AV Extra Package at $470, with 2 included IT hours and a $100 digital recording add-on." : "Updated AV Extra Package to $470, with 2 included IT hours and a $100 digital recording add-on.");
+  if (!labour) log("AV Extra Package could not attach IT labour because that rental was not in the catalog.");
+  void ctx;
 }
 
