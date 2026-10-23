@@ -14170,15 +14170,20 @@ function rentalItemCostLine(item, itemValue = {}, cross = null) {
   const optionCost = rentalOptionGroupsCost(item, itemValue, qty, cross, waived ? Object.keys(inclusion.include.presetAnswers || {}) : []);
   let baseTotal = waived && !allowance ? 0 : Number(base.total || 0);
   const lines = [];
+  const includedNote = waived ? `Included in ${inclusion.packageName || "package"}` : "";
   if (allowance > 0) {
     const extra = Math.max(0, qty - allowance);
     baseTotal = extra * rentalUnitPrice(item);
     if (baseTotal > 0) {
       const unit = item.pricingModel === "per_hour" || item.unit === "hour" ? "hours" : "units";
       lines.push({ label: item.name + " extra " + unit + " x " + extra, total: baseTotal });
+    } else if (includedNote) {
+      lines.push({ label: item.name, total: 0, includedNote });
     }
   } else if (baseTotal > 0) {
     lines.push({ label: base.multiplier > 1 ? item.name + " x " + base.multiplier : item.name, total: baseTotal });
+  } else if (includedNote) {
+    lines.push({ label: item.name, total: 0, includedNote });
   }
   optionCost.lines.forEach((line) => lines.push(line));
   return { label: item.name, total: baseTotal + optionCost.total, lines };
@@ -14825,6 +14830,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const [validationPulseKey, setValidationPulseKey] = React.useState(0);
   const [clientNotice, setClientNotice] = React.useState(null);
   const [submitState, setSubmitState] = React.useState({ status: "idle", message: "" });
+  const [submitProgress, setSubmitProgress] = React.useState({ percent: 0, message: "" });
   const [draftRecordId, setDraftRecordId] = React.useState(() => initialClientDraft?.recordId || "");
   const [draftSubmittedAt, setDraftSubmittedAt] = React.useState(() => initialClientDraft?.submittedAt || "");
   const [savedStepIds, setSavedStepIds] = React.useState(() => initialClientDraft?.stepProgress?.completedStepIds || []);
@@ -14836,6 +14842,8 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
   const [introNoteDismissed, setIntroNoteDismissed] = React.useState(false);
   const dismissIntroNote = () => setIntroNoteDismissed(true);
   const progressBarRef = React.useRef(null);
+  const submitCreepRef = React.useRef(null);
+  const customerStepClampRef = React.useRef((index) => index);
   const lastActivityPingRef = React.useRef(0);
   const loadedAnswersRef = React.useRef(answers);
   const savedAnswersKeyRef = React.useRef(initialClientDraft?.recordId ? JSON.stringify(answers) : null);
@@ -14857,7 +14865,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     loadedAnswersRef.current = loadedAnswers;
     savedAnswersKeyRef.current = initialDraft.recordId ? JSON.stringify(loadedAnswers) : null;
     ruleClearBaselineRef.current = null;
-    setStepIdx(Math.min(initialDraft.stepIdx || 0, Math.max(0, list.length - 1)));
+    setStepIdx(customerStepClampRef.current(initialDraft.stepIdx || 0));
     setAnswers(loadedAnswers);
     setVenueCost(initialDraft.venueCost || null);
     setLayoutRecommendations(initialDraft.layoutRecommendations || {});
@@ -15376,7 +15384,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
         setDraftRecordId(draft.recordId || "");
         setDraftSubmittedAt(draft.submittedAt || "");
         setSavedStepIds(draft.stepProgress?.completedStepIds || []);
-        setStepIdx(Math.min(draft.stepIdx || 0, Math.max(0, list.length - 1)));
+        setStepIdx(customerStepClampRef.current(draft.stepIdx || 0));
         setEmailVerification((current) => ({ ...current, email: emailAnswer, sessionToken: current.sessionToken || emailVerification.sessionToken }));
         setEmailVerificationStatus({ status: "verified", message: "Saved booking loaded for this verified email." });
         if (draft.recordId) {
@@ -15395,60 +15403,112 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       cancelled = true;
     };
   }, [publicMode, validations.emailVerification, emailVerified, emailAnswer, emailVerification.sessionToken, draftRecordId, list.length]);
-  const canLeaveStep = (targetStep, { forceRequired = false } = {}) => {
-    if (!publicMode || (adminEditMode && ADMIN_BOOKING_FORM_OVERRIDES.validations.requiredFields)) return true;
-    if (!forceRequired && (!publicMode || !validations.strictProgression)) return true;
-    if (targetStep?.stepType === "venue") {
+  // Customers always stop at the first required gap, including a gap staff left
+  // behind while browsing ahead. Staff edit stays unrestricted.
+  const customerEnforcesRequiredGaps = publicMode && !(adminEditMode && ADMIN_BOOKING_FORM_OVERRIDES.validations.requiredFields);
+  const requiredGapForStep = (targetStep) => {
+    if (!targetStep || targetStep.stepType === "checkout") return null;
+    if (targetStep.stepType === "venue") {
       const tooShort = venueMinHoursViolations(targetStep, answers);
-      if (tooShort.length) {
-        const venue = tooShort[0];
-        setClientNotice({ kind: "danger", title: "Booking too short", message: `${venue.name} has a minimum booking of ${venue.advancedPricing.bookingMinHours} hours.`, duration: 4600 });
-        return false;
-      }
+      if (tooShort.length) return { kind: "short", venue: tooShort[0] };
     }
     const missing = getMissingRequiredFields(targetStep);
-    if (missing.length === 0) return true;
-    const nextErrors = missing.reduce((acc, field) => {
+    if (missing.length) return { kind: "required", missing };
+    return null;
+  };
+  const firstCustomerRequiredGap = () => (
+    customerEnforcesRequiredGaps ? list.findIndex((targetStep) => requiredGapForStep(targetStep)) : -1
+  );
+  customerStepClampRef.current = (index) => {
+    const requested = Math.max(0, Math.min(Number(index) || 0, Math.max(0, list.length - 1)));
+    if (!customerEnforcesRequiredGaps) return requested;
+    const gap = firstCustomerRequiredGap();
+    return gap >= 0 ? Math.min(requested, gap) : requested;
+  };
+  const customerCompletedStepIds = (ids, includeStepId = "") => {
+    const next = (ids || []).filter((id) => {
+      const owner = list.find((item) => item.id === id);
+      if (!owner) return true;
+      return !requiredGapForStep(owner);
+    });
+    if (includeStepId && !next.includes(includeStepId)) {
+      const owner = list.find((item) => item.id === includeStepId);
+      if (owner && !requiredGapForStep(owner)) next.push(includeStepId);
+    }
+    return next;
+  };
+  React.useLayoutEffect(() => {
+    if (!customerEnforcesRequiredGaps) return;
+    const clamped = customerStepClampRef.current(stepIdx);
+    if (clamped !== stepIdx) setStepIdx(clamped);
+  }, [customerEnforcesRequiredGaps, stepIdx, answers, steps]);
+  const focusRequiredField = (fieldId) => {
+    window.setTimeout(() => {
+      const recNode = fieldId
+        ? document.querySelector(`[data-cv-rental-rec-error="${CSS.escape(fieldId)}"]`)
+        : null;
+      const node = recNode || (fieldId ? document.querySelector(`[data-cv-field-id="${CSS.escape(fieldId)}"]`) : null);
+      node?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 60);
+  };
+  const showCustomerRequiredGap = (gapIndex, { forSubmit = false } = {}) => {
+    const targetStep = list[gapIndex];
+    const gap = requiredGapForStep(targetStep);
+    if (!gap) return;
+    const alreadyHere = gapIndex === stepIdx;
+    if (!alreadyHere) setStepIdx(gapIndex);
+    if (gap.kind === "short") {
+      const venue = gap.venue;
+      setClientNotice({ kind: "danger", title: "Booking too short", message: `${venue.name} has a minimum booking of ${venue.advancedPricing.bookingMinHours} hours.`, duration: 4600 });
+      return;
+    }
+    const nextErrors = gap.missing.reduce((acc, field) => {
       acc[field.id] = validationMessageForField(field, targetStep);
       return acc;
     }, {});
     setValidationErrors(nextErrors);
     setValidationPulseKey((key) => key + 1);
-    window.setTimeout(() => {
-      const firstField = missing[0]?.id;
-      const recNode = firstField
-        ? document.querySelector(`[data-cv-rental-rec-error="${CSS.escape(firstField)}"]`)
-        : null;
-      const node = recNode || (firstField ? document.querySelector(`[data-cv-field-id="${CSS.escape(firstField)}"]`) : null);
-      node?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 30);
-    return false;
-  };
-  const canReachStep = (targetIndex, { forceCurrent = false } = {}) => {
-    if (!publicMode || (adminEditMode && ADMIN_BOOKING_FORM_OVERRIDES.validations.strictProgression)) return true;
-    if (targetIndex <= stepIdx) return true;
-    if (publicMode && validations.strictProgression) {
-      for (let j = 0; j < targetIndex; j += 1) {
-        if (!canLeaveStep(list[j], { forceRequired: true })) return false;
-      }
-      return true;
+    if (!alreadyHere) {
+      setClientNotice({
+        kind: "danger",
+        title: "Required fields",
+        message: forSubmit
+          ? "Please fill out all required fields before submitting."
+          : "Some required fields are missing on an earlier step. Please complete them before continuing.",
+        duration: 4600,
+      });
     }
-    return !forceCurrent || canLeaveStep(step, { forceRequired: true });
+    focusRequiredField(gap.missing[0]?.id);
+  };
+  const canReachStep = (targetIndex, { forSubmit = false } = {}) => {
+    if (submitState.status === "submitting") return false;
+    if (!publicMode || (adminEditMode && ADMIN_BOOKING_FORM_OVERRIDES.validations.strictProgression)) return true;
+    const gap = firstCustomerRequiredGap();
+    if (gap >= 0 && targetIndex > gap) {
+      showCustomerRequiredGap(gap, { forSubmit });
+      return false;
+    }
+    return true;
   };
   const goTo = (i) => {
     touchClientActivity();
+    if (submitState.status === "submitting") return;
     if (!canReachStep(i)) return;
     setStepIdx(i);
   };
   React.useEffect(() => {
     const onKey = (e) => {
       if (!publicMode && e.key === "Escape") onClose();
+      if (submitState.status === "submitting") return;
       if (e.key === "ArrowRight" && stepIdx < list.length - 1) goTo(stepIdx + 1);
       if (e.key === "ArrowLeft" && stepIdx > 0) setStepIdx(stepIdx - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stepIdx, list.length, onClose, publicMode, goTo]);
+  }, [stepIdx, list.length, onClose, publicMode, goTo, submitState.status]);
+  React.useEffect(() => () => {
+    if (submitCreepRef.current) window.clearInterval(submitCreepRef.current);
+  }, []);
   const formatPreviewMoney = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const buildCostSummaryData = () => {
     const fmt = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -15582,6 +15642,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       meta: ln.days > 1 ? `${fmt(ln.dailyTotal)} x ${ln.days} days` : "",
       quantity: Number(ln.quantity || String(ln.label || "").match(/\sx\s(\d+)$/i)?.[1] || 1),
       total: Number(ln.total || 0),
+      includedNote: ln.includedNote || "",
     })));
     const cateringGroups = optionsCost.filter((fc) => stepNameText(fc).includes("catering"));
     const serviceGroups = optionsCost.filter((fc) => fc.stepType === "services" || stepNameText(fc) === "additional services");
@@ -16024,9 +16085,9 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     auditBefore: initialDraft?.auditBefore || null,
     auditDisplayChanges: auditDisplayChanges(),
     submittedAt: draftSubmittedAt || initialDraft?.submittedAt || new Date().toISOString(),
-    stepProgress: { completedStepIds: savedStepIds },
+    stepProgress: { completedStepIds: customerCompletedStepIds(savedStepIds) },
   });
-  const stepHasSavedData = (targetStep) => savedStepIds.includes(targetStep?.id);
+  const stepHasSavedData = (targetStep) => customerCompletedStepIds(savedStepIds).includes(targetStep?.id);
   const confirmAdminAnswerRemovals = () => {
     if (!adminEditMode) return true;
     const beforeAnswers = initialDraft?.auditBefore?.answers || {};
@@ -16039,11 +16100,48 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     const more = removed.length > 12 ? `\n…and ${removed.length - 12} more` : "";
     return window.confirm(`Saving will remove ${removed.length} saved answer${removed.length === 1 ? "" : "s"} from this booking:\n\n${preview}${more}\n\nSave anyway?`);
   };
+  const clearSubmitCreep = () => {
+    if (submitCreepRef.current) {
+      window.clearInterval(submitCreepRef.current);
+      submitCreepRef.current = null;
+    }
+  };
+  const finishSubmitProgress = () => {
+    clearSubmitCreep();
+    setSubmitProgress({ percent: 0, message: "" });
+  };
+  const startSubmitProgress = (finalSubmit) => {
+    clearSubmitCreep();
+    const staffCopy = adminEditMode || !finalSubmit;
+    const stages = staffCopy
+      ? [
+          { at: 0, percent: 18, message: "Saving your changes…" },
+          { at: 1200, percent: 48, message: "Saving your changes…" },
+          { at: 2800, percent: 74, message: "Saving your changes…" },
+        ]
+      : [
+          { at: 0, percent: 16, message: "Saving your booking details…" },
+          { at: 800, percent: 42, message: "Sending your request…" },
+          { at: 2000, percent: 68, message: "Sending your request…" },
+          { at: 3600, percent: 86, message: "Sending your request…" },
+        ];
+    setSubmitProgress({ percent: stages[0].percent, message: stages[0].message });
+    const startedAt = Date.now();
+    submitCreepRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const stage = [...stages].reverse().find((item) => elapsed >= item.at) || stages[0];
+      setSubmitProgress((current) => (
+        current.percent >= stage.percent && current.message === stage.message
+          ? current
+          : { percent: Math.max(current.percent, stage.percent), message: stage.message }
+      ));
+    }, 400);
+  };
   const saveCurrentStep = async ({ finalSubmit = false } = {}) => {
     if ((!publicMode && !adminEditMode) || !onSubmitRequest) return null;
     if (!confirmAdminAnswerRemovals()) throw new Error("Save cancelled.");
     const stepId = step?.id;
-    const nextSavedIds = stepId ? Array.from(new Set([...savedStepIds, stepId])) : savedStepIds;
+    const nextSavedIds = customerCompletedStepIds(savedStepIds, stepId);
     // A draft save is not a submission. Only stamp new submissions, while
     // preserving an existing timestamp when an already-submitted record is
     // edited.
@@ -16062,12 +16160,13 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       auditBefore: initialDraft?.auditBefore || null,
       auditDisplayChanges: auditDisplayChanges(),
       submittedAt,
-      savedStepId: stepId,
+      savedStepId: nextSavedIds.includes(stepId) ? stepId : "",
       finalSubmit,
       stepProgress: { completedStepIds: nextSavedIds },
     };
     try {
       setSubmitState({ status: "submitting", message: "" });
+      if (finalSubmit || step?.stepType === "checkout") startSubmitProgress(finalSubmit);
       const savedRecord = await onSubmitRequest(payload);
       savedAnswersKeyRef.current = JSON.stringify(payload.answers);
       const nextRecordId = savedRecord?.id || payload.recordId;
@@ -16093,22 +16192,29 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
       setSubmitState({ status: "error", message: error.message || "We could not save your progress. Please try again." });
       setClientNotice({ kind: "danger", title: "Could not save", message: error.message || "Please try again.", duration: 4600 });
       throw error;
+    } finally {
+      finishSubmitProgress();
     }
   };
   const saveEditChanges = async () => {
     if (!isEditMode || !onSubmitRequest) return;
     if (!confirmAdminAnswerRemovals()) return;
+    const nextSavedIds = customerCompletedStepIds(savedStepIds);
     try {
       setSubmitState({ status: "submitting", message: "" });
-      const payload = editSubmitPayload();
+      if (step?.stepType === "checkout") startSubmitProgress(false);
+      const payload = { ...editSubmitPayload(), stepProgress: { completedStepIds: nextSavedIds } };
       await onSubmitRequest(payload);
       savedAnswersKeyRef.current = JSON.stringify(payload.answers);
+      setSavedStepIds(nextSavedIds);
       setSubmitState({ status: "success", message: "Your changes were saved successfully." });
       setClientNotice({ kind: "success", title: "Changes saved", message: "Your booking updates were saved." });
     } catch (error) {
       console.error("Save failed", error);
       setSubmitState({ status: "error", message: error.message || "We could not save the changes. Please try again." });
       setClientNotice({ kind: "danger", title: "Could not save", message: error.message || "Please try again.", duration: 4600 });
+    } finally {
+      finishSubmitProgress();
     }
   };
   const emailVerificationPropsFor = (field) => {
@@ -16386,10 +16492,11 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                 <React.Fragment key={s.id}>
                   {i > 0 && <div className={"cv-progress-line" + (stepHasSavedData(s) ? " saved" : i <= stepIdx ? " done" : "")} />}
                   <div
-                    className="cv-progress-step"
+                    className={"cv-progress-step" + (submitState.status === "submitting" ? " is-locked" : "")}
                     data-progress-step={i}
                     role="button"
-                    tabIndex={0}
+                    tabIndex={submitState.status === "submitting" ? -1 : 0}
+                    aria-disabled={submitState.status === "submitting" ? "true" : undefined}
                     aria-label={`Step ${i + 1}: ${previewStepLabel(s.name) || s.name || "Untitled"}`}
                     aria-current={i === stepIdx ? "step" : undefined}
                     title={s.name}
@@ -16617,13 +16724,21 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
 	                )}
 
 		                <div className="cv-nav">
+                  {submitState.status === "submitting" && submitProgress.percent > 0 && (
+                    <div className="cv-submit-progress" role="status" aria-live="polite">
+                      <div className="cv-submit-progress-text">{submitProgress.message}</div>
+                      <div className="cv-submit-progress-track" aria-hidden="true">
+                        <div className="cv-submit-progress-bar" style={{ width: `${submitProgress.percent}%` }} />
+                      </div>
+                    </div>
+                  )}
 	                  {step?.stepType === "checkout" && missingCheckoutAgreements.length > 0 && (
                     <div className="cv-nav-notices">
                       <div className="cv-nav-notice">Check all required agreement boxes before submitting.</div>
                     </div>
                   )}
                   {stepIdx > 0 && (
-                    <button className="cv-btn-prev" onClick={() => { setStepIdx(stepIdx - 1); }}>
+                    <button className="cv-btn-prev" type="button" onClick={() => { if (submitState.status !== "submitting") setStepIdx(stepIdx - 1); }} disabled={submitState.status === "submitting"}>
                       Previous
                     </button>
                   )}
@@ -16635,7 +16750,8 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                       ? "Complete the required checkout items before saving."
                       : undefined}
 		                    onClick={async () => {
-		                      if (!canReachStep(stepIdx + 1, { forceCurrent: true })) return;
+		                      if (submitState.status === "submitting") return;
+		                      if (!canReachStep(stepIdx + 1, { forSubmit: isLast })) return;
 		                      if (isLast) {
 	                        if (missingCheckoutAgreements.length > 0) {
                           setClientNotice({
@@ -16668,7 +16784,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                       }
                     }}
                   >
-                    {submitState.status === "submitting" ? "Saving..." : isLast ? (checkoutStepConfig.submitLabel || "Submit") : (checkoutStepConfig.nextLabel || "Save & Next")}
+                    {submitState.status === "submitting" ? (isLast ? "Submitting…" : "Saving...") : isLast ? (checkoutStepConfig.submitLabel || "Submit") : (checkoutStepConfig.nextLabel || "Save & Next")}
                   </button>
                 </div>
               </>
@@ -16732,7 +16848,7 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                                 {line.meta && <div className="cv-cost-detail-meta">{line.meta}</div>}
                               </div>
                               <div className="cv-cost-detail-qty">{Number(line.quantity || 1).toLocaleString("en-US")}</div>
-                              <div className="cv-cost-detail-amount">{formatPreviewMoney(line.total || 0)}</div>
+                              <div className="cv-cost-detail-amount">{line.includedNote || formatPreviewMoney(line.total || 0)}</div>
                             </div>
                           ))}
                         </div>
@@ -19553,10 +19669,9 @@ function createProgressRecordFromSubmission(payload = {}) {
       rawValue: cloneData(answers[field.id]),
     }))
     .filter((row) => row.value);
-  const completedStepIds = Array.from(new Set([
-    ...((payload.stepProgress?.completedStepIds || []).filter(Boolean)),
-    ...(payload.savedStepId ? [payload.savedStepId] : []),
-  ]));
+  const completedStepIds = Array.from(new Set(
+    (payload.stepProgress?.completedStepIds || []).filter(Boolean)
+  ));
   const totalSteps = steps.length;
   const completedCount = completedStepIds.length;
   return normalizeProgressRecord({
@@ -21245,6 +21360,10 @@ function formatContractCostLines(lines = []) {
       const label = String(line.label || line.name || line.description || "").trim();
       const meta = String(line.meta || "").trim();
       const qty = line.quantity != null && Number(line.quantity) !== 1 ? ` × ${line.quantity}` : "";
+      if (line.includedNote) {
+        const head = [label + qty, meta].filter(Boolean).join(" — ");
+        return head ? `${head}: ${line.includedNote}` : line.includedNote;
+      }
       const total = line.total ?? line.amount ?? line.price;
       const money = total == null || total === "" ? "" : formatContractMoney(total);
       const head = [label + qty, meta].filter(Boolean).join(" — ");
@@ -21683,6 +21802,17 @@ function normalizeProgressStatus(status, fallback = "In Discussion") {
   };
   return canonical[text.toLowerCase()] || text || fallback;
 }
+
+// Old-site update rule: an admin save of a client request that is still
+// "Not Contacted" moves it to "Initiated Contact". Client saves and every
+// other status stay as they are.
+function bookingStatusAfterSave(existingStatus, createdStatus, adminEditMode) {
+  const current = normalizeProgressStatus(
+    existingStatus || createdStatus || (adminEditMode ? "In Discussion" : "Not Contacted")
+  );
+  if (adminEditMode && current === "Not Contacted") return "Initiated Contact";
+  return current;
+}
 // "Archived" is disabled for now; records imported with it are treated as having no age.
 const progressAgeLabel = (record) => {
   const age = record?.progress?.age || "";
@@ -21796,7 +21926,7 @@ function ProgressCostBreakdownModal({ title, amount, lines = [], onClose }) {
                   <div className="cv-cost-detail-row" key={`${line.id || line.label || "item"}-${index}`}>
                     <div><div className="cv-cost-detail-main">{line.label || "Item"}</div>{line.meta && <div className="cv-cost-detail-meta">{line.meta}</div>}</div>
                     <div className="cv-cost-detail-qty">{Number(line.quantity || 1).toLocaleString("en-US")}</div>
-                    <div className="cv-cost-detail-amount">{fmt(line.total || 0)}</div>
+                    <div className="cv-cost-detail-amount">{line.includedNote || fmt(line.total || 0)}</div>
                   </div>
                 ))}
               </div>
@@ -21949,7 +22079,7 @@ function ProgressRequestSelections({ costs = {} }) {
                 <li key={`${line.id || line.label || "item"}-${index}`} style={{ paddingLeft: 1 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "baseline" }}>
                     <b>{line.label || "Selected item"}</b>
-                    <b style={{ whiteSpace: "nowrap" }}>{fmt(line.total)}</b>
+                    <b style={{ whiteSpace: "nowrap" }}>{line.includedNote || fmt(line.total)}</b>
                   </div>
                   {detail && <div style={{ color: "var(--ink-2)", fontSize: 12, marginTop: 2 }}>{detail}</div>}
                 </li>
@@ -25780,11 +25910,12 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
     const record = createProgressRecordFromSubmission(payload);
     if (payload?.recordId) {
       const existing = progressRecordsRef.current.find((item) => String(item.id) === String(payload.recordId)) || publicEditRecord;
-      const completedStepIds = Array.from(new Set([
-        ...((existing?.stepProgress?.completedStepIds || []).filter(Boolean)),
-        ...((record.stepProgress?.completedStepIds || []).filter(Boolean)),
-        ...(payload.savedStepId ? [payload.savedStepId] : []),
-      ]));
+      const completedStepIds = Array.isArray(payload.stepProgress?.completedStepIds)
+        ? Array.from(new Set(payload.stepProgress.completedStepIds.filter(Boolean)))
+        : Array.from(new Set([
+          ...((existing?.stepProgress?.completedStepIds || []).filter(Boolean)),
+          ...((record.stepProgress?.completedStepIds || []).filter(Boolean)),
+        ]));
       const mergedRecord = normalizeProgressRecord({
         ...(existing || {}),
         ...record,
@@ -25795,9 +25926,7 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         progress: {
           ...(existing?.progress || {}),
           ...(record.progress || {}),
-          status: normalizeProgressStatus(
-            existing?.progress?.status || record.progress?.status || (payload.adminEditMode ? "In Discussion" : "Not Contacted")
-          ),
+          status: bookingStatusAfterSave(existing?.progress?.status, record.progress?.status, payload.adminEditMode),
           lastActivityAt: new Date().toISOString(),
         },
         stepProgress: {
