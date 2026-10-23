@@ -3,6 +3,7 @@
 import React from "react";
 import { createLegacyContractSettings } from "./contract-legacy-default";
 import { createLegacyBusinessContractSettings } from "./contract-legacy-business-default";
+import { repairContractTemplateInsurance, repairLegacyDuuoInsurance } from "./contract-eventpolicy-insurance";
 
 const CONTRACT_BLOCK_TYPES = [
   { id: "header", label: "Header" },
@@ -102,7 +103,8 @@ export function normalizeContractSettings(settings = {}) {
     ? source.businessEventTypes.map((item) => String(item || "").trim()).filter(Boolean)
     : [...DEFAULT_BUSINESS_EVENT_TYPES];
 
-  // Fast path: already dual v3 with real blocks — reuse block refs, no deep clone / repair of ~80KB HTML.
+  // Fast path: already dual v3 with real blocks — reuse block refs, no deep clone of ~80KB HTML.
+  // Saved templates that still name Duuo get the EventPolicy insurance sections rewritten in memory.
   if (
     Number(source.version) >= 3
     && Array.isArray(source.templates?.social?.blocks)
@@ -116,14 +118,14 @@ export function normalizeContractSettings(settings = {}) {
       activeTab: source.activeTab === "business" ? "business" : "social",
       businessEventTypes,
       templates: {
-        social: {
+        social: repairContractTemplateInsurance({
           title: String(source.templates.social.title || "Contract"),
           blocks: source.templates.social.blocks,
-        },
-        business: {
+        }),
+        business: repairContractTemplateInsurance({
           title: String(source.templates.business.title || "Contract"),
           blocks: source.templates.business.blocks,
-        },
+        }),
       },
     };
   }
@@ -152,8 +154,8 @@ export function normalizeContractSettings(settings = {}) {
     activeTab: source.activeTab === "business" ? "business" : "social",
     businessEventTypes,
     templates: {
-      social: normalizeContractTemplate(socialSource, () => getSample().templates.social),
-      business: normalizeContractTemplate(businessSource, () => getSample().templates.business),
+      social: repairContractTemplateInsurance(normalizeContractTemplate(socialSource, () => getSample().templates.social)),
+      business: repairContractTemplateInsurance(normalizeContractTemplate(businessSource, () => getSample().templates.business)),
     },
   };
 }
@@ -186,7 +188,7 @@ export function resolveContractVariant(eventType = "", settings = {}) {
 export function getContractTemplate(settings = {}, variant = "social") {
   const normalized = normalizeContractSettings(settings);
   if (isFlatContractTemplate(settings) && !settings.templates) {
-    return normalizeContractTemplate(settings);
+    return repairContractTemplateInsurance(normalizeContractTemplate(settings));
   }
   const key = variant === "business" ? "business" : "social";
   return normalizeContractTemplate(normalized.templates?.[key], () => createDefaultContractSettings().templates[key]);
@@ -241,7 +243,7 @@ function repairContractAgreementPreamble(body = "") {
 function repairContractParagraphBody(body = "") {
   return repairContractCenterBleed(
     repairContractWaiverMarkup(
-      repairContractSection3(repairContractAgreementPreamble(String(body || "")))
+      repairContractSection3(repairContractAgreementPreamble(repairLegacyDuuoInsurance(String(body || ""))))
     )
   );
 }
