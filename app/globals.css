@@ -2953,6 +2953,16 @@ input[type="number"][step="0.01"]::-webkit-outer-spin-button{-webkit-appearance:
 /* Extra bottom padding clears the fixed Save & Next bar so last radios/checkboxes stay clickable. */
 .cv-body{flex:1;max-width:1480px;width:100%;margin:0 auto;padding:40px 64px calc(180px + env(safe-area-inset-bottom));display:flex;gap:36px;align-items:flex-start}
 .cv-layout-radio-list{padding-bottom:88px}
+.cv-layout-style-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:0 0 8px}
+.cv-layout-style-card{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;text-align:center;color:inherit;font:inherit}
+.cv-layout-style-card img{width:100%;max-width:120px;height:auto;aspect-ratio:1;object-fit:contain}
+.cv-layout-style-card.is-selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.cv-layout-style-card.is-static{cursor:default}
+.cv-layout-style-label{font-size:13px;font-weight:700;line-height:1.25}
+.cv-layout-style-blurb{font-size:11px;color:var(--ink-3);line-height:1.35}
+.cv-layout-ready-banner{font-size:13px}
+.contract-layout-diagram,.contract-sign-view img.contract-layout-diagram{max-width:200px!important;width:200px;height:auto;display:block}
+@media print{.contract-layout-diagram{max-width:200px!important;width:200px!important}}
 .cv-main{flex:1;min-width:0}
 .cv-cost-sidebar{width:340px;flex-shrink:0;position:sticky;top:40px;background:#fff;border:1px solid #ded7d1;border-radius:8px;padding:18px;font-size:12px;box-shadow:0 6px 18px rgba(40,31,20,.04)}
 .cv-mobile-cost-tab,.cv-mobile-cost-backdrop{display:none}

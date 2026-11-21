@@ -9,6 +9,23 @@ import "./icons";
 import "./runtime-widgets";
 import { SIDE_NAV, SIDE_NAV_BOTTOM, SECTION_LABEL, SECTION_PARENT } from "./navigation";
 import { SAMPLE_STEPS, FIELD_TYPES, SIMPLE_FIELD_GROUPS, ROOMS } from "./app-data";
+import {
+  EVENTPOLICY_INSURANCE,
+  LAYOUT_STYLE_ORDER,
+  LAYOUT_STYLE_LABELS,
+  LAYOUT_STYLE_HEADINGS,
+  LAYOUT_STYLE_BLURBS,
+  LAYOUT_STYLE_CARD_SRC,
+  inferLayoutStyle,
+  layoutStyleLabel,
+  isOthersLayoutStyle,
+  visibleLayoutStyles,
+  layoutsForStyle,
+  DATE_OF_EVENT_FIELD_ID,
+  DATE_NOT_DECIDED_FIELD_ID,
+  firstVenueStartDate,
+  resolveEventDateDisplay,
+} from "./layout-styles";
 import { ContractSettingsView, ContractSignView, ContractLoadingView, normalizeContractSettings, createDefaultContractSettings, createMinimalContractSettings, buildContractSnapshot, resolveContractVariant } from "./contract";
 import { oldSitePresetsForStep, OLD_SITE_FIELD_CATALOG_VERSION } from "./old-site-field-catalog";
 import { OLD_SITE_RENTAL_ITEMS } from "./old-site-rental-catalog";
@@ -55,19 +72,8 @@ const SAMPLE_PRICING_RULES = {
     { id: "dep_main_public_all_no", venueId: "v1", venueName: "Main Hall", eventPrivacy: "Public", eventType: "All", alcoholOnSite: "No", amount: 1000, active: true },
   ],
   // Rate cells are keyed "<attendee tier index>_<yes|no alcohol>"; a cell holds a base price,
-  // 0 (included at no charge), "uninsurable", or blank (not quoted).
-  eventInsurance: {
-    enabled: true,
-    taxLabel: "GST",
-    taxRate: 8,
-    attendeeLimits: [30, 175],
-    groups: [
-      { id: "ins_wedding_tier", name: "Weddings, parties & ceremonies", eventTypes: ["Social Event with dancing / Party", "Ceremony / Graduation", "Wedding & Reception"], rates: { "0_no": 13.75, "0_yes": 109.75, "1_no": 20.63, "1_yes": 144.63, "2_no": 41.25, "2_yes": 189.25 } },
-      { id: "ins_standard_social", name: "Standard social events", eventTypes: ["Other - Social and/or alcoholic events", "Social Event without dancing / Banquet", "Memorial / End of Life Celebration", "Lecture / Theater / Movie", "Reception / Cocktail Party"], rates: { "0_no": 9.75, "0_yes": 105.75, "1_no": 14.63, "1_yes": 138.63, "2_no": 29.25, "2_yes": 177.25 } },
-      { id: "ins_business", name: "Business events", eventTypes: ["Business / Board Meeting", "Conference", "Workshop / Training"], rates: { "0_no": 0, "0_yes": 103.5, "1_no": 0, "1_yes": 135.25, "2_no": 0, "2_yes": 170.5 } },
-      { id: "ins_other_business", name: "Other business, festivals & markets", eventTypes: ["Other - Business and non-alcoholic events", "Festival / Market / Show"], rates: { "0_no": 0, "0_yes": 105.75, "1_no": 0, "1_yes": 138.63, "2_no": 0, "2_yes": 177.25 } },
-    ],
-  },
+  // 0 (included at no charge), "uninsurable", or blank (not quoted). EventPolicy buckets: ≤50 / ≤100 / >100.
+  eventInsurance: { ...EVENTPOLICY_INSURANCE },
   noticeVariables: [
     { id: "nv_agco_serving", key: "AGCO_Fee_Serving", label: "AGCO permit fee — providing alcohol / BYOB", value: 50 },
     { id: "nv_agco_selling", key: "AGCO_Fee_Selling", label: "AGCO permit fee — selling alcohol", value: 150 },
@@ -10943,23 +10949,27 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
   const getVL = (vid) => ({ hasFloorLayoutPlan: true, layouts: [], blankFloorPlan: "", ...(floorLayouts[vid] || {}) });
   const setVL = (vid, patch) => { const c = getVL(vid); update({ floorLayouts: { ...floorLayouts, [vid]: { ...c, ...patch } } }); };
   const addFL = (vid) => {
-    const nl = { id: "fl_" + uid(), name: "", image: "", capacityMin: 0, capacityMax: 0, applicableEventTypes: [], applicableSpaceReqs: [], recommendedFor: 0, recommendedDescription: "", rentalRecommendations: {} };
+    const nl = { id: "fl_" + uid(), name: "", image: "", capacityMin: 0, capacityMax: 0, applicableEventTypes: [], applicableSpaceReqs: [], recommendedFor: 0, recommendedDescription: "", rentalRecommendations: {}, layoutStyle: "" };
     setVL(vid, { layouts: [...getVL(vid).layouts, nl] }); setExpandedLayout(nl.id);
   };
   const addOldSiteLayouts = (vid, presets) => {
-    const imported = presets.map((preset) => ({
-      id: "fl_" + uid(),
-      name: preset.name,
-      image: preset.image,
-      capacityMin: preset.guestMin,
-      capacityMax: preset.guestMax,
-      applicableEventTypes: [...preset.eventTypes],
-      applicableSpaceReqs: [],
-      recommendedFor: preset.recommendedFor,
-      recommendedDescription: preset.description.join("\n"),
-      rentalRecommendations: {},
-      oldSitePresetId: preset.presetId,
-    }));
+    const imported = presets.map((preset) => {
+      const row = {
+        id: "fl_" + uid(),
+        name: preset.name,
+        image: preset.image,
+        capacityMin: preset.guestMin,
+        capacityMax: preset.guestMax,
+        applicableEventTypes: [...preset.eventTypes],
+        applicableSpaceReqs: [],
+        recommendedFor: preset.recommendedFor,
+        recommendedDescription: preset.description.join("\n"),
+        rentalRecommendations: {},
+        oldSitePresetId: preset.presetId,
+        category: preset.category || "",
+      };
+      return { ...row, layoutStyle: inferLayoutStyle(row) || "" };
+    });
     if (imported.length === 0) return;
     setVL(vid, { layouts: [...getVL(vid).layouts, ...imported] });
     setOldSiteLayoutArea(null);
@@ -11103,6 +11113,21 @@ function LayoutEditor({ step, onUpdateStep, onAddField, onAddMultipleFields, onD
               )}
             </div>
           </div>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <label className="lbl" style={{ textTransform: "uppercase", fontSize: 10, letterSpacing: ".05em" }}>Layout Style</label>
+          <div style={{ fontSize: 10.5, color: "var(--ink-4)", marginBottom: 4 }}>Shown on client style cards before floor plans (Round, Theater, …).</div>
+          <select
+            className="input"
+            value={layout.layoutStyle || inferLayoutStyle(layout) || ""}
+            onChange={(e) => setFL(venue.id, layout.id, { layoutStyle: e.target.value })}
+          >
+            <option value="">Auto / unassigned</option>
+            {LAYOUT_STYLE_ORDER.filter((style) => style !== "others").map((style) => (
+              <option key={style} value={style}>{LAYOUT_STYLE_LABELS[style]}</option>
+            ))}
+          </select>
         </div>
 
         <div style={{ marginTop: 10 }}>
@@ -12948,25 +12973,24 @@ function sameEventType(a, b) {
 }
 
 // ----- Layout Preview Body (for stepType === "layout" inside ClientPreview) -----
-function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommendations }) {
+function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommendations, offersGate = false }) {
   const Ic = window.Icons;
   const spaceReqs = step.spaceRequirements || [];
   const floorLayouts = step.floorLayouts || {};
   const customLayoutSpaces = step.layoutSpaces || [];
-  const layoutRentalRecommendationFields = layoutRecommendationFieldsForStep(step);
   const layoutRentalRecommendationFieldsForVenue = (venueId) => layoutRecommendationFieldsForStep(step, venueId);
   const [selectedSpaceReqs, setSelectedSpaceReqs] = React.useState([]);
-  // Kept in answers so the selected layouts are retained in saved drafts and submissions.
-  const selectedLayouts = answers._selectedLayouts || {}; // areaId -> layoutId
+  const [styleUnlocked, setStyleUnlocked] = React.useState({});
+  const selectedLayouts = answers._selectedLayouts || {};
   const otherPlans = answers._layoutOtherPlans || {};
+  const selectedStyles = answers._selectedLayoutStyles || {};
+  const layoutOffers = answers._layoutOffers || {};
+  const layoutOfferNotices = answers._layoutOfferNotices || {};
   const setOtherPlan = (areaId, patch) => {
     if (!onAnswer) return;
     onAnswer("_layoutOtherPlans", {
       ...otherPlans,
-      [areaId]: {
-        ...(otherPlans[areaId] || {}),
-        ...patch,
-      },
+      [areaId]: { ...(otherPlans[areaId] || {}), ...patch },
     });
   };
   const uploadOtherPlan = (areaId, file) => {
@@ -12979,7 +13003,6 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     reader.readAsDataURL(file);
   };
 
-  // Find the venue step and selected venues
   const venueStep = allSteps.find((s) => s.stepType === "venue");
   const allVenues = venueStep ? (venueStep.venues || []).filter((v) => v.active && v.visibility !== "admin_only") : [];
   const selectedVenueIds = Array.isArray(answers._selectedVenueIds)
@@ -12989,7 +13012,6 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     : [];
   const selectedSubSpacesByVenue = answers._venueSubSpaces || {};
 
-  // Get guest count and event type from step 2 answers
   let guestCount = 0;
   let eventType = "";
   allSteps.forEach((s) => {
@@ -13005,7 +13027,6 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
       }
     });
   });
-  // Empty event types / a 0-0 capacity range mean "show for everyone"; a max of 0 means no upper limit.
   const layoutFitsAnswers = (layout) => {
     const types = layout.applicableEventTypes || [];
     if (eventType && types.length > 0 && !types.some((type) => sameEventType(type, eventType))) return false;
@@ -13018,7 +13039,6 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
   const layoutAreaOrder = Array.isArray(step.layoutAreaOrder) ? step.layoutAreaOrder : [];
   const layoutAreaOrderMap = new Map(layoutAreaOrder.map((id, index) => [id, index]));
 
-  // Get venue areas — only show for selected venues (or all if none selected), using the admin's saved order.
   const unorderedVenueAreas = [];
   allVenues.forEach((v) => {
     if (selectedVenueIds.length > 0 && !selectedVenueIds.includes(v.id)) return;
@@ -13066,7 +13086,6 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     layoutImageUrls.forEach(preloadImage);
   }, [layoutImageUrls.join("|")]);
 
-  const selectLayout = (venueId, layoutId) => applySelectedLayouts({ ...selectedLayouts, [venueId]: layoutId });
   const applySelectedLayouts = (next) => {
     onAnswer?.("_selectedLayouts", next);
     const byVenue = {};
@@ -13081,12 +13100,47 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     }, {});
     onLayoutRecommendations?.({ ...aggregate, __byVenue: byVenue });
   };
+  const selectLayout = (areaId, layoutId) => {
+    applySelectedLayouts({ ...selectedLayouts, [areaId]: layoutId });
+    if (offersGate && layoutId && layoutId !== `_other_${areaId}`) {
+      const notices = { ...layoutOfferNotices };
+      const prev = notices[areaId] || {};
+      if (prev.state === "ready" || prev.state === "awaiting") {
+        notices[areaId] = { ...prev, state: "resolved", resolvedAt: new Date().toISOString() };
+        onAnswer?.("_layoutOfferNotices", notices);
+      }
+    }
+  };
+  const selectStyle = (areaId, style) => {
+    onAnswer?.("_selectedLayoutStyles", { ...selectedStyles, [areaId]: style });
+    setStyleUnlocked((prev) => ({ ...prev, [areaId]: false }));
+    const nextLayouts = { ...selectedLayouts };
+    delete nextLayouts[areaId];
+    applySelectedLayouts(nextLayouts);
+    if (offersGate && style && !isOthersLayoutStyle(style)) {
+      const offered = Array.isArray(layoutOffers[areaId]) ? layoutOffers[areaId] : [];
+      const matching = layoutsForStyle(venueAreas.find((a) => a.id === areaId)?.layouts || [], style)
+        .filter((layout) => offered.includes(layout.id));
+      if (!matching.length) {
+        const notices = { ...layoutOfferNotices };
+        notices[areaId] = {
+          ...(notices[areaId] || {}),
+          state: "awaiting",
+          style,
+          requestedAt: new Date().toISOString(),
+        };
+        onAnswer?.("_layoutOfferNotices", notices);
+      }
+    }
+  };
 
-  // A layout picked earlier can drop out when the client goes back and changes event type or guest count.
   const hiddenSelectionAreaIds = venueAreas
     .filter((area) => {
       const chosenId = selectedLayouts[area.id];
-      return chosenId && chosenId !== "_other_" + area.id && !area.layouts.some((layout) => layout.id === chosenId);
+      const style = selectedStyles[area.id];
+      if (!chosenId || chosenId === `_other_${area.id}`) return false;
+      const styleLayouts = style && !isOthersLayoutStyle(style) ? layoutsForStyle(area.layouts, style) : area.layouts;
+      return !styleLayouts.some((layout) => layout.id === chosenId);
     })
     .map((area) => area.id);
   React.useEffect(() => {
@@ -13096,6 +13150,16 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
     applySelectedLayouts(next);
   }, [hiddenSelectionAreaIds.join("|")]);
 
+  // Others style maps to the upload path (same as the legacy "Others" radio).
+  React.useEffect(() => {
+    venueAreas.forEach((area) => {
+      if (!isOthersLayoutStyle(selectedStyles[area.id])) return;
+      if (selectedLayouts[area.id] === `_other_${area.id}`) return;
+      selectLayout(area.id, `_other_${area.id}`);
+    });
+  }, [JSON.stringify(selectedStyles), venueAreas.map((a) => a.id).join("|")]);
+
+  const readyNoticeAreas = venueAreas.filter((area) => layoutOfferNotices[area.id]?.state === "ready");
   const selectedLayoutSummary = venueAreas
     .map((area) => {
       const chosenId = selectedLayouts[area.id];
@@ -13114,9 +13178,47 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
   const hasSelectedLayoutCapacity = totalLayoutCapacity > 0;
   const isGuestCountOverSelectedCapacity = !!guestCount && hasSelectedLayoutCapacity && guestCount > totalLayoutCapacity;
 
+  const renderOtherUpload = (area) => (
+    <div style={{ marginTop: 14, padding: 14, background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 8 }}>
+      <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Floor Layout Plan:</h4>
+      <p style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 12, lineHeight: 1.5 }}>
+        Upload a floor layout you have in mind for {area.name}. Use one of our blank copies to help with sizes and proportions.
+        {area.blankFloorPlan && " "}
+        {area.blankFloorPlan && (
+          <a href={area.blankFloorPlan} download={area.name.replace(/\s+/g, "_") + "_blank_layout.png"} style={{ color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}>
+            Download {area.name} blank
+          </a>
+        )}
+      </p>
+      <div style={{ marginBottom: 10 }}>
+        <input
+          type="file"
+          accept="image/*,.pdf"
+          style={{ fontSize: 12 }}
+          onChange={(e) => {
+            uploadOtherPlan(area.id, e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        {otherPlans[area.id]?.fileName && (
+          <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 6 }}>
+            Uploaded: {otherPlans[area.id].fileName}
+          </div>
+        )}
+      </div>
+      <textarea
+        className="cv-input"
+        rows={4}
+        value={otherPlans[area.id]?.notes || ""}
+        onChange={(e) => setOtherPlan(area.id, { notes: e.target.value })}
+        placeholder={`Please describe your desired floor plan, seating arrangement, or setup notes for ${area.name}.`}
+        style={{ width: "100%", fontSize: 13, lineHeight: 1.5 }}
+      />
+    </div>
+  );
+
   return (
     <div>
-      {/* ======= Space Requirements ======= */}
       <div style={{ marginBottom: 28 }}>
         <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Space Requirements</h4>
         <p style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 10, lineHeight: 1.5 }}>Select the spaces you need for your event.</p>
@@ -13131,10 +13233,28 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
         </div>
       </div>
 
-      {/* ======= Floor Layouts per venue area ======= */}
+      {readyNoticeAreas.length > 0 && (
+        <div className="cv-layout-ready-banner" style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 8, background: "#e8f6ee", border: "1px solid #b7e0c5", fontSize: 13 }}>
+          <strong style={{ marginRight: 6 }}>New</strong>
+          Layout options are ready for {readyNoticeAreas.map((a) => a.name).join(", ")}. Choose a floor plan below.
+        </div>
+      )}
+
       {venueAreas.map((area) => {
+        const styleKeys = visibleLayoutStyles(area.layouts);
+        const useStyleCards = area.layouts.some((layout) => inferLayoutStyle(layout));
+        const chosenStyle = selectedStyles[area.id] || "";
+        const styleLocked = !!chosenStyle && !styleUnlocked[area.id];
+        const offeredIds = Array.isArray(layoutOffers[area.id]) ? layoutOffers[area.id] : null;
+        let styleLayouts = chosenStyle && !isOthersLayoutStyle(chosenStyle)
+          ? layoutsForStyle(area.layouts, chosenStyle)
+          : [];
+        if (offersGate && offeredIds && chosenStyle && !isOthersLayoutStyle(chosenStyle)) {
+          styleLayouts = styleLayouts.filter((layout) => offeredIds.includes(layout.id));
+        }
+        const waitingForOffers = offersGate && chosenStyle && !isOthersLayoutStyle(chosenStyle) && (!offeredIds || !styleLayouts.length);
         const chosenId = selectedLayouts[area.id] || null;
-        const chosenLayout = area.layouts.find((l) => l.id === chosenId) || null;
+        const chosenLayout = (useStyleCards ? styleLayouts : area.layouts).find((l) => l.id === chosenId) || null;
         const chosenMaxSeats = Number(chosenLayout?.recommendedFor || chosenLayout?.capacityMax || 0);
 
         return (
@@ -13144,39 +13264,95 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
               <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 12px", lineHeight: 1.5 }}>{floorLayouts[area.id]?.helperText || step.layoutHelperText}</p>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
-              {/* Radio list */}
-              <div className="cv-layout-radio-list" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {area.layouts.map((layout) => (
-                  <label key={layout.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer", padding: "6px 0" }}>
-                    <input type="radio" name={"layout_" + area.id} checked={chosenId === layout.id} onChange={() => selectLayout(area.id, layout.id)} style={{ accentColor: "var(--accent)", marginTop: 2 }} />
-                    <span>{layout.name}</span>
-                  </label>
-                ))}
-                {area.layouts.length === 0 && (
-                  <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
-                    No suggested layouts match your event type and number of guests. Choose Others to describe your setup.
+            {useStyleCards && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 650 }}>
+                    {chosenStyle ? `Selected layout type: ${layoutStyleLabel(chosenStyle)}` : "Choose a layout type"}
+                  </div>
+                  {chosenStyle && (
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      onClick={() => setStyleUnlocked((prev) => ({ ...prev, [area.id]: true }))}
+                    >
+                      Change Layout Type
+                    </button>
+                  )}
+                </div>
+                {(!chosenStyle || styleUnlocked[area.id]) && (
+                  <div className="cv-layout-style-grid">
+                    {styleKeys.map((style) => (
+                      <button
+                        key={style}
+                        type="button"
+                        className={"cv-layout-style-card" + (chosenStyle === style ? " is-selected" : "")}
+                        onClick={() => selectStyle(area.id, style)}
+                      >
+                        <img src={LAYOUT_STYLE_CARD_SRC[style]} alt="" width={120} height={120} loading="lazy" decoding="async" />
+                        <span className="cv-layout-style-label">{LAYOUT_STYLE_HEADINGS[style] || layoutStyleLabel(style)}</span>
+                        <span className="cv-layout-style-blurb">{LAYOUT_STYLE_BLURBS[style] || ""}</span>
+                      </button>
+                    ))}
                   </div>
                 )}
-                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer", padding: "6px 0" }}>
-                  <input type="radio" name={"layout_" + area.id} checked={chosenId === "_other_" + area.id} onChange={() => selectLayout(area.id, "_other_" + area.id)} style={{ accentColor: "var(--accent)", marginTop: 2 }} />
-                  <span>Others</span>
-                </label>
-              </div>
-
-              {/* Layout image */}
-              <div style={{ minHeight: 180, background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                {chosenLayout && chosenLayout.image ? (
-                  <img src={compressedImageUrl(chosenLayout.image)} alt={chosenLayout.name} decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                ) : (
-                  <span style={{ fontSize: 12, color: "var(--ink-4)", textAlign: "center", padding: 20 }}>
-                    {chosenLayout ? "No image available for this layout" : "Select a layout to see the floor plan"}
-                  </span>
+                {chosenStyle && styleLocked && (
+                  <div className="cv-layout-style-grid is-locked">
+                    {styleKeys.filter((style) => style === chosenStyle).map((style) => (
+                      <div key={style} className="cv-layout-style-card is-selected is-static">
+                        <img src={LAYOUT_STYLE_CARD_SRC[style]} alt="" width={120} height={120} loading="lazy" decoding="async" />
+                        <span className="cv-layout-style-label">{LAYOUT_STYLE_HEADINGS[style] || layoutStyleLabel(style)}</span>
+                        <span className="cv-layout-style-blurb">{LAYOUT_STYLE_BLURBS[style] || ""}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
+            )}
 
-            {/* Recommended info box */}
+            {useStyleCards && !chosenStyle && (
+              <p style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>Select a layout type above to see matching floor plans.</p>
+            )}
+
+            {useStyleCards && waitingForOffers && (
+              <div className="cv-layout-waiting" style={{ padding: "14px 16px", borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--line)", fontSize: 13, lineHeight: 1.5 }}>
+                We are preparing floor-layout options for <strong>{layoutStyleLabel(chosenStyle)}</strong> in {area.name}. You will get an email when they are ready to choose.
+              </div>
+            )}
+
+            {((useStyleCards && chosenStyle && !isOthersLayoutStyle(chosenStyle) && !waitingForOffers) || !useStyleCards) && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+                <div className="cv-layout-radio-list" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {(useStyleCards ? styleLayouts : area.layouts).map((layout) => (
+                    <label key={layout.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer", padding: "6px 0" }}>
+                      <input type="radio" name={"layout_" + area.id} checked={chosenId === layout.id} onChange={() => selectLayout(area.id, layout.id)} style={{ accentColor: "var(--accent)", marginTop: 2 }} />
+                      <span>{layout.name}</span>
+                    </label>
+                  ))}
+                  {!useStyleCards && area.layouts.length === 0 && (
+                    <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
+                      No suggested layouts match your event type and number of guests. Choose Others to describe your setup.
+                    </div>
+                  )}
+                  {!useStyleCards && (
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer", padding: "6px 0" }}>
+                      <input type="radio" name={"layout_" + area.id} checked={chosenId === "_other_" + area.id} onChange={() => selectLayout(area.id, "_other_" + area.id)} style={{ accentColor: "var(--accent)", marginTop: 2 }} />
+                      <span>Others</span>
+                    </label>
+                  )}
+                </div>
+                <div style={{ minHeight: 180, background: "var(--surface-2)", borderRadius: 8, border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  {chosenLayout && chosenLayout.image ? (
+                    <img src={compressedImageUrl(chosenLayout.image)} alt={chosenLayout.name} decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  ) : (
+                    <span style={{ fontSize: 12, color: "var(--ink-4)", textAlign: "center", padding: 20 }}>
+                      {chosenLayout ? "No image available for this layout" : "Select a layout to see the floor plan"}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {chosenLayout && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 12 }}>
                 <div style={{ gridColumn: "2 / 3", padding: "12px 14px", background: "var(--accent-soft)", border: "1px solid var(--accent-soft-line)", borderRadius: 8 }}>
@@ -13199,44 +13375,7 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
                 </div>
               </div>
             )}
-            {chosenId === "_other_" + area.id && (
-              <div style={{ marginTop: 14, padding: 14, background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 8 }}>
-                <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Floor Layout Plan:</h4>
-                <p style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 12, lineHeight: 1.5 }}>
-                  Upload a floor layout you have in mind for {area.name}. Use one of our blank copies to help with sizes and proportions.
-                  {area.blankFloorPlan && " "}
-                  {area.blankFloorPlan && (
-                    <a href={area.blankFloorPlan} download={area.name.replace(/\s+/g, "_") + "_blank_layout.png"} style={{ color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}>
-                      Download {area.name} blank
-                    </a>
-                  )}
-                </p>
-                <div style={{ marginBottom: 10 }}>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    style={{ fontSize: 12 }}
-                    onChange={(e) => {
-                      uploadOtherPlan(area.id, e.target.files?.[0]);
-                      e.target.value = "";
-                    }}
-                  />
-                  {otherPlans[area.id]?.fileName && (
-                    <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 6 }}>
-                      Uploaded: {otherPlans[area.id].fileName}
-                    </div>
-                  )}
-                </div>
-                <textarea
-                  className="cv-input"
-                  rows={4}
-                  value={otherPlans[area.id]?.notes || ""}
-                  onChange={(e) => setOtherPlan(area.id, { notes: e.target.value })}
-                  placeholder={`Please describe your desired floor plan, seating arrangement, or setup notes for ${area.name}.`}
-                  style={{ width: "100%", fontSize: 13, lineHeight: 1.5 }}
-                />
-              </div>
-            )}
+            {((useStyleCards && isOthersLayoutStyle(chosenStyle)) || (!useStyleCards && chosenId === `_other_${area.id}`)) && renderOtherUpload(area)}
           </div>
         );
       })}
@@ -13275,7 +13414,6 @@ function LayoutPreviewBody({ step, allSteps, answers, onAnswer, onLayoutRecommen
           </div>
         </div>
       )}
-
     </div>
   );
 }
@@ -15162,6 +15300,21 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
     setAnswers((current) => ({ ...current, _selectedVenueIds: kept, _selectedVenueId: kept[0] || "" }));
   }, [answers._selectedVenueIds, steps]);
 
+  // Sync Date of Event from the first venue booking start date (unless "still not decided").
+  React.useEffect(() => {
+    if (answers[DATE_NOT_DECIDED_FIELD_ID]) return;
+    const start = firstVenueStartDate(answers);
+    if (!start) return;
+    if (String(answers[DATE_OF_EVENT_FIELD_ID] || "") === start) return;
+    const hasDateField = list.some((owner) => (owner.fields || []).some((field) => field.id === DATE_OF_EVENT_FIELD_ID || /^date of event$/i.test(field.label || "")));
+    if (!hasDateField) return;
+    setAnswers((current) => {
+      if (current[DATE_NOT_DECIDED_FIELD_ID]) return current;
+      if (String(current[DATE_OF_EVENT_FIELD_ID] || "") === start) return current;
+      return { ...current, [DATE_OF_EVENT_FIELD_ID]: start };
+    });
+  }, [JSON.stringify(answers._venueBookings), answers[DATE_NOT_DECIDED_FIELD_ID], steps]);
+
   const visibleFields = step ? step.fields.filter((f) => isFieldVisible(f, step)) : [];
   const rentalGroupFields = visibleFields.filter((f) => f.type === "rental_group");
   const normalVisibleFields = visibleFields.filter((f) => f.type !== "rental_group");
@@ -16612,7 +16765,14 @@ function ClientPreview({ steps, pricingRules, siteSettings, onSubmitRequest, onC
                   </>
                 ) : step.stepType === "layout" ? (
                   <>
-                    <LayoutPreviewBody step={step} allSteps={list} answers={answers} onAnswer={setAnswer} onLayoutRecommendations={setLayoutRecommendations} />
+                    <LayoutPreviewBody
+                      step={step}
+                      allSteps={list}
+                      answers={answers}
+                      onAnswer={setAnswer}
+                      onLayoutRecommendations={setLayoutRecommendations}
+                      offersGate={publicMode && !adminEditMode && !!(draftRecordId || initialDraft?.recordId)}
+                    />
                     {rentalGroupFields.length > 0 && (
                       <>
                         <ClientVenueRentalGroupsPreview
@@ -17836,7 +17996,7 @@ const NOTICE_PRESETS = {
     noticeStyle: "info",
     noticeIcon: "Shield",
     label: "Event Insurance required",
-    fieldDescription: "Since your event has a social aspect to it, we require you to obtain an Event insurance from Duuo. Estimated cost is {{Insurance_Estimate}}. See last step for details.",
+    fieldDescription: "Since your event has a social aspect to it, we require you to obtain Event Insurance from EventPolicy. Estimated cost is {{Insurance_Estimate}}. See last step for details.",
     noticeMore: "",
   },
   agco: {
@@ -18680,6 +18840,8 @@ const EMAIL_TEMPLATE_TYPES = [
   { id: "sign-form", label: "Sign Form", icon: "Edit", actionLabel: "Send sign form email" },
   { id: "insurance", label: "Insurance", icon: "CheckSq", actionLabel: "Send insurance email" },
   { id: "agco-license", label: "AGCO License", icon: "Key", actionLabel: "Send AGCO license email" },
+  { id: "layout-options-ready", label: "Layout Options Ready", icon: "Layers", actionLabel: "Notify customer layout options ready" },
+  { id: "layout-options-awaiting", label: "Layout Options Needed", icon: "Layers", actionLabel: "Notify team layout options needed" },
 ];
 
 const DEFAULT_EMAIL_ADDRESS = "kristelleddc+collaburo@gmail.com";
@@ -18701,7 +18863,19 @@ const DEFAULT_EMAIL_TEMPLATES = {
     from: DEFAULT_EMAIL_ADDRESS,
     cc: DEFAULT_EMAIL_ADDRESS,
     subject: "Required Event Insurance for {{Space}} on {{Booking_Start_datetime}}",
-    content: "Hello {{Client_Name}},\n\nFor all events, we require clients to obtain event insurance. Duuo offers a discount to our customers and provides a full refund up to the date before the event.\n\nPlease use the link below to arrange coverage:\n\n{{Insurance_Link}}\n\nIf you already have coverage, reply with the certificate and we will add it to your rental progress record.",
+    content: "Hello {{Client_Name}},\n\nFor all events, we require clients to obtain event insurance. EventPolicy is a convenient online provider for events and gatherings.\n\nPlease use the link below to arrange coverage:\n\n{{Insurance_Link}}\n\nIf you already have coverage, reply with the certificate and we will add it to your rental progress record.",
+  },
+  "layout-options-ready": {
+    from: DEFAULT_EMAIL_ADDRESS,
+    cc: DEFAULT_EMAIL_ADDRESS,
+    subject: "Layout options ready for {{Space}} — {{Booking_Start_datetime}}",
+    content: "Hello {{Client_Name}},\n\nLayout options are ready for your booking of {{Space}}.\n\nPlease open your booking form and choose a floor layout on the Layout step:\n\n{{Copy_Link}}\n\nThank you.",
+  },
+  "layout-options-awaiting": {
+    from: DEFAULT_EMAIL_ADDRESS,
+    cc: DEFAULT_EMAIL_ADDRESS,
+    subject: "Layout options needed — {{Client_Name}} / {{Space}}",
+    content: "A client selected a layout type and is waiting for offered floor plans.\n\nClient: {{Client_Name}}\nSpace: {{Space}}\nStyle: {{Layout_Style_Pending}}\nBooking: {{Copy_Link}}\n\nOpen the progress record and use Layout Offers to choose options, then Save and notify customer.",
   },
   "agco-license": {
     from: DEFAULT_EMAIL_ADDRESS,
@@ -18726,7 +18900,12 @@ const DYNAMIC_EMAIL_FIELDS = [
   ["{{Event_Description}}", "Brief event description"],
   ["{{Alcohol_On_Site}}", "Alcohol on site answer"],
   ["{{Expected_Number_of_Attendees}}", "Guest count"],
+  ["{{Event_Date}}", "Date of Event (or approx / venue start)"],
+  ["{{Date_of_Event}}", "Date of Event alias"],
+  ["{{event_start_date}}", "Date of Event (legacy alias)"],
+  ["{{Layout_Style_Pending}}", "Layout style(s) awaiting offers"],
   ["{{Space}}", "Selected space"],
+  ["{{Floor_Layout_Diagrams}}", "Agreed layout diagrams (contract)"],
   ["{{Booking_DateTime}}", "Full booking date/time range"],
   ["{{Booking_Start_datetime}}", "Starting date of booking (legacy alias)"],
   ["{{Booking_end_datetime}}", "Ending date/time of booking (legacy alias)"],
@@ -19388,6 +19567,8 @@ function normalizeProgressRecord(record = {}, index = 0) {
     venueCost: record.venueCost || null,
     layoutRecommendations: record.layoutRecommendations || {},
     layoutSelections: Array.isArray(record.layoutSelections) ? record.layoutSelections : [],
+    layoutOffers: record.layoutOffers && typeof record.layoutOffers === "object" ? record.layoutOffers : {},
+    layoutOfferNotices: record.layoutOfferNotices && typeof record.layoutOfferNotices === "object" ? record.layoutOfferNotices : {},
     costs: {
       spaceRentalTotal: 0,
       spaceContentTotal: 0,
@@ -19713,6 +19894,8 @@ function createProgressRecordFromSubmission(payload = {}) {
     venueCost: cloneData(venueCost),
     layoutRecommendations: cloneData(payload.layoutRecommendations || {}),
     layoutSelections: layoutSelectionsFromAnswers(steps, answers),
+    layoutOffers: cloneData(answers._layoutOffers || payload.layoutOffers || {}),
+    layoutOfferNotices: cloneData(answers._layoutOfferNotices || payload.layoutOfferNotices || {}),
     answers: cloneData(answers),
     answerSummary,
     emailVerification: cloneData(payload.emailVerification || {}),
@@ -19909,6 +20092,8 @@ function buildClientDraftFromProgressRecord(record, steps = []) {
     answers._selectedVenueIds = selectedVenues.map((venue) => venue.id);
     answers._selectedVenueId = selectedVenues[0].id;
   }
+  answers._layoutOffers = cloneData(record.layoutOffers || answers._layoutOffers || {});
+  answers._layoutOfferNotices = cloneData(record.layoutOfferNotices || answers._layoutOfferNotices || {});
 
   const firstUnansweredStep = normalizedSteps.findIndex((step) =>
     (step.fields || []).some((field) => field.visibleToClient !== false && !clientAnswerHasValue(answers[field.id]))
@@ -21390,10 +21575,31 @@ function formatContractLayoutSelections(selections = []) {
   return (Array.isArray(selections) ? selections : [])
     .map((item) => {
       if (typeof item === "string") return item;
-      return String(item?.label || item?.name || item?.title || "").trim();
+      const area = String(item?.areaName || "").trim();
+      const name = String(item?.layoutName || item?.label || item?.name || item?.title || "").trim();
+      if (area && name) return `${area}: ${name}`;
+      return name || area;
     })
     .filter(Boolean)
     .join("\n");
+}
+
+/** Freeze agreed layout diagrams for contracts at ≤200px display width. */
+function formatContractLayoutDiagrams(selections = []) {
+  const items = Array.isArray(selections) ? selections : [];
+  if (!items.length) return "";
+  const blocks = items.map((item) => {
+    const area = String(item?.areaName || "Space").trim();
+    const name = String(item?.layoutName || item?.name || "Layout").trim();
+    const image = String(item?.image || item?.fileData || "").trim();
+    const notes = String(item?.instructions || "").trim();
+    const imgHtml = image
+      ? `<img class="contract-layout-diagram" src="${image.replace(/"/g, "&quot;")}" alt="${name.replace(/"/g, "&quot;")} floor layout" style="max-width:200px;width:200px;height:auto;display:block;margin:6px 0;" />`
+      : "";
+    const notesHtml = notes ? `<div class="contract-layout-notes" style="font-size:12px;margin-top:4px;white-space:pre-wrap;">${notes.replace(/</g, "&lt;")}</div>` : "";
+    return `<div class="contract-layout-block" style="margin:0 0 14px;"><div style="font-weight:700;">${area}: ${name}</div>${imgHtml}${notesHtml}</div>`;
+  });
+  return blocks.join("");
 }
 
 function parseContractDateTimeValue(text = "") {
@@ -21578,13 +21784,17 @@ function emailTokenMap(record = {}) {
     "{{Booking_ID}}": bookingCodeForRecord(record),
     "{{Copy_Link}}": `${origin}/book?record=${bookingCodeForRecord(record)}`,
     "{{Contract_Link}}": `${origin}/book?record=${bookingCodeForRecord(record)}&action=sign`,
-    "{{Insurance_Link}}": "https://duuo.ca/event-insurance",
+    "{{Insurance_Link}}": "https://eventpolicy.ca/",
     "{{AGCO_Link}}": "https://www.agco.ca/",
     "{{Event_Privacy}}": record.request?.eventPrivacy || "",
     "{{Event_Type}}": record.request?.eventType || "",
     "{{Event_Description}}": record.request?.description || "",
     "{{Alcohol_On_Site}}": record.request?.alcoholOnSite || "",
     "{{Expected_Number_of_Attendees}}": record.request?.attendeeCount || "",
+    "{{Event_Date}}": resolveEventDateDisplay(record, record.answers || {}),
+    "{{Date_of_Event}}": resolveEventDateDisplay(record, record.answers || {}),
+    "{{event_start_date}}": resolveEventDateDisplay(record, record.answers || {}),
+    "{{Layout_Style_Pending}}": Object.values(record.layoutOfferNotices || {}).map((n) => layoutStyleLabel(n?.style)).filter(Boolean).join(", ") || "",
     "{{Space}}": record.request?.space || "",
     "{{Booking_DateTime}}": bookingText,
     "{{Booking_Start_datetime}}": schedule.startDate || bookingStart.trim(),
@@ -21650,6 +21860,7 @@ function emailTokenMap(record = {}) {
     "{{Cost_Breakdown}}": buildContractCostBreakdown(costs),
     "{{Item_Details}}": itemDetails,
     "{{Layout_Selections}}": formatContractLayoutSelections(record.layoutSelections),
+    "{{Floor_Layout_Diagrams}}": formatContractLayoutDiagrams(record.layoutSelections),
     "{{Answer_Summary}}": formatContractAnswerSummary(record.answerSummary),
     "{{Contract_Generated_At}}": record.progress?.contractGeneratedAt
       ? new Date(record.progress.contractGeneratedAt).toLocaleString()
@@ -21784,7 +21995,7 @@ function isProgressRecordActive(record = {}, now = Date.now()) {
 
 const PROGRESS_STATUS_OPTIONS = ["Draft", "Not Contacted", "Initiated Contact", "In Discussion", "Partially Paid", "Paid", "Cancelled", "Completed"];
 const AGCO_LICENSE_STATUS_OPTIONS = ["Not Received", "Not Required", "Pending AGCO Approval", "Obtained"];
-const INSURANCE_STATUS_OPTIONS = ["Not Received", "Not Required", "Obtained DUUO", "Client has own"];
+const INSURANCE_STATUS_OPTIONS = ["Not Received", "Not Required", "Obtained EventPolicy", "Obtained DUUO", "Client has own"];
 const AGREEMENT_STATUS_OPTIONS = ["Not Signed", "Signed"];
 const DOCUMENT_UPLOAD_ACCEPT = "image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv";
 
@@ -21822,7 +22033,7 @@ const progressStatusClass = (status = "In Discussion") => String(status || "In D
 const progressFileUrl = (file) => typeof file === "string" ? file : (file?.url || file?.secureUrl || "");
 const progressHasUploadedFile = (file) => !!progressFileUrl(file);
 const progressAgcoLicenseComplete = (progress = {}) => progress.agcoLicenseStatus === "Obtained" && progressHasUploadedFile(progress.agcoLicenseFile);
-const progressInsuranceComplete = (progress = {}) => ["Obtained DUUO", "Client has own"].includes(progress.insuranceStatus) && progressHasUploadedFile(progress.insuranceFile);
+const progressInsuranceComplete = (progress = {}) => ["Obtained EventPolicy", "Obtained DUUO", "Client has own"].includes(progress.insuranceStatus) && progressHasUploadedFile(progress.insuranceFile);
 const progressAgreementComplete = (progress = {}) => progress.agreement === "Signed" && progressHasUploadedFile(progress.agreementFile);
 
 function ProgressStatusMultiSelect({ value = [], onChange }) {
@@ -23870,6 +24081,7 @@ function RentalsProgressListView({ records, onOpenDetail, onEditClient, onAdd, o
                       {PROGRESS_STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
                     </select>
                     {progressAgeLabel(record) && <div className="progress-age">{progressAgeLabel(record)}</div>}
+                    {recordAwaitsLayoutOffers(record) && <div style={{ marginTop: 4 }}><ProgressBadge tone="warn">Awaiting layout options</ProgressBadge></div>}
                   </td>
                   <td className="progress-check-cell">{yesNoIcon(progressAgreementComplete(record.progress || {}))}</td>
                   <td className="progress-money-cell">{record.progress?.securityDepositCost || "TBD"}{record.progress?.securityDepositNote && <div className="progress-subtle">{record.progress.securityDepositNote}</div>}</td>
@@ -24235,6 +24447,120 @@ function ProgressLayoutInstructions({ layouts = [] }) {
   );
 }
 
+function recordAwaitsLayoutOffers(record = {}) {
+  return Object.values(record.layoutOfferNotices || {}).some((notice) => notice && notice.state === "awaiting");
+}
+
+function ProgressLayoutOffersBox({ record, steps = [], onUpdate, onEmail }) {
+  const layoutStep = (steps || []).find((step) => step.stepType === "layout");
+  const floorLayouts = layoutStep?.floorLayouts || {};
+  const styles = record.answers?._selectedLayoutStyles || {};
+  const notices = record.layoutOfferNotices || {};
+  const offers = record.layoutOffers || {};
+  const [draftOffers, setDraftOffers] = React.useState(() => cloneData(offers));
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    setDraftOffers(cloneData(record.layoutOffers || {}));
+  }, [record.id, JSON.stringify(record.layoutOffers || {})]);
+
+  const areas = Object.keys(floorLayouts).filter((areaId) => (floorLayouts[areaId]?.layouts || []).length > 0);
+  if (!areas.length) return null;
+
+  const areaName = (areaId) => {
+    const venueStep = (steps || []).find((step) => step.stepType === "venue");
+    return layoutAreaName(areaId, layoutStep, venueStep);
+  };
+
+  const toggleOffer = (areaId, layoutId) => {
+    setDraftOffers((prev) => {
+      const current = Array.isArray(prev[areaId]) ? prev[areaId] : [];
+      const next = current.includes(layoutId) ? current.filter((id) => id !== layoutId) : [...current, layoutId];
+      return { ...prev, [areaId]: next };
+    });
+  };
+
+  const saveOffers = async ({ notify = false } = {}) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const nextNotices = { ...(record.layoutOfferNotices || {}) };
+      const at = new Date().toLocaleString();
+      const logEntries = [{ label: "Admin", at, action: notify ? "Saved layout offers and notified customer" : "Saved layout offers" }];
+      if (notify) {
+        Object.keys(draftOffers).forEach((areaId) => {
+          if (!(draftOffers[areaId] || []).length) return;
+          nextNotices[areaId] = {
+            ...(nextNotices[areaId] || {}),
+            state: "ready",
+            style: styles[areaId] || nextNotices[areaId]?.style || "",
+            readyAt: new Date().toISOString(),
+            customerNotifiedAt: new Date().toISOString(),
+          };
+        });
+      }
+      onUpdate?.(record.id, {
+        layoutOffers: cloneData(draftOffers),
+        layoutOfferNotices: nextNotices,
+        answers: {
+          ...(record.answers || {}),
+          _layoutOffers: cloneData(draftOffers),
+          _layoutOfferNotices: nextNotices,
+        },
+        log: [...logEntries, ...(record.log || [])],
+      });
+      if (notify) {
+        await Promise.resolve(onEmail?.(record, "layout-options-ready"));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {areas.map((areaId) => {
+        const style = styles[areaId] || notices[areaId]?.style || "";
+        const layouts = (floorLayouts[areaId]?.layouts || []).filter((layout) => {
+          if (!style || isOthersLayoutStyle(style)) return true;
+          return inferLayoutStyle(layout) === style;
+        });
+        const notice = notices[areaId];
+        return (
+          <section key={areaId} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", marginBottom: 8 }}>
+              <div style={{ fontWeight: 750 }}>{areaName(areaId)}</div>
+              <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                {style ? `Style: ${layoutStyleLabel(style)}` : "No style chosen yet"}
+                {notice?.state ? ` · ${notice.state}` : ""}
+              </div>
+            </div>
+            {!layouts.length ? (
+              <div className="rental-muted">No catalog layouts match this style.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 6 }}>
+                {layouts.map((layout) => (
+                  <label key={layout.id} className="chk" style={{ alignItems: "flex-start" }}>
+                    <input
+                      type="checkbox"
+                      checked={(draftOffers[areaId] || []).includes(layout.id)}
+                      onChange={() => toggleOffer(areaId, layout.id)}
+                    />
+                    <span>{layout.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="btn sm" type="button" disabled={busy} onClick={() => saveOffers({ notify: false })}>Save offers</button>
+        <button className="btn primary sm" type="button" disabled={busy} onClick={() => saveOffers({ notify: true })}>Save and notify customer</button>
+      </div>
+    </div>
+  );
+}
+
 function ProgressCateringSpecifics({ costs = {}, steps = [], answers = {} }) {
   const cateringStep = (steps || []).find((step) => String(step.name || "").trim().toLowerCase() === "catering");
   const fields = cateringStep?.fields || [];
@@ -24545,7 +24871,7 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
   const insuranceStatus = record.progress?.insuranceStatus || (record.progress?.insurance ? "Obtained DUUO" : "Not Received");
   const agreementStatus = record.progress?.agreement === "Signed" ? "Signed" : "Not Signed";
   const agcoNeedsFile = agcoStatus === "Obtained";
-  const insuranceNeedsFile = ["Obtained DUUO", "Client has own"].includes(insuranceStatus);
+  const insuranceNeedsFile = ["Obtained EventPolicy", "Obtained DUUO", "Client has own"].includes(insuranceStatus);
   const agreementNeedsFile = agreementStatus === "Signed";
   const updateAgcoStatus = (status) => patchProgress({
     agcoLicenseStatus: status,
@@ -24553,7 +24879,7 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
   });
   const updateInsuranceStatus = (status) => patchProgress({
     insuranceStatus: status,
-    insurance: ["Obtained DUUO", "Client has own"].includes(status) && progressHasUploadedFile(record.progress?.insuranceFile),
+    insurance: ["Obtained EventPolicy", "Obtained DUUO", "Client has own"].includes(status) && progressHasUploadedFile(record.progress?.insuranceFile),
   });
   const updateAgcoFile = (file) => patchProgress({
     agcoLicenseFile: file,
@@ -24824,6 +25150,13 @@ function ProgressDetailView({ record, steps = [], onBack, onUpdate, onViewBookin
         <div className="progress-detail-print-include">
         {sectionTitle("Summary of Cost")}
         <ProgressCostSummary costs={record.costs} onOpenBreakdown={setCostBreakdown} onChange={updateCosts} showTitle={false} />
+        </div>
+
+        <div className="progress-detail-print-exclude">
+        {sectionTitle("Layout Offers")}
+        <div style={{ border: "1px solid var(--line)", borderTop: 0, borderRadius: "0 0 8px 8px", padding: 14 }}>
+          <ProgressLayoutOffersBox record={record} steps={steps} onUpdate={onUpdate} onEmail={onEmail} />
+        </div>
         </div>
 
         <div className="progress-detail-print-include">
@@ -25916,10 +26249,27 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
           ...((existing?.stepProgress?.completedStepIds || []).filter(Boolean)),
           ...((record.stepProgress?.completedStepIds || []).filter(Boolean)),
         ]));
+      const mergedOffers = Object.keys(record.layoutOffers || {}).length
+        ? record.layoutOffers
+        : (existing?.layoutOffers || {});
+      const mergedNotices = {
+        ...(existing?.layoutOfferNotices || {}),
+        ...(record.layoutOfferNotices || {}),
+      };
+      const newlyAwaiting = Object.entries(mergedNotices).filter(([areaId, notice]) => {
+        if (!notice || notice.state !== "awaiting") return false;
+        const prev = existing?.layoutOfferNotices?.[areaId];
+        return !prev || prev.state !== "awaiting" || !prev.adminNotifiedAt;
+      });
+      newlyAwaiting.forEach(([areaId, notice]) => {
+        mergedNotices[areaId] = { ...notice, adminNotifiedAt: new Date().toISOString() };
+      });
       const mergedRecord = normalizeProgressRecord({
         ...(existing || {}),
         ...record,
         id: payload.recordId,
+        layoutOffers: mergedOffers,
+        layoutOfferNotices: mergedNotices,
         costs: !payload.adminEditMode && existing?.costs?.adminAdjustments
           ? applyStoredAdminCostAdjustments(record.costs || {}, existing.costs.adminAdjustments)
           : record.costs,
@@ -25939,13 +26289,28 @@ function HtmlSourceApp({ initialSection = "workflow", forcePublicMode = false, b
         },
         emails: [
           { label: payload.finalSubmit ? "Client request saved" : payload.adminEditMode ? "Admin booking saved" : "Client progress saved", status: "Saved", at: new Date().toLocaleString() },
+          ...(newlyAwaiting.length ? [{ label: "Layout options needed", status: "Queued", at: new Date().toLocaleString() }] : []),
           ...((existing?.emails || record.emails || []).filter((email) => !["Client changes saved", "Client request saved", "Client progress saved"].includes(email.label))),
         ],
         log: [
           { label: payload.adminEditMode ? "Admin" : "Client", at: new Date().toLocaleString(), action: payload.finalSubmit ? "Saved final booking form step" : payload.adminEditMode ? "Saved booking form" : "Saved booking form step" },
+          ...(newlyAwaiting.length ? [{ label: "Client", at: new Date().toLocaleString(), action: `Requested layout options (${newlyAwaiting.map(([, n]) => layoutStyleLabel(n.style)).filter(Boolean).join(", ") || "style pending"})` }] : []),
           ...((existing?.log || record.log || [])),
         ],
       });
+      if (newlyAwaiting.length && !payload.adminEditMode) {
+        const template = getEmailTemplate(siteSettingsRef.current, "layout-options-awaiting");
+        const body = {
+          from: template.from,
+          to: template.cc || template.from,
+          cc: "",
+          subject: fillEmailTokens(template.subject, mergedRecord),
+          text: fillEmailTokens(template.content, mergedRecord),
+          type: "layout-options-awaiting",
+          recordId: mergedRecord.id,
+        };
+        collaburoApi("/api/send-email", { method: "POST", body: JSON.stringify(body) }).catch(() => {});
+      }
       const nextRecords = progressRecordsRef.current.some((item) => String(item.id) === String(payload.recordId))
         ? progressRecordsRef.current.map((item) => String(item.id) === String(payload.recordId) ? mergedRecord : item)
         : [mergedRecord, ...progressRecordsRef.current];

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -70 320 320" role="img" aria-label="Bazaar market layout">
+  <g fill="none" stroke="#EE690C" stroke-width="3.5" stroke-linejoin="round">
+    <rect x="28" y="30" width="78" height="50" rx="4"/>
+    <rect x="121" y="30" width="78" height="50" rx="4"/>
+    <rect x="214" y="30" width="78" height="50" rx="4"/>
+    <rect x="28" y="100" width="78" height="50" rx="4"/>
+    <rect x="121" y="100" width="78" height="50" rx="4"/>
+    <rect x="214" y="100" width="78" height="50" rx="4"/>
+  </g>
+</svg>

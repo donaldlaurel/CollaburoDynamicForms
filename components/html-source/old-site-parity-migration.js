@@ -8,8 +8,16 @@
 
 import { OLD_SITE_TOOLTIPS } from "./old-site-tooltip-catalog";
 import { OLD_SITE_LAYOUT_GROUPS } from "./old-site-layout-catalog";
+import {
+  EVENTPOLICY_INSURANCE,
+  dateOfEventSeedFields,
+  DATE_OF_EVENT_FIELD_ID,
+  DATE_NOT_DECIDED_FIELD_ID,
+  APPROX_EVENT_WHEN_FIELD_ID,
+  inferLayoutStyle,
+} from "./layout-styles";
 
-export const OLD_SITE_PARITY_VERSION = 6;
+export const OLD_SITE_PARITY_VERSION = 7;
 
 const SYS_VENUE_SOURCE = "__sys:venue";
 
@@ -161,6 +169,7 @@ export function migrateToOldSiteParity(input = {}) {
   if (currentVersion < 4) applyV4(state, parityContext(state), log);
   if (currentVersion < 5) applyV5(state, parityContext(state), log);
   if (currentVersion < 6) applyV6(state, parityContext(state), log);
+  if (currentVersion < 7) applyV7(state, parityContext(state), log);
 
   state.siteSettings = {
     ...(state.siteSettings || {}),
@@ -1313,7 +1322,7 @@ function rewriteLabelsDeep(value) {
 }
 
 function layoutFromOldSitePreset(preset) {
-  return {
+  const base = {
     id: parityId("fl"),
     name: preset.name,
     image: preset.image || "",
@@ -1325,7 +1334,9 @@ function layoutFromOldSitePreset(preset) {
     recommendedDescription: Array.isArray(preset.description) ? preset.description.join("\n") : String(preset.description || ""),
     rentalRecommendations: {},
     oldSitePresetId: preset.presetId,
+    category: preset.category || "",
   };
+  return { ...base, layoutStyle: inferLayoutStyle(base) || "" };
 }
 
 function mergeFloorLayouts(existingLayouts, presets) {
@@ -1760,5 +1771,90 @@ function applyV6(state, ctx, log) {
   log(created ? "Added AV Extra Package at $470, with 2 included IT hours and a $100 digital recording add-on." : "Updated AV Extra Package to $470, with 2 included IT hours and a $100 digital recording add-on.");
   if (!labour) log("AV Extra Package could not attach IT labour because that rental was not in the catalog.");
   void ctx;
+}
+
+function looksLikeDuuoInsuranceLimits(limits) {
+  const normalized = (Array.isArray(limits) ? limits : []).map(Number);
+  return normalized.length === 2 && normalized[0] === 30 && normalized[1] === 175;
+}
+
+function applyV7(state, ctx, log) {
+  const pricing = state.pricingRules || {};
+  const insurance = pricing.eventInsurance;
+  if (!insurance || looksLikeDuuoInsuranceLimits(insurance.attendeeLimits) || !Array.isArray(insurance.attendeeLimits) || !insurance.attendeeLimits.length) {
+    pricing.eventInsurance = JSON.parse(JSON.stringify(EVENTPOLICY_INSURANCE));
+    state.pricingRules = pricing;
+    log("Event insurance matrix updated to EventPolicy rates (≤50 / ≤100 / >100).");
+  } else if (Array.isArray(insurance.attendeeLimits) && (Number(insurance.attendeeLimits[0]) !== 50 || Number(insurance.attendeeLimits[1]) !== 100)) {
+    // Keep custom matrices, but bump limits when still on Duuo buckets.
+    if (looksLikeDuuoInsuranceLimits(insurance.attendeeLimits)) {
+      pricing.eventInsurance = { ...insurance, ...JSON.parse(JSON.stringify(EVENTPOLICY_INSURANCE)), enabled: insurance.enabled !== false };
+      state.pricingRules = pricing;
+      log("Event insurance matrix updated to EventPolicy rates (≤50 / ≤100 / >100).");
+    }
+  }
+
+  const eventStep = ctx.steps.find((step) => /event details/i.test(step.name || "")) || ctx.steps.find((step) => (step.fields || []).some((f) => /event type/i.test(f.label || "")));
+  if (eventStep) {
+    const fields = Array.isArray(eventStep.fields) ? [...eventStep.fields] : [];
+    const hasDate = fields.some((f) => f.id === DATE_OF_EVENT_FIELD_ID || /^date of event$/i.test(f.label || ""));
+    if (!hasDate) {
+      const seed = dateOfEventSeedFields();
+      const attendeesIdx = fields.findIndex((f) => /expected number of attendees/i.test(f.label || ""));
+      const insertAt = attendeesIdx >= 0 ? attendeesIdx : fields.length;
+      fields.splice(insertAt, 0, ...seed);
+      eventStep.fields = fields;
+      log("Added Date of Event, Date still not decided, and Approx when fields.");
+    } else {
+      seedMissingDateFields(eventStep, log);
+    }
+    const attendees = fields.find((f) => /expected number of attendees/i.test(f.label || "")) || ctx.fieldBy("f14", /expected number of attendees/i);
+    if (attendees && Number(attendees.max) > 250) {
+      attendees.max = 250;
+      log("Expected Number of Attendees max set to 250.");
+    }
+    const insuranceNotice = fields.find((f) => /event insurance required/i.test(f.label || "")) || ctx.fieldBy("f14_insurance", /event insurance/i);
+    if (insuranceNotice && /duuo/i.test(String(insuranceNotice.fieldDescription || ""))) {
+      insuranceNotice.fieldDescription = String(insuranceNotice.fieldDescription).replace(/an Event insurance from Duuo/gi, "Event Insurance from EventPolicy").replace(/from Duuo/gi, "from EventPolicy").replace(/Duuo/gi, "EventPolicy");
+      log("Insurance notice copy updated from Duuo to EventPolicy.");
+    }
+  }
+
+  const layoutStep = ctx.steps.find((step) => step.stepType === "layout");
+  if (layoutStep?.floorLayouts) {
+    let styled = 0;
+    Object.values(layoutStep.floorLayouts).forEach((plan) => {
+      (plan.layouts || []).forEach((layout) => {
+        if (layout.layoutStyle) return;
+        const inferred = inferLayoutStyle(layout);
+        if (inferred) {
+          layout.layoutStyle = inferred;
+          styled += 1;
+        }
+      });
+    });
+    if (styled) log(`Assigned layoutStyle on ${styled} floor layout(s) from old-site preset names.`);
+  }
+
+  const emailTemplates = state.siteSettings?.emailTemplates;
+  if (emailTemplates?.insurance?.content && /duuo/i.test(emailTemplates.insurance.content)) {
+    emailTemplates.insurance.content = String(emailTemplates.insurance.content)
+      .replace(/Duuo offers a discount to our customers and provides a full refund up to the date before the event\./gi, "EventPolicy is a convenient online provider for events and gatherings.")
+      .replace(/Duuo/gi, "EventPolicy");
+    log("Insurance email template updated from Duuo to EventPolicy.");
+  }
+  void ctx;
+}
+
+function seedMissingDateFields(eventStep, log) {
+  const fields = eventStep.fields || [];
+  const seed = dateOfEventSeedFields();
+  const missing = seed.filter((field) => !fields.some((existing) => existing.id === field.id || norm(existing.label) === norm(field.label)));
+  if (!missing.length) return;
+  const attendeesIdx = fields.findIndex((f) => /expected number of attendees/i.test(f.label || ""));
+  const insertAt = attendeesIdx >= 0 ? attendeesIdx : fields.length;
+  fields.splice(insertAt, 0, ...missing);
+  eventStep.fields = fields;
+  log(`Added missing Date of Event field(s): ${missing.map((f) => f.label).join(", ")}.`);
 }
 
