@@ -1360,6 +1360,7 @@ export function ContractSettingsView({ settings, onChange, dynamicFields = [] })
     "{{Agreement_Month_Year}}": "June, 2026",
     "{{Agreement_Time}}": "12:00 pm",
     "{{Layout_Selections}}": "Theater",
+    "{{Floor_Layout_Diagrams}}": "<div class=\"contract-layout-block\" style=\"margin:0 0 14px;\"><div style=\"font-weight:700;\">Large Room: Theater</div><img class=\"contract-layout-diagram\" src=\"/images/layout_styles/card_theatre.svg\" alt=\"Theater floor layout\" style=\"max-width:200px;width:200px;height:auto;display:block;margin:6px 0;\" /></div>",
     "{{Floor_Layout_Instructions}}": "Rows facing the screen",
     "{{Stage_Layout_Instructions}}": "Podium center stage",
     "{{Buffet_Layout_Instructions}}": "",

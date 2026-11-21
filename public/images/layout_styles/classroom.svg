@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -70 320 320" role="img" aria-label="Classroom layout">
+  <rect x="95" y="12" width="130" height="24" rx="3" fill="#EE690C"/>
+  <g fill="none" stroke="#EE690C" stroke-width="3.5" stroke-linejoin="round">
+    <rect x="40" y="52" width="100" height="26" rx="3"/><rect x="180" y="52" width="100" height="26" rx="3"/>
+    <rect x="40" y="96" width="100" height="26" rx="3"/><rect x="180" y="96" width="100" height="26" rx="3"/>
+    <rect x="40" y="140" width="100" height="26" rx="3"/><rect x="180" y="140" width="100" height="26" rx="3"/>
+  </g>
+</svg>

@@ -75,6 +75,26 @@ const SAMPLE_STEPS = [
       { id: "f12", label: "Brief Description of Event", type: "text", required: true,
         placeholder: 'What type of event is this? (ex. "1st Bday", "Family Gathering")',
         visibleToClient: true, category: "Event" },
+      { id: "f_date_of_event", label: "Date of Event", type: "date", required: true, visibleToClient: true, category: "Event",
+        rules: [
+          { id: "rule_date_of_event_optional", action: "optional", match: "all", conditions: [
+            { fieldId: "f_date_not_decided", field: "Date still not decided", op: "is_true", value: "true" },
+          ] },
+          { id: "rule_date_of_event_disable", action: "disable", match: "all", clearValue: true, conditions: [
+            { fieldId: "f_date_not_decided", field: "Date still not decided", op: "is_true", value: "true" },
+          ] },
+        ] },
+      { id: "f_date_not_decided", label: "Date still not decided", type: "toggle", required: false, visibleToClient: true, category: "Event" },
+      { id: "f_approx_event_when", label: "Approx when is the event?", type: "text", required: false,
+        placeholder: "e.g. late spring, weekend in June", visibleToClient: true, category: "Event",
+        rules: [
+          { id: "rule_approx_event_show", action: "show", match: "all", clearValue: true, conditions: [
+            { fieldId: "f_date_not_decided", field: "Date still not decided", op: "is_true", value: "true" },
+          ] },
+          { id: "rule_approx_event_require", action: "require", match: "all", conditions: [
+            { fieldId: "f_date_not_decided", field: "Date still not decided", op: "is_true", value: "true" },
+          ] },
+        ] },
       { id: "f13", label: "Alcohol on Site", type: "radio", required: true, visibleToClient: true,
         options: [
           "Yes|There will be alcohol/liquor/wine served at the party.",
@@ -82,10 +102,10 @@ const SAMPLE_STEPS = [
         ],
         category: "Event" },
       { id: "f14", label: "Expected Number of Attendees", type: "number", required: true,
-        placeholder: "Enter expected number", visibleToClient: true, category: "Event", min: 10, max: 500 },
+        placeholder: "Enter expected number", visibleToClient: true, category: "Event", min: 10, max: 250 },
       { id: "f14_insurance", label: "Event Insurance required", type: "instructional", visibleToClient: true, category: "Event",
         noticeStyle: "info", noticeIcon: "Shield",
-        fieldDescription: "Since your event has a social aspect to it, we require you to obtain an Event insurance from Duuo. Estimated cost is {{Insurance_Estimate}}. See last step for details.",
+        fieldDescription: "Since your event has a social aspect to it, we require you to obtain Event Insurance from EventPolicy. Estimated cost is {{Insurance_Estimate}}. See last step for details.",
         rules: [{ id: "rule_insurance_notice", action: "show", match: "any", clearValue: false, conditions: [
           { fieldId: "f11", field: "Event Type", op: "in_group", value: "Social" },
           { fieldId: "f13", field: "Alcohol on Site", op: "equals", value: "Yes" },
